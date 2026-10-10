@@ -10,7 +10,7 @@
     cut(): void; copy(): void; paste(): void; duplicate(): void; remove(): void; rename(): void; group(): void;
     togglePanel(name: string): void; frameSelected(): void; openSettings(): void;
     setTool(tool: ToolMode): void; toggleSpace(): void; toggleSnap(): void; toggleGrid(): void; toggleCollisions(): void; showSceneSettings(): void;
-    addPrimitive(shape: PrimitiveShape, physics?: boolean): void; addLight(kind: LightKind): void; addCamera(): void; addSceneScript(): void; addGroup(): void; openScript(): void;
+    addPrimitive(shape: PrimitiveShape): void; addLight(kind: LightKind): void; addCamera(): void; addSceneScript(): void; addGroup(): void; openScript(): void;
     play(): void; pause(): void; resume(): void; stop(): void; step(): void;
   }
 </script>
@@ -18,7 +18,7 @@
 <script lang="ts">
   import type { Snippet } from "svelte";
   import type { PlayState } from "../runtime/physics";
-  import { Atom, BookOpen, Box, Boxes, Camera, ChevronDown, Circle, Code, Cone, Cylinder, FileCode, Flashlight, FolderPlus, Globe, Grid3X3, Lightbulb, Magnet, MousePointer2, Move, Pause, Play, Plus, Redo2, RotateCw, Scaling, SkipForward, Square, Sun, Undo2 } from "@lucide/svelte";
+  import { BookOpen, Box, Boxes, Camera, ChevronDown, Circle, Code, Cone, Cylinder, FileCode, Flashlight, FolderPlus, Globe, Grid3X3, Lightbulb, Magnet, MousePointer2, Move, Pause, Play, Plus, Redo2, RotateCw, Scaling, SkipForward, Square, Sun, Undo2 } from "@lucide/svelte";
 
   interface Props {
     sceneName: string;
@@ -168,9 +168,6 @@
           {#each primitives as item (item.shape)}
             <button role="menuitem" onclick={() => run(() => actions.addPrimitive(item.shape))}><item.icon size={14} /> {item.label}</button>
           {/each}
-          <div class="tb-sep"></div>
-          <button role="menuitem" title="A ball that falls and bounces during Play" onclick={() => run(() => actions.addPrimitive("sphere", true))}><Atom size={14} /> Physics ball</button>
-          <button role="menuitem" title="A box that falls and stacks during Play" onclick={() => run(() => actions.addPrimitive("box", true))}><Atom size={14} /> Physics box</button>
           <div class="tb-sep"></div>
           {#each lights as item (item.kind)}
             <button role="menuitem" onclick={() => run(() => actions.addLight(item.kind))}><item.icon size={14} /> {item.label}</button>

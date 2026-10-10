@@ -47,6 +47,14 @@ describe("collision system", () => {
     expect(y(scene, "ball")).toBeGreaterThan(0.3);
   });
 
+  it("lets one physics object pass through others when its Collision switch is off", async () => {
+    const scene = dropScene({ RigidBody: { bodyType: "static" } });
+    const result = applyOps(scene, [{ op: "update", id: "ball", components: { Collider: { enabled: false } } }]);
+    const { scene: after } = await run(result.scene, 2);
+    expect(y(after, "ball")).toBeLessThan(0.7);
+    expect(y(after, "ball")).toBeGreaterThan(0.3);
+  });
+
   it("lets a trigger detect a touch without blocking", async () => {
     const { scene } = await run(dropScene({ Collider: { trigger: true, reaction: "change color", reactionColor: "#00ff00" } }), 2);
     expect(y(scene, "ball")).toBeLessThan(0.7);

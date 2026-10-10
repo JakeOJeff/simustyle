@@ -441,15 +441,27 @@
     if (apply([{ op: "create", id, name: uniqueName(scene, label), parent: null, components }])) selectEntity(id);
   }
 
-  function createPrimitive(shape: "box" | "sphere" | "cylinder" | "cone" | "plane" | "capsule", physics = false) {
-    const label = (physics ? "Physics " : "") + shape[0].toUpperCase() + shape.slice(1);
-    // Physics objects start up in the air so they visibly fall when Play starts.
-    addEntity(shape, label, {
-      Transform: { position: spiralSpot(physics ? 3 : shape === "plane" ? 0.01 : 0.5), rotation: shape === "plane" ? [-90, 0, 0] : [0, 0, 0] },
+  function createPrimitive(shape: "box" | "sphere" | "cylinder" | "cone" | "plane" | "capsule") {
+    addEntity(shape, shape[0].toUpperCase() + shape.slice(1), {
+      Transform: { position: spiralSpot(shape === "plane" ? 0.01 : 0.5), rotation: shape === "plane" ? [-90, 0, 0] : [0, 0, 0] },
       Mesh: { shape },
-      Material: { color: physics ? "#ffb35c" : "#8b7cff" },
-      ...(physics ? { RigidBody: { restitution: 0.5 } } : {})
+      Material: { color: "#8b7cff" }
     });
+  }
+
+  /** Inspector Physics switch: adds or removes the RigidBody (and a Joint, which needs one) in one undoable step. */
+  function setPhysics(id: string, enabled: boolean) {
+    const entity = scene.entities.find((candidate) => candidate.id === id);
+    if (!entity || Boolean(entity.components.RigidBody) === enabled) return;
+    const components: Record<string, Record<string, unknown> | null> = enabled ? { RigidBody: {} } : { RigidBody: null, ...(entity.components.Joint ? { Joint: null } : {}) };
+    if (apply([{ op: "update", id, components }])) message = `Physics ${enabled ? "on" : "off"} for ${entity.name}`;
+  }
+
+  /** Inspector Collision switch: sets Collider.enabled, adding a Collider when needed. */
+  function setCollision(id: string, enabled: boolean) {
+    const entity = scene.entities.find((candidate) => candidate.id === id);
+    if (!entity) return;
+    if (apply([{ op: "update", id, components: { Collider: { enabled } } }])) message = `Collision ${enabled ? "on" : "off"} for ${entity.name}`;
   }
 
   // Default intensities are bright enough to see next to the editor's fill light.
@@ -1203,7 +1215,7 @@ when clicked
           {#if panelOpen.inspector}
             <section class="panel-window" class:floating-panel={panelLayouts.inspector.dock === "floating"} style={panelWindowStyle("inspector")} use:rememberPanelSize={"inspector"}>
               <header class="panel-window-title"><button class="panel-drag-handle" type="button" aria-label="Drag Inspector panel to move or snap" onpointerdown={(event) => startPanelDrag(event, "inspector")}><strong>Inspector</strong><span>Drag to move or snap</span></button><button class="panel-close" type="button" aria-label="Close Inspector" onclick={() => panelOpen.inspector = false}><X size={13} /></button></header>
-              <div class="panel-window-body sidebar-panel-body"><Inspector {scene} entity={selectedEntity} onUpdate={updateComponent} onRemove={(component) => selectedId && apply([{ op: "update", id: selectedId, components: { [component]: null } }])} onAdd={addComponent} onKeyframe={addKeyframe} onOpenScript={() => selectedId && openScript(selectedId)} onRename={(name) => selectedId && apply([{ op: "update", id: selectedId, components: {}, name }])} onReparent={(parent) => selectedId && reparentEntity(selectedId, parent)} onSettings={updateSettings} /></div>
+              <div class="panel-window-body sidebar-panel-body"><Inspector {scene} entity={selectedEntity} onUpdate={updateComponent} onRemove={(component) => selectedId && apply([{ op: "update", id: selectedId, components: { [component]: null } }])} onAdd={addComponent} onKeyframe={addKeyframe} onOpenScript={() => selectedId && openScript(selectedId)} onRename={(name) => selectedId && apply([{ op: "update", id: selectedId, components: {}, name }])} onReparent={(parent) => selectedId && reparentEntity(selectedId, parent)} onSettings={updateSettings} onPhysics={(enabled) => selectedId && setPhysics(selectedId, enabled)} onCollision={(enabled) => selectedId && setCollision(selectedId, enabled)} /></div>
               <PanelResizeHandles panelName="Inspector" dock={panelLayouts.inspector.dock} onResizeStart={(event, edge) => startPanelResize(event, "inspector", edge)} />
             </section>
           {/if}

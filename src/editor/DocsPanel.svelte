@@ -36,7 +36,7 @@
 
     <section id="docs-scene-editing">
       <h2>Create and edit objects</h2>
-      <p><b>Add</b> creates a Cube, Sphere, Cylinder, Capsule, Cone, Plane, Physics ball or box, Point/Sun/Spot light, Camera, Script object, or Empty group. Lights and cameras show a clickable wireframe marker; rotate a Sun or Spot light to aim it. New primitives are spaced around the origin. Click an object in the view or its row in Hierarchy to select it. Hold <kbd>Ctrl</kbd> and drag in the viewport to box-select intersecting objects; Ctrl-click or Shift-click Hierarchy rows to extend a selection.</p>
+      <p><b>Add</b> creates a Cube, Sphere, Cylinder, Capsule, Cone, Plane, Point/Sun/Spot light, Camera, Script object, or Empty group. Lights and cameras show a clickable wireframe marker; rotate a Sun or Spot light to aim it. New primitives are spaced around the origin. Click an object in the view or its row in Hierarchy to select it. Hold <kbd>Ctrl</kbd> and drag in the viewport to box-select intersecting objects; Ctrl-click or Shift-click Hierarchy rows to extend a selection.</p>
       <p>Choose Select, Move, Rotate, or Scale in the toolbar. Move, Rotate, and Scale show a gizmo in the viewport. The World/Local button changes the gizmo axes. The magnet toggles snapping (0.5 m movement, 15° rotation, 0.1 scale); the grid button toggles the floor grid. The viewport has no solid ground plane. Press <kbd>F</kbd> to frame the selection.</p>
       <p>Right-click an object for Cut, Copy, Paste, Duplicate, Rename, Delete, Group, and Ungroup actions. Right-click empty viewport or Hierarchy space to paste. Viewport paste uses the ground point under the pointer; Hierarchy paste creates a root object. Copying, duplicating, or deleting a group includes its descendants.</p>
     </section>
@@ -46,7 +46,7 @@
       <p>Drag a Hierarchy row onto another object to make it a child. Drop on the top or bottom edge to place it beside an object, or drop on blank space to move it to the root. The Inspector's <b>Inside</b> menu also changes the parent. Reparenting preserves world position. Groups are invisible but transform their children together.</p>
       <p>In Inspector, edit the selected object's name and transform, change component fields, collapse sections, or add components. Script controls and ranged script settings also appear here. Click a diamond beside an animatable field to key its value at the current Timeline time.</p>
       <p>With nothing selected, Inspector shows <b>Scene settings</b>: collisions, gravity, background, ambient light, and physics step. They apply the next time you press Play.</p>
-      <p><b>Collisions:</b> the stacked-boxes toolbar button turns collisions on or off. A <b>Collider</b> makes an object solid and touchable without Physics; <b>Trigger</b> detects touches without blocking; <b>Reaction</b> (flash, shake, change color, jump, disappear, destroy other) reacts without a script. Scripts can use <code>when I touch a ball</code>.</p>
+      <p><b>Collisions:</b> the stacked-boxes toolbar button turns collisions on or off. Each object has <b>Physics</b> and <b>Collision</b> switches at the top of Inspector. A <b>Collider</b> makes an object solid and touchable without Physics; <b>Trigger</b> detects touches without blocking; <b>Reaction</b> (flash, shake, change color, jump, disappear, destroy other) reacts without a script. Scripts can use <code>when I touch a ball</code>.</p>
     </section>
 
     <section id="docs-scripts">

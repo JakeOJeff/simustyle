@@ -26,7 +26,7 @@ The top bar contains scene file actions, edit and view menus, transform tools, A
 
 ### Add and select objects
 
-Choose **Add** in the top bar to create a Cube, Sphere, Cylinder, Capsule, Cone, Plane, Physics ball or box, Point/Sun/Spot light, Camera, Script object, or Empty group. Lights and cameras show a small clickable wireframe marker; rotate a Sun or Spot light to aim it. New primitives are spaced around the origin. Select an object by clicking it in the viewport or its row in Hierarchy. The selected object's properties appear in Inspector.
+Choose **Add** in the top bar to create a Cube, Sphere, Cylinder, Capsule, Cone, Plane, Point/Sun/Spot light, Camera, Script object, or Empty group. Lights and cameras show a small clickable wireframe marker; rotate a Sun or Spot light to aim it. New primitives are spaced around the origin. Select an object by clicking it in the viewport or its row in Hierarchy. The selected object's properties appear in Inspector.
 
 Hold **Ctrl** and drag in the viewport to draw a selection box. Every object whose visible bounds intersect the box is selected. Ctrl-click or Shift-click rows in Hierarchy to add or remove items from the current selection.
 
@@ -54,7 +54,7 @@ With nothing selected (or **View → Scene settings…**), Inspector shows **Sce
 
 ### Collisions
 
-During Play, objects with Physics (RigidBody) or a **Collider** bump into each other. The stacked-boxes button in the top bar turns collisions on or off for the whole scene; when off, objects pass through each other but still land on the floor, and touch events stop. A Collider makes an object solid and touchable without Physics. Turn off **Enabled** to let one object pass through others, or turn on **Trigger** to detect touches without blocking. Choose a **Reaction** (flash, shake, change color, jump, disappear, destroy other) to react without a script, or write `when I touch a ball` in a script.
+During Play, objects with Physics (RigidBody) or a **Collider** bump into each other. The stacked-boxes button in the top bar turns collisions on or off for the whole scene; when off, objects pass through each other but still land on the floor, and touch events stop. Each selected object has **Physics** and **Collision** switches at the top of Inspector: Physics makes it fall and bounce; Collision makes it solid and touchable (with or without Physics) and stores the choice in its Collider. Turn off **Enabled** to let one object pass through others, or turn on **Trigger** to detect touches without blocking. Choose a **Reaction** (flash, shake, change color, jump, disappear, destroy other) to react without a script, or write `when I touch a ball` in a script.
 
 ## Console
 
