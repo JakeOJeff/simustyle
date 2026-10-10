@@ -3,7 +3,8 @@
   import { parseScript } from "../lang/parser";
   import { typecheckScript, type ScriptDiagnostic } from "../lang/checker";
   import { findUnclearWords } from "../lang/fuzzy";
-  import { runScriptRewrite } from "../ai/scriptRewrite";
+  import { SHAPE_NOUNS } from "../lang/vocabulary";
+  import { runScriptRewrite, type RewriteStage } from "../ai/scriptRewrite";
   import type { ParseEntity } from "../ai/scriptParse";
 
   interface Props {
@@ -29,7 +30,7 @@
   let measure: HTMLSpanElement;
   let referenceOpen = $state(true);
 
-  // --- AI Parse: rewrite the complete script, then review before applying ---
+  // --- Parse: fix typos locally, then AI on broken lines, then the whole script; review before applying ---
   const lineHeight = 20;
   const padTop = 12;
   const padLeft = 14;
@@ -38,7 +39,19 @@
   let scrollLeft = $state(0);
   let parsing = $state(false);
   let parseMessage = $state("");
-  let rewriteDraft = $state<{ original: string; source: string; meaning: string } | null>(null);
+  let rewriteDraft = $state<{ original: string; source: string; meaning: string; stage: RewriteStage; aiCalls: number } | null>(null);
+  const stageLabels: Record<RewriteStage, string> = {
+    none: "",
+    local: "Fixed locally — no AI call",
+    lines: "AI fixed only the broken lines",
+    full: "AI rewrote the full script"
+  };
+  // Draft lines that are not in the original, so the review shows exactly what changed.
+  let changedDraftLines = $derived.by(() => {
+    if (!rewriteDraft) return new Set<number>();
+    const before = new Set(rewriteDraft.original.split("\n").map((line) => line.trimEnd()));
+    return new Set(rewriteDraft.source.split("\n").flatMap((line, index) => (before.has(line.trimEnd()) ? [] : [index])));
+  });
 
   $effect(() => {
     const read = () => { if (measure) charWidth = measure.getBoundingClientRect().width / 20 || charWidth; };
@@ -59,8 +72,8 @@
     try {
       const original = source;
       const result = await runScriptRewrite({ source: original, owner: ownerId ? entityById.get(ownerId) ?? null : null, entities });
-      if (result.source.trim() === original.trim()) parseMessage = "The AI found no syntax changes to make.";
-      else rewriteDraft = { original, source: result.source, meaning: result.meaning };
+      if (result.source.trim() === original.trim()) parseMessage = result.stage === "none" ? "Nothing to fix: the script is already valid." : "Parse found no changes to make.";
+      else rewriteDraft = { original, ...result };
     } catch (error) {
       parseMessage = `AI rewrite failed: ${error instanceof Error ? error.message : String(error)}`;
     } finally {
@@ -81,6 +94,72 @@
 
   function dismissRewrite() {
     rewriteDraft = null;
+  }
+
+  // --- Hover card: which scene object a word in the script refers to ---
+  interface HoverCard { left: number; top: number; title: string; items: ParseEntity[] }
+  let hoverCard = $state<HoverCard | null>(null);
+  let owningEntity = $derived(ownerId ? entityById.get(ownerId) ?? null : null);
+  const selfWords = new Set(["me", "my", "myself", "i", "self"]);
+
+  function childCount(entity: ParseEntity): number {
+    return entities.filter((other) => other.parent === entity.name).length;
+  }
+
+  function distanceFromOwner(entity: ParseEntity): string {
+    const from = owningEntity?.position;
+    const to = entity.position;
+    if (!from || !to || entity.id === owningEntity?.id) return "";
+    return `${Math.hypot(to[0] - from[0], to[1] - from[1], to[2] - from[2]).toFixed(1)} m from me`;
+  }
+
+  /** Scene objects a word refers to: names, quoted names, me/my, my children/parent, and shape nouns. */
+  function resolveWord(text: string, previous: string): { title: string; items: ParseEntity[] } | null {
+    const lower = text.toLowerCase();
+    if (/^["']/.test(text)) {
+      const name = text.replace(/^["']|["']$/g, "").toLowerCase();
+      const items = entities.filter((entity) => entity.name.toLowerCase() === name);
+      return items.length ? { title: "Scene object", items } : null;
+    }
+    if (selfWords.has(lower)) return owningEntity ? { title: `"${text}" = this script's object`, items: [owningEntity] } : { title: `"${text}" = the scene script (no object)`, items: [] };
+    if (previous === "my" && owningEntity && lower === "children") return { title: "my children", items: entities.filter((entity) => entity.parent === owningEntity.name) };
+    if (previous === "my" && owningEntity && lower === "parent") return { title: "my parent", items: entities.filter((entity) => entity.name === owningEntity.parent) };
+    const byName = entities.filter((entity) => entity.id.toLowerCase() === lower || entity.name.toLowerCase().split(/\s+/).includes(lower));
+    if (byName.length) return { title: byName.length === 1 ? "Scene object" : `${byName.length} objects match "${text}"`, items: byName };
+    const noun = SHAPE_NOUNS[lower] ? lower : lower.replace(/e?s$/, "");
+    const shape = SHAPE_NOUNS[noun];
+    if (shape) {
+      const kind = shape === "Light" ? "light" : shape;
+      return { title: `Any ${noun} (${kind}) in the scene`, items: entities.filter((entity) => entity.shape === kind) };
+    }
+    return null;
+  }
+
+  function hover(event: MouseEvent) {
+    const rect = textarea.getBoundingClientRect();
+    const x = event.clientX - rect.left + textarea.scrollLeft - padLeft;
+    const y = event.clientY - rect.top + textarea.scrollTop - padTop;
+    const index = Math.floor(y / lineHeight);
+    const column = Math.floor(x / charWidth);
+    const line = lines[index];
+    if (x < 0 || y < 0 || line === undefined || column >= line.length) { hoverCard = null; return; }
+    let start = 0;
+    let previous = "";
+    for (const span of highlightLine(line, entityNames)) {
+      const end = start + span.text.length;
+      if (column < end) {
+        const found = span.text.trim() && span.cls !== "comment" ? resolveWord(span.text, previous) : null;
+        hoverCard = found ? {
+          ...found,
+          left: Math.max(4, padLeft + start * charWidth - textarea.scrollLeft),
+          top: padTop + (index + 1) * lineHeight - textarea.scrollTop + 2
+        } : null;
+        return;
+      }
+      if (span.text.trim()) previous = span.text.toLowerCase();
+      start = end;
+    }
+    hoverCard = null;
   }
 
   const examples: { group: string; items: { code: string; hint: string }[] }[] = [
@@ -242,7 +321,7 @@
   <header class="script-toolbar">
     <span class="script-title"><b>{title}</b><small>{readOnly ? "read-only while playing" : dirty ? "● unsaved — Ctrl+S to apply" : "saved"}</small></span>
     <span class="status" class:bad={diagnostics.length > 0}>{diagnostics.length ? `${diagnostics.length} problem${diagnostics.length === 1 ? "" : "s"}` : "✓ no problems"}</span>
-    <button class="parse" disabled={readOnly || parsing || !source.trim()} onclick={parse} title="Ask AI to interpret and rewrite the complete script into valid syntax">
+    <button class="parse" disabled={readOnly || parsing || !source.trim()} onclick={parse} title="Fix the script: typos locally first, then AI on just the broken lines, then the whole script only if needed">
       {parsing ? "Parsing…" : "✦ Parse"}
     </button>
     <button class="apply" disabled={readOnly || !dirty} onclick={onCommit}>Apply</button>
@@ -272,9 +351,28 @@
           placeholder={"-- Write sentences, then press Play.\nwhen game starts\n  bounce\n\nwhen clicked\n  paint red"}
           oninput={(event) => onChange(event.currentTarget.value)}
           onkeydown={keydown}
-          onscroll={syncScroll}
+          onscroll={() => { syncScroll(); hoverCard = null; }}
+          onmousemove={hover}
+          onmouseleave={() => hoverCard = null}
           onblur={() => { if (dirty) onCommit(); }}
         ></textarea>
+        {#if hoverCard}
+          <div class="hover-card" role="tooltip" style="left:{hoverCard.left}px;top:{hoverCard.top}px">
+            <small>{hoverCard.title}</small>
+            {#each hoverCard.items.slice(0, 4) as item (item.id)}
+              <div class="hover-item">
+                <b>{#if item.color}<i class="swatch" style="background:{item.color}"></i>{/if}{item.name}</b>
+                <span class="kind">{item.shape ?? (childCount(item) ? "group" : "empty")}</span>
+                <span class="detail">
+                  {#if item.position}at {item.position.map((value) => Math.round(value * 10) / 10).join(", ")}{/if}{#if item.color} · {item.color}{/if}{#if item.parent} · inside {item.parent}{/if}{#if childCount(item)} · holds {childCount(item)} object{childCount(item) === 1 ? "" : "s"}{/if}{#if distanceFromOwner(item)} · {distanceFromOwner(item)}{/if}
+                </span>
+              </div>
+            {:else}
+              <span class="detail">No matching object in the scene yet.</span>
+            {/each}
+            {#if hoverCard.items.length > 4}<span class="detail">and {hoverCard.items.length - 4} more</span>{/if}
+          </div>
+        {/if}
         <span class="measure" bind:this={measure} aria-hidden="true">MMMMMMMMMMMMMMMMMMMM</span>
         <div class="fuzzy-clip"><div class="fuzzy-layer" style="transform:translate({-scrollLeft}px,{-scrollTop}px)">
           {#each pendingWords as word (`${word.line}:${word.column}`)}
@@ -312,10 +410,11 @@
   {#if rewriteDraft}
     <div class="rewrite-backdrop" role="presentation">
       <div class="rewrite-dialog" role="dialog" aria-modal="true" aria-labelledby="rewrite-title">
-        <header><strong id="rewrite-title">Review AI rewrite</strong><button class="ghost" onclick={dismissRewrite} aria-label="Close">×</button></header>
-        <p>{rewriteDraft.meaning || "The AI interpreted the complete script as follows."}</p>
+        <header><strong id="rewrite-title">Review Parse fixes</strong><button class="ghost" onclick={dismissRewrite} aria-label="Close">×</button></header>
+        <p>{rewriteDraft.meaning || "Parse interpreted the script as follows."}</p>
+        <p class="stage">{stageLabels[rewriteDraft.stage]}{rewriteDraft.aiCalls ? ` · ${rewriteDraft.aiCalls} AI call${rewriteDraft.aiCalls === 1 ? "" : "s"}` : ""} · changed lines are highlighted</p>
         <label for="rewrite-output">Rewritten script</label>
-        <pre id="rewrite-output">{rewriteDraft.source}</pre>
+        <pre id="rewrite-output">{#each rewriteDraft.source.split("\n") as line, index}<span class="draft-line" class:changed={changedDraftLines.has(index)}>{line || " "}</span>{/each}</pre>
         <footer>
           <button class="ghost" onclick={dismissRewrite}>Keep editing</button>
           <button class="apply" disabled={readOnly} onclick={applyRewrite}>Use rewrite</button>
@@ -367,6 +466,13 @@
   .fuzzy-clip{position:absolute;inset:0;overflow:hidden;pointer-events:none;z-index:2}
   .fuzzy-layer{position:absolute;inset:0;pointer-events:none}
   .fuzzy-box{position:absolute;box-sizing:border-box;border:1.5px dashed #ffd479aa;border-radius:4px;background:#ffd47910;padding:0}
+  .hover-card{position:absolute;z-index:5;display:grid;gap:6px;min-width:170px;max-width:290px;padding:8px 10px;border:1px solid #ffd47944;border-radius:6px;background:#1f1d24f2;box-shadow:0 8px 24px #0008;pointer-events:none;font-size:10.5px}
+  .hover-card small{color:#bfa865;font:9px 'DM Mono',monospace;letter-spacing:.04em}
+  .hover-item{display:grid;grid-template-columns:1fr auto;gap:2px 8px}.hover-item b{display:flex;align-items:center;gap:5px;color:#ffe2a3;font-weight:600}
+  .hover-item .kind{color:#7fd1ff;font:9px 'DM Mono',monospace;text-transform:uppercase}.hover-card .detail{grid-column:1/-1;color:#a7a4b3;font-size:10px}
+  .swatch{width:9px;height:9px;border-radius:2px;border:1px solid #ffffff33}
+  .rewrite-dialog .stage{color:#ffd479;font:10px 'DM Mono',monospace}
+  .draft-line{display:block}.draft-line.changed{background:#30a46c26;box-shadow:inset 2px 0 #30a46c}
   .parse-message{display:flex;justify-content:space-between;gap:8px;padding:5px 12px;border-top:1px solid #ffd47933;background:#221d14;color:#ffe2a3;font-size:10.5px}.parse-message button{border:0;background:none;color:inherit;cursor:pointer}
   .rewrite-backdrop{position:absolute;inset:0;z-index:20;display:grid;place-items:center;padding:20px;background:#090a0dcc}
   .rewrite-dialog{display:flex;flex-direction:column;gap:10px;width:min(680px,100%);max-height:min(80%,720px);padding:14px;border:1px solid #a99aff55;border-radius:8px;background:#1a1b22;box-shadow:0 16px 50px #0009}

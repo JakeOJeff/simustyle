@@ -17,6 +17,9 @@ const commands = new Set<string>([...COMMAND_WORDS, ...SENTENCE_WORDS, ...ANIMAT
 const phrases = new Set(["the", "to", "by", "over", "in", "for", "as", "like", "above", "below", "under", "underneath", "beneath", "beside", "next", "near", "behind", "front", "of", "top", "with", "times", "degrees", "s", "animating", "one", "at", "from", "called", "named", "than", "more", "less", "least", "most", "all", "every", "each", "children", "parent", "key", "distance", "random", "a", "an", ...Object.keys(DIRECTION_ALIASES), ...Object.keys(SUPERLATIVES)]);
 const builtins = new Set(["self", "me", "myself", "my", "i", "it", "everyone", "time", "dt", "random", "sin", "cos", "abs", "min", "max", "clamp", "lerp", "sqrt", "print", "spawn", "destroy", "find"]);
 
+/** Every word the highlighter colors as syntax; Parse autocorrect matches typos against these. */
+export const SYNTAX_WORDS: ReadonlySet<string> = new Set([...keywords, ...commands, ...phrases, ...builtins, ...Object.keys(COLOR_NAMES)]);
+
 /** Split one line into colored spans. `entityNames` holds lower-cased scene names and ids. */
 export function highlightLine(line: string, entityNames: Set<string> = new Set()): HighlightSpan[] {
   const spans: HighlightSpan[] = [];
