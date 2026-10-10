@@ -4,6 +4,13 @@ Record meaningful project changes during the event, newest first.
 
 ## Event build log
 
+### 2026-10-11T03:34:00+05:30 — Add a complete user guide
+
+- Changed: Added `docs/USER_GUIDE.md` covering editor layout, object editing, hierarchy, Inspector, Console, scripts, AI, animation, simulation, exports, shortcuts, and troubleshooting. Linked it from the README.
+- Why: Put the editor's instructions in one dedicated page that is easy to find.
+- Validation: Checked Markdown links and whitespace; no application code changed.
+- Limitations: Instructions describe the current editor UI and may need updates as features change.
+
 ### 2026-10-11T03:00:00+05:30 — AI Parse for loosely written scripts
 
 - Changed: The script editor draws a dashed box around words the language does not know (synonyms, misspelled names, descriptions like "the object near this") and around broken lines. A new **✦ Parse** button sends the script, the unclear words, and a summary of scene objects to the AI, which returns ranked replacements per phrase. Each box then shows its best guess, selects the object it refers to, and opens a confirm card; clicking a box lists the other options. **Confirm all** applies every chosen option. Options are kept only if their words are known and the line passes the parser and checker; if none survive, the model is retried once with the rejections. Added a shared `requestJson` helper to the AI client. Files: `src/lang/fuzzy.ts` (new), `src/ai/scriptParse.ts` (new), `src/ai/client.ts`, `src/editor/ScriptEditor.svelte`, `src/App.svelte`, `tests/lang/fuzzy.test.ts`, `tests/ai/scriptParse.test.ts`, `README.md`.

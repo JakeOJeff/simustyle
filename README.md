@@ -2,6 +2,8 @@
 
 SimuStyle is an AI-native 3D scene, simulation, and animation editor. The implementation follows [`app-build-prompt.md`](app-build-prompt.md). It includes a three.js viewport, editable scene tree, schema-driven inspector, Rapier simulation, typed scripting, an AI prompt/retry/apply flow, an animation timeline, GLB/standalone HTML/WebM export, and a Tauri desktop shell.
 
+For step-by-step editor instructions, see the [SimuStyle User Guide](docs/USER_GUIDE.md).
+
 ## Requirements
 
 - Node.js 20.19 or newer
