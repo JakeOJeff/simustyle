@@ -326,5 +326,8 @@ export class SimulationController {
   }
 
   takeScriptMessages(): string[] { return this.scriptMessages.splice(0); }
+  setScriptParameter(entityId: string, name: string, value: unknown): boolean {
+    return this.scripts?.setParameter(entityId, name, value) ?? false;
+  }
   get initialScene(): Scene | null { return this.startedScene ? structuredClone(this.startedScene) : null; }
 }

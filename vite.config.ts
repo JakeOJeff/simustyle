@@ -1,6 +1,8 @@
 import { svelte } from "@sveltejs/vite-plugin-svelte";
 import { defineConfig } from "vitest/config";
 import { loadEnv } from "vite";
+import { build as esbuild } from "esbuild";
+import { resolve } from "node:path";
 
 const maxRequestBytes = 1024 * 1024;
 
@@ -8,7 +10,7 @@ export default defineConfig(({ mode }) => {
   // Do not use Vite's VITE_ prefix: these values must stay on the server.
   const env = loadEnv(mode, ".", "");
   return {
-    plugins: [svelte(), aiProxy(env)],
+    plugins: [svelte(), standaloneRuntime(), aiProxy(env)],
     test: {
       environment: "node",
       include: ["tests/**/*.test.ts"]
@@ -126,6 +128,31 @@ function aiProxy(env: Record<string, string>) {
           send(502, { error: message });
         }
       });
+    }
+  };
+}
+
+function standaloneRuntime() {
+  const publicId = "virtual:simustyle-standalone-runtime";
+  const resolvedId = `\0${publicId}`;
+  return {
+    name: "simustyle-standalone-runtime",
+    resolveId(id: string) { return id === publicId ? resolvedId : null; },
+    async load(id: string) {
+      if (id !== resolvedId) return null;
+      const result = await esbuild({
+        entryPoints: [resolve(process.cwd(), "src/export/standalone-runtime.ts")],
+        bundle: true,
+        write: false,
+        format: "esm",
+        platform: "browser",
+        target: "es2022",
+        minify: true,
+        legalComments: "none"
+      });
+      const bundle = result.outputFiles[0]?.text;
+      if (!bundle) throw new Error("Could not bundle the standalone scene runtime.");
+      return `export default ${JSON.stringify(bundle)};`;
     }
   };
 }

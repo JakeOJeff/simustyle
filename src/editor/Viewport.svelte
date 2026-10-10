@@ -22,9 +22,11 @@
     onTransform: (id: string, transform: TransformPatch, phase: TransformPhase) => void;
     onModeChange: (mode: TransformMode) => void;
     frameToken: number;
+    focusToken: number;
+    gridVisible: boolean;
   }
 
-  let { scene, selectedId, mode, onSelect, onTransform, onModeChange, frameToken }: Props = $props();
+  let { scene, selectedId, mode, onSelect, onTransform, onModeChange, frameToken, focusToken, gridVisible }: Props = $props();
   let host: HTMLDivElement;
 
   function component(entity: Entity, name: string): Record<string, unknown> {
@@ -242,7 +244,13 @@
         gizmo.setMode(mode);
       });
       $effect(() => {
+        grid.visible = gridVisible;
+      });
+      $effect(() => {
         if (frameToken > 0) focusSelected();
+      });
+      $effect(() => {
+        if (focusToken > 0) focusSelected();
       });
       return () => {};
     });

@@ -187,6 +187,19 @@ export class ScriptRuntime {
   get scene(): Scene { return this.currentScene; }
   /** Rebase script reads on the latest physics/animation scene while preserving local script state. */
   setScene(scene: Scene): void { this.currentScene = scene; }
+  setParameter(entityId: string, name: string, value: unknown): boolean {
+    const instance = this.instances.get(entityId);
+    const parameter = instance?.program.params.find((candidate) => candidate.name === name);
+    if (!instance || !parameter) return false;
+    if (parameter.type === "float" || parameter.type === "int") {
+      if (typeof value !== "number" || !Number.isFinite(value)) return false;
+      const bounded = Math.max(parameter.min ?? -Infinity, Math.min(parameter.max ?? Infinity, value));
+      instance.state[name] = parameter.type === "int" ? Math.round(bounded) : bounded;
+    } else if (parameter.type === "bool" && typeof value === "boolean") instance.state[name] = value;
+    else if (parameter.type === "string" && typeof value === "string") instance.state[name] = value;
+    else return false;
+    return true;
+  }
   takeIssues(): ScriptIssue[] { return this.issues.splice(0); }
   takePrints(): ScriptPrint[] { return this.prints.splice(0); }
 }

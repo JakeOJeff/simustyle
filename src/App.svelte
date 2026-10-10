@@ -8,9 +8,12 @@
   import { AI_RESPONSE_JSON_SCHEMA, buildSystemPrompt } from "./ai/prompt";
   import { runSceneAgent } from "./ai/agent";
   import Timeline from "./editor/Timeline.svelte";
+  import ExportMenu from "./editor/ExportMenu.svelte";
+  import type { VideoExportConfig, VideoExportProgress } from "./export/video";
   import type { AnimationTrack, AnimationValue } from "./runtime/animator";
   import { AnimatorRuntime } from "./runtime/animator";
   import { componentSchemas } from "./registry";
+  import { Box, Circle, Cone, Cylinder, Focus, FolderOpen, Grid3X3, Move3D, Pause, Play, Plus, Redo2, Rotate3D, Save, Scaling, Square, Undo2 } from "@lucide/svelte";
   import { applyOps } from "./scene/applyOps";
   import { deserializeScene, serializeScene } from "./scene/serialize";
   import { createEmptyScene, type Scene, type SceneOp } from "./scene/types";
@@ -22,6 +25,9 @@
   let scene: Scene = $state(createEmptyScene());
   let selectedId: string | null = $state(null);
   let mode: ToolMode = $state("translate");
+  let gridVisible = $state(true);
+  let focusToken = $state(0);
+  let primitiveMenuOpen = $state(false);
   let undoStack: SceneOp[][] = $state([]);
   let redoStack: SceneOp[][] = $state([]);
   let message = $state("Ready");
@@ -141,13 +147,17 @@
     return true;
   }
 
-  function createBox() {
-    let index = scene.entities.length + 1;
-    while (scene.entities.some((entity) => entity.id === `box_${index}`)) index += 1;
-    const id = `box_${index}`;
-    if (apply([{ op: "create", id, name: `Box ${index}`, parent: null, components: {
-      Transform: { position: [0, 0.5, 0] }, Mesh: { shape: "box" }, Material: { color: "#8b7cff" }
+  function createBox() { createPrimitive("box"); }
+
+  function createPrimitive(shape: "box" | "sphere" | "cylinder" | "cone" | "plane" | "capsule") {
+    const label = shape[0].toUpperCase() + shape.slice(1);
+    let index = scene.entities.filter((entity) => entity.components.Mesh?.shape === shape).length + 1;
+    while (scene.entities.some((entity) => entity.id === `${shape}_${index}`)) index += 1;
+    const id = `${shape}_${index}`;
+    if (apply([{ op: "create", id, name: `${label} ${index}`, parent: null, components: {
+      Transform: { position: [0, shape === "plane" ? 0.01 : 0.5, 0] }, Mesh: { shape }, Material: { color: "#8b7cff" }
     } }])) selectedId = id;
+    primitiveMenuOpen = false;
   }
 
   function descendantsInDeleteOrder(id: string): string[] {
@@ -326,6 +336,23 @@
     }
   }
 
+  async function exportVideo(config: VideoExportConfig, signal: AbortSignal, onProgress: (value: VideoExportProgress) => void): Promise<Blob> {
+    const wasStopped = playState === "stopped";
+    const wasPaused = playState === "paused";
+    if (wasStopped) await startSimulation();
+    else if (wasPaused) resumeSimulation();
+    if (playState !== "playing") throw new Error("Start Play before exporting video; the simulation could not start.");
+    const canvas = document.querySelector<HTMLCanvasElement>(".viewport canvas");
+    if (!canvas) throw new Error("The 3D viewport canvas is unavailable.");
+    try {
+      const { exportCanvasVideo } = await import("./export/video");
+      return await exportCanvasVideo(canvas, config, { signal, onProgress });
+    } finally {
+      if (wasStopped) stopSimulation();
+      else if (wasPaused) pauseSimulation();
+    }
+  }
+
   function pauseSimulation() {
     simulation?.pause();
     if (!simulation) return;
@@ -366,26 +393,41 @@
   <header class="toolbar">
     <div class="brand"><span class="brand-mark">S</span><span>SimuStyle</span></div>
     <div class="toolbar-group file-actions">
-      <button onclick={newScene}>New</button>
-      <button onclick={() => openInput.click()}>Open</button>
-      <button onclick={saveScene}>Save</button>
+      <button title="New scene" aria-label="New scene" onclick={newScene}><Plus size={14} /> <span>New</span></button>
+      <button title="Open scene" aria-label="Open scene" onclick={() => openInput.click()}><FolderOpen size={14} /> <span>Open</span></button>
+      <button title="Save scene" aria-label="Save scene" onclick={saveScene}><Save size={14} /> <span>Save</span></button>
       <input bind:this={openInput} class="file-input" type="file" accept=".json,.scene.json,application/json" onchange={loadScene} />
     </div>
     <div class="toolbar-group history-actions">
-      <button title="Undo" disabled={undoStack.length === 0 || playState !== "stopped"} onclick={undo}>↶ <span>Undo</span></button>
-      <button title="Redo" disabled={redoStack.length === 0 || playState !== "stopped"} onclick={redo}>↷ <span>Redo</span></button>
+      <button title="Undo" disabled={undoStack.length === 0 || playState !== "stopped"} onclick={undo}><Undo2 size={15} /> <span>Undo</span></button>
+      <button title="Redo" disabled={redoStack.length === 0 || playState !== "stopped"} onclick={redo}><Redo2 size={15} /> <span>Redo</span></button>
     </div>
+    <ExportMenu scene={viewportScene} onVideoExport={exportVideo} />
     <div class="toolbar-spacer"></div>
-    <div class="toolbar-group tools" aria-label="Transform tool">
-      <button class:active={mode === "translate"} title="Move (W)" onclick={() => mode = "translate"}>↔</button>
-      <button class:active={mode === "rotate"} title="Rotate (E)" onclick={() => mode = "rotate"}>⟳</button>
-      <button class:active={mode === "scale"} title="Scale (R)" onclick={() => mode = "scale"}>⤢</button>
+    <div class="primitive-picker">
+      <button class="add-primitive" aria-expanded={primitiveMenuOpen} onclick={() => primitiveMenuOpen = !primitiveMenuOpen}><Plus size={14} /> Add</button>
+      {#if primitiveMenuOpen}
+        <div class="primitive-menu" role="menu" aria-label="Add mesh primitive">
+          <button role="menuitem" onclick={() => createPrimitive("box")}><Box size={15} /> Cube</button>
+          <button role="menuitem" onclick={() => createPrimitive("sphere")}><Circle size={15} /> Sphere</button>
+          <button role="menuitem" onclick={() => createPrimitive("cylinder")}><Cylinder size={15} /> Cylinder</button>
+          <button role="menuitem" onclick={() => createPrimitive("cone")}><Cone size={15} /> Cone</button>
+          <button role="menuitem" onclick={() => createPrimitive("plane")}><Square size={15} /> Plane</button>
+        </div>
+      {/if}
     </div>
+    <div class="toolbar-group tools" aria-label="Transform tool">
+      <button class:active={mode === "translate"} aria-label="Move tool" title="Move (W)" onclick={() => mode = "translate"}><Move3D size={16} /></button>
+      <button class:active={mode === "rotate"} aria-label="Rotate tool" title="Rotate (E)" onclick={() => mode = "rotate"}><Rotate3D size={16} /></button>
+      <button class:active={mode === "scale"} aria-label="Scale tool" title="Scale (R)" onclick={() => mode = "scale"}><Scaling size={16} /></button>
+    </div>
+    <button class:active={gridVisible} class="view-toggle" title="Toggle floor grid" aria-label="Toggle floor grid" onclick={() => gridVisible = !gridVisible}><Grid3X3 size={15} /></button>
+    <button class="view-toggle" title="Frame selected (F)" aria-label="Frame selected" disabled={!selectedId} onclick={() => focusToken += 1}><Focus size={15} /></button>
     {#if playState === "stopped"}
-      <button class="play-button" disabled={playStarting} onclick={startSimulation}>▶ <span>{playStarting ? "Starting…" : "Play"}</span></button>
+      <button class="play-button" disabled={playStarting} onclick={startSimulation}><Play size={14} fill="currentColor" /> <span>{playStarting ? "Starting…" : "Play"}</span></button>
     {:else}
       <div class="simulation-controls">
-        <button class="play-button" onclick={playState === "playing" ? pauseSimulation : resumeSimulation}>{playState === "playing" ? "Ⅱ Pause" : "▶ Resume"}</button>
+        <button class="play-button" onclick={playState === "playing" ? pauseSimulation : resumeSimulation}>{#if playState === "playing"}<Pause size={14} fill="currentColor" /> Pause{:else}<Play size={14} fill="currentColor" /> Resume{/if}</button>
         <button class="stop-button" onclick={stopSimulation}>■ Stop</button>
       </div>
     {/if}
@@ -394,7 +436,7 @@
   <div class="editor-body">
     <Hierarchy scene={scene} {selectedId} onSelect={(id) => selectedId = id} onCreate={createBox} onDelete={deleteEntity} onReparent={reparentEntity} />
     <section class="viewport-column">
-      <Viewport scene={viewportScene} {selectedId} {mode} {frameToken} onSelect={(id) => selectedId = id} onTransform={updateTransform} onModeChange={(nextMode) => mode = nextMode} />
+      <Viewport scene={viewportScene} {selectedId} {mode} {frameToken} {focusToken} {gridVisible} onSelect={(id) => selectedId = id} onTransform={updateTransform} onModeChange={(nextMode) => mode = nextMode} />
       <div class="bottom-panel" class:ai-expanded={bottomTab === "ai"} class:timeline-expanded={bottomTab === "timeline"}>
         <div class="bottom-tabs">
           <button class:selected={bottomTab === "console"} onclick={() => bottomTab = "console"}>Console</button>
