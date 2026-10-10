@@ -74,7 +74,7 @@ when I receive "win"
 
 | Kind | Sentences |
 | --- | --- |
-| Events | `when game starts` · `forever` · `every 2 seconds` · `when clicked` · `when space is pressed` (also `when I press left`, `when the a key is pressed`) · `when I touch [something]` · `when I receive "message"` |
+| Events | `when game starts` · `forever` · `every 2 seconds` · `when clicked` · `when space is pressed` (also `when I press left`, `when the a key is pressed`) · `when I touch [something]` · `when I receive "message"` · `when a box is added` (during Play) |
 | Move | `move up 2`, `move to 0 2 0`, `move box1 at 1 2 3`, `move by 1 0 0`, `move above the box` (below, beside, left of, right of, in front of, behind), `go to 3 1 0`, add `over 1 second` to glide |
 | Turn and size | `turn left`, `turn right 45`, `turn around`, `rotate box1 by 0 90 0`, `rotate box1 to 0 45 0`, `scale by 2`, `grow by 2`, `shrink by 2`, `scale to 0.5` |
 | Look | `paint red`, `paint the cube #33aaff`, `hide`, `show`, `spin`, `bounce`, `float`, `pulse`, `shake`, `wobble`, `sway`, `orbit`, `flash`, `tumble` (add `slowly`, `fast`, `gently`, `wildly`), `animate the box like a bouncing ball`, `stop` |

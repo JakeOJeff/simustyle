@@ -4,6 +4,13 @@ Record meaningful project changes during the event, newest first.
 
 ## Event build log
 
+### 2026-10-11T04:34:00+05:30 — Preserve object-added script triggers
+
+- Changed: Added the `when [object] is added` event for objects created by scripts during Play. Tightened Parse instructions so event/condition intent cannot be replaced with an unrelated trigger, reduced scene context fields, and removed the automatic second model call after invalid output. Added the event to the script help and reference. Files: `src/lang/ast.ts`, `src/lang/parser.ts`, `src/lang/codegen.ts`, `src/runtime/scripts.ts`, `src/ai/prompt.ts`, `src/ai/scriptRewrite.ts`, `src/editor/Inspector.svelte`, `src/editor/ScriptEditor.svelte`, `README.md`, and `AI_USAGE.md`.
+- Why: Prevent the incorrect conversion of an object-added trigger into a game-start trigger and reduce Parse latency by avoiding a retry round trip.
+- Validation: `npm run typecheck`, `npx svelte-check --tsconfig ./tsconfig.json` (0 errors/0 warnings), `npm run build`, and `git diff --check` passed. Tests were not run. The build retains its large-chunk warning.
+- Limitations: The creation event fires for objects created by running scripts during Play. AI response time still depends on the configured provider/model.
+
 ### 2026-10-11T04:29:00+05:30 — Select the newest scene object from Console
 
 - Changed: Tab in the Console command input now selects the last entity in scene order (new entities are appended there), and prevents focus from tabbing away. Documented the shortcut in README, user guide, and in-app Docs. Files: `src/App.svelte`, `README.md`, `docs/USER_GUIDE.md`, `src/editor/DocsPanel.svelte`, and `AI_USAGE.md`.

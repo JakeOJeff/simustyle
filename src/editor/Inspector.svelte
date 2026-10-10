@@ -57,6 +57,7 @@
       case "key": return `when ${handler.key} is pressed`;
       case "collide": return "when touched";
       case "message": return `when I receive "${handler.message}"`;
+      case "created": return handler.filter ? "when object is added" : "when anything is added";
     }
   }
   let openComponents = $state<Record<string, boolean>>({});

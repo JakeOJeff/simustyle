@@ -155,6 +155,15 @@ class Parser {
     const has = (...candidates: string[]) => lower.findIndex((word) => candidates.includes(word));
     const finish = <T,>(value: T): T => { this.index = end; return value; };
 
+    const created = has("added", "created", "spawned", "appears", "appeared");
+    if (created >= 0) {
+      this.index = first;
+      const targetWords = lower.slice(0, created);
+      const anyObject = targetWords.some((word) => ["anything", "something", "object", "entity", "thing"].includes(word));
+      const filter = targetWords.length && !anyObject ? this.parseTarget() : undefined;
+      this.index = first + created + 1;
+      return { event: "created", ...(filter ? { filter } : {}) };
+    }
     if (has("clicked", "tapped", "click", "tap") >= 0) return finish({ event: "click" });
     const message = words.find((token) => token.kind === "string");
     if (message && has("receive", "receives", "hear", "hears", "get", "gets") >= 0) return finish({ event: "message", message: message.value });
@@ -174,7 +183,7 @@ class Parser {
       return { event: "collide", parameter: "it", ...(filter ? { filter } : {}) };
     }
     if (has("starts", "start", "started", "begins", "begin", "runs", "loads", "plays") >= 0) return finish({ event: "start" });
-    this.failAt(words[0] ?? when, "I don't know that event. Try: when game starts · when clicked · when space is pressed · when I touch the floor · when I receive \"go\"");
+    this.failAt(words[0] ?? when, "I don't know that event. Try: when game starts · when a box is added · when clicked · when space is pressed · when I touch the floor · when I receive \"go\"");
   }
 
   /** "press space", "press the left key", "space is pressed", "the a key is pressed", "key up is pressed". */

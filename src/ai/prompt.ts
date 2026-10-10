@@ -7,7 +7,7 @@ import type { Scene } from "../scene/types";
 export const SCRIPT_AGENT_SPEC = `Scripts are plain sentences, one per line, grouped under event lines. Indent the lines that belong to an event. Colons are optional. Put source in a Script component's source field. A script belongs to the object it is on: "me"/"I"/"my" mean that object; "it" means the object just touched (or clicked).
 
 Event lines (not indented):
-- when game starts · forever (every frame) · every <n> seconds · when clicked · when <key> is pressed (keys: space, enter, left, right, up, down, a-z, 0-9) · when I touch [<obj>] · when I receive "<message>"
+- when game starts · forever (every frame) · every <n> seconds · when clicked · when <key> is pressed (keys: space, enter, left, right, up, down, a-z, 0-9) · when I touch [<obj>] · when I receive "<message>" · when [<obj>] is added (when an object is created during Play)
 
 Statements (prefer these; most commands default to "me" when the object is left out):
 - move [<obj>] up|down|left|right|forward|back <n> | to <x> <y> <z> | by <dx> <dy> <dz> | above|below|beside|left of|right of|in front of|behind <obj>; add "over <n> seconds" to glide; go ... = move me

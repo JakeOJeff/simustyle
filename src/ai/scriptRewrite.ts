@@ -37,14 +37,16 @@ export function buildScriptRewriteMessages(request: ScriptRewriteRequest): ChatM
 ${SCRIPT_AGENT_SPEC}
 
 ## Rules
-- Return JSON with exactly two string fields: source (the complete rewritten script) and meaning (a short explanation of the interpretation).
+- Return JSON with exactly two string fields: source (the complete rewritten script) and meaning (one short sentence explaining the interpretation).
 - Do not return a patch or partial script. Keep valid lines and settings, and change only what is needed to express the user's intent in this language.
 - Resolve words such as "this" and "me" using the script owner. Resolve object descriptions using the supplied scene. Use exact scene object names; quote names containing spaces.
-- Convert casual synonyms, typos, and conversational wording to supported syntax when the intent is clear. Preserve the requested action, target, values, event, and order.
-- Never invent objects, variables, values, or behaviors. If an essential detail is genuinely unclear, keep the closest safe interpretation and state the uncertainty in meaning.
+- Convert casual wording to supported syntax when the intent is clear. Preserve each requested action, target, value, event, and order.
+- Never replace a trigger or condition with a different one to make the script compile. In particular, an object-added trigger must remain an object-added trigger; use the supported "when [object] is added" event.
+- Never invent objects, variables, values, or behaviors. If an essential detail is unclear or unsupported, say so in meaning instead of substituting unrelated behavior.
 - The complete result must parse and type-check. Do not add markdown fences.`;
+  const sceneObjects = request.entities.map(({ id, name, shape, color, position }) => ({ id, name, shape, color, position }));
   const user = `Script owner (me): ${request.owner ? JSON.stringify(request.owner) : "none (scene script)"}
-Scene objects: ${JSON.stringify(request.entities)}
+Scene objects: ${JSON.stringify(sceneObjects)}
 
 Rewrite this complete script:
 <script>
@@ -80,22 +82,14 @@ function parseReply(value: unknown): ScriptRewriteResult {
   return { source: record.source, meaning: record.meaning };
 }
 
-/** Rewrite the whole script, retrying once when the first answer fails real compiler validation. */
+/** Rewrite the whole script once; compiler validation prevents invalid output from being applied. */
 export async function runScriptRewrite(
   request: ScriptRewriteRequest,
   complete: (messages: ChatMessage[]) => Promise<unknown> = (messages) => requestJson(messages, SCRIPT_REWRITE_SCHEMA)
 ): Promise<ScriptRewriteResult> {
   const messages = buildScriptRewriteMessages(request);
-  let result = parseReply(await complete(messages));
-  let problems = validateScript(result.source, request.entities);
-  if (problems.length) {
-    const retry: ChatMessage[] = [
-      ...messages,
-      { role: "user", content: `Your previous proposed JSON was ${JSON.stringify(result)}. It failed compiler validation. Return a complete corrected JSON response. Fix these problems without changing the intended behavior: ${JSON.stringify(problems.slice(0, 20))}` }
-    ];
-    result = parseReply(await complete(retry));
-    problems = validateScript(result.source, request.entities);
-  }
+  const result = parseReply(await complete(messages));
+  const problems = validateScript(result.source, request.entities);
   if (problems.length) throw new Error(`The AI rewrite still has script errors: ${problems[0]}`);
   return result;
 }

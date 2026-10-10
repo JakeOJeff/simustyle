@@ -87,6 +87,7 @@
     { group: "1 · When", items: [
       { code: "when game starts\n  say \"hello\"", hint: "once, when Play starts" },
       { code: "when clicked\n  spin fast", hint: "when this object (or one inside it) is clicked" },
+      { code: "when a box is added\n  create a ball", hint: "when a Play-time script creates a box" },
       { code: "when space is pressed\n  move up 2 over 0.3 seconds", hint: "or: when I press left · when the a key is pressed" },
       { code: "when I touch the floor\n  paint it red", hint: "it = the object touched; leave the object out for anything" },
       { code: "every 2 seconds\n  turn left", hint: "repeats on a timer" },

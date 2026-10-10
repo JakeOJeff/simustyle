@@ -19,11 +19,11 @@ export interface ScriptProgram {
 }
 
 /**
- * "when game starts", "forever", "every 2 seconds", "when I touch the floor",
+ * "when game starts", "when a box is added", "forever", "every 2 seconds", "when I touch the floor",
  * "when clicked", "when space is pressed", "when I receive "win"".
  */
 export interface ScriptHandler {
-  event: "start" | "frame" | "collide" | "interval" | "click" | "key" | "message";
+  event: "start" | "frame" | "collide" | "interval" | "click" | "key" | "message" | "created";
   /** Name the touched object is stored under (always set for collide; "it" by default). */
   parameter?: string;
   intervalSeconds?: number;
@@ -31,7 +31,7 @@ export interface ScriptHandler {
   key?: string;
   /** message: the broadcast text this handler listens for. */
   message?: string;
-  /** collide: only run when the other object matches this target. */
+  /** collide/created: only run when the other object matches this target. */
   filter?: ScriptTarget;
   body: ScriptStatement[];
   line: number;

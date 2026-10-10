@@ -146,8 +146,8 @@ export interface GeneratedScript {
 
 function handlerCode(handler: ScriptHandler): GeneratedHandler {
   let prefix = "";
-  if (handler.event === "collide") {
-    // Expose the touched object under the handler's own name, and skip objects the header filtered out.
+  if (handler.event === "collide" || handler.event === "created") {
+    // Skip objects that do not match the event header's optional target filter.
     if (handler.parameter) prefix += `  state[${quote(handler.parameter)}] = ctx.other;\n`;
     if (handler.filter) prefix += `  if (!ctx.matches(ctx.other, ${targetCode(handler.filter)})) return;\n`;
   }

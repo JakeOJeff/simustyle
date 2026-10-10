@@ -93,7 +93,7 @@ export class ScriptRuntime {
   private lastDt = 0;
   private loopBudget = 0;
   private readonly keysHeld = new Set<string>();
-  private readonly pendingEvents: ({ kind: "key"; key: string } | { kind: "click"; id: string })[] = [];
+  private readonly pendingEvents: ({ kind: "key"; key: string } | { kind: "click" | "created"; id: string })[] = [];
   private messages: string[] = [];
   private physicsActions: ((id: string, method: string, args: number[]) => boolean) | undefined;
   private readonly motion = new MotionController();
@@ -194,9 +194,7 @@ export class ScriptRuntime {
             const [prefabId, x, y, z] = args;
             const id = `${String(prefabId)}_${Math.floor(this.random(1, 1e9))}`;
             const spawned = { op: "create" as const, id, name: String(prefabId), parent: null, components: { Transform: { position: [Number(x), Number(y), Number(z)] }, Mesh: { shape: "box" }, Material: { color: "#ffffff" } } };
-            const result = applyOps(this.currentScene, [spawned]);
-            if (result.errors.length) this.issues.push({ entityId: instance.id, line: 1, column: 1, message: result.errors.join("; ") });
-            else this.currentScene = result.scene;
+            this.applyChanges([spawned], instance.id, 1);
             return { id, name: String(prefabId) };
           }
           default: return undefined;
@@ -298,6 +296,9 @@ export class ScriptRuntime {
     const result = applyOps(this.currentScene, ops);
     if (result.errors.length) { this.report(entityId, line, result.errors.join("; ")); return; }
     this.currentScene = result.scene;
+    for (const op of ops) {
+      if (op.op === "create" && this.currentScene.entities.some((entity) => entity.id === op.id)) this.pendingEvents.push({ kind: "created", id: op.id });
+    }
     // Physics owns dynamic bodies, so teleport them in Rapier as well or the next step would undo the move.
     for (const op of ops) {
       if (op.op !== "update" || !op.components.Transform) continue;
@@ -503,7 +504,7 @@ export class ScriptRuntime {
     for (const event of this.pendingEvents.splice(0)) {
       if (event.kind === "key") {
         for (const [instance, handler] of this.handlersFor("key")) if (handler.key === event.key) this.invoke(instance, handler.run, undefined, handler);
-      } else {
+      } else if (event.kind === "click") {
         // A click on a child also counts as a click on its parent groups.
         const clicked = this.currentScene.entities.find((entity) => entity.id === event.id);
         let current = clicked;
@@ -513,6 +514,11 @@ export class ScriptRuntime {
           const instance = this.instances.get(current.id);
           for (const handler of instance?.handlers ?? []) if (handler.event === "click") this.invoke(instance!, handler.run, handle(clicked), handler);
           current = this.currentScene.entities.find((entity) => entity.id === current!.parent);
+        }
+      } else {
+        const created = this.currentScene.entities.find((entity) => entity.id === event.id);
+        if (created) {
+          for (const [instance, handler] of this.handlersFor("created")) this.invoke(instance, handler.run, handle(created), handler);
         }
       }
     }
