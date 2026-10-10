@@ -4,6 +4,20 @@ Record meaningful project changes during the event, newest first.
 
 ## Event build log
 
+### 2026-10-11T02:11:00+05:30 — Add visible panel resize edges and square styling
+
+- Changed: Added resize handles to every floating panel edge and corner, plus center-facing handles for docked panels. Removed panel window corner rounding and shadows, and kept toolbar menus above panels. Added `src/editor/PanelResizeHandles.svelte`; updated `src/App.svelte` and `README.md`.
+- Why: Make resizing discoverable and keep overlapping controls accessible.
+- Validation: `npm run check` passed TypeScript, Svelte diagnostics (0 errors/0 warnings), all 85 tests, and the production build. The existing large-chunk warning remains.
+- Limitations: Resize handles have not been manually exercised in the browser.
+
+### 2026-10-11T02:08:00+05:30 — Fill the dock corners without overlap
+
+- Changed: Side-docked panels now fill their full edge; top and bottom panels fit between the side docks. This removes the unused lower corner gaps while keeping the dock windows separate. Updated `src/App.svelte`.
+- Why: The prior dock sizing left blank areas under the side panels beside Timeline.
+- Validation: `npm run check` passed TypeScript, Svelte diagnostics (0 errors/0 warnings), all 85 tests, and the production build.
+- Limitations: Floating panels remain independent and may overlap the workspace.
+
 ### 2026-10-11T02:02:00+05:30 — Fit Scene and Script between docked windows
 
 - Changed: Made the Scene viewport and Script editor use the same remaining center bounds between snapped side and top/bottom panels. Updated `src/App.svelte`.

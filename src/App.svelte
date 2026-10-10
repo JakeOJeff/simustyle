@@ -8,6 +8,7 @@
   import { AI_RESPONSE_JSON_SCHEMA, buildSystemPrompt } from "./ai/prompt";
   import { runSceneAgent } from "./ai/agent";
   import Timeline from "./editor/Timeline.svelte";
+  import PanelResizeHandles, { type ResizeEdge } from "./editor/PanelResizeHandles.svelte";
   import ExportMenu from "./editor/ExportMenu.svelte";
   import SettingsPanel from "./editor/SettingsPanel.svelte";
   import ScriptEditor from "./editor/ScriptEditor.svelte";
@@ -28,7 +29,7 @@
   type ToolMode = "translate" | "rotate" | "scale";
   type EditorPanel = "hierarchy" | "inspector" | "console" | "ai" | "timeline";
   type PanelDock = "left" | "right" | "top" | "bottom" | "floating";
-  type PanelLayout = { dock: PanelDock; x: number; y: number; width: number; height: number };
+  type PanelLayout = { dock: PanelDock; x: number; y: number; width: number; height: number; dockSize?: number };
 
   let scene: Scene = $state.raw(createEmptyScene());
   let selectedId: string | null = $state(null);
@@ -52,6 +53,7 @@
     timeline: { dock: "bottom", x: 16, y: 16, width: 680, height: 250 }
   });
   let draggingPanel: { panel: EditorPanel; offsetX: number; offsetY: number; stageLeft: number; stageTop: number; stageWidth: number; stageHeight: number } | null = $state(null);
+  let resizingPanel: { panel: EditorPanel; edge: ResizeEdge; dock: PanelDock; startX: number; startY: number; left: number; top: number; width: number; height: number; stageWidth: number; stageHeight: number } | null = $state(null);
   let snapTarget: PanelDock | null = $state(null);
   let stageHost: HTMLDivElement;
   let stageWidth = $state(0);
@@ -94,21 +96,40 @@
     const index = peers.indexOf(panel);
     const left = panelDockInset("left");
     const right = panelDockInset("right");
-    const top = panelDockInset("top");
-    const bottom = panelDockInset("bottom");
     if (layout.dock === "left" || layout.dock === "right") {
-      const height = Math.max(0, stageHeight - top - bottom) / peers.length;
-      const width = Math.min(stageWidth * 0.38, 440);
-      return `${layout.dock}:0;top:${top + index * height}px;width:${width}px;height:${height}px;z-index:${zIndex}`;
+      const height = stageHeight / peers.length;
+      const width = panelDockInset(layout.dock);
+      return `${layout.dock}:0;top:${index * height}px;width:${width}px;height:${height}px;z-index:${zIndex}`;
     }
     const width = Math.max(0, stageWidth - left - right) / peers.length;
-    const height = Math.min(stageHeight * 0.42, 340);
+    const height = panelDockInset(layout.dock);
     return `${layout.dock}:0;left:${left + index * width}px;width:${width}px;height:${height}px;z-index:${zIndex}`;
   }
 
   function panelDockInset(side: PanelDock): number {
-    if (!(Object.keys(panelLayouts) as EditorPanel[]).some((panel) => panelOpen[panel] && panelLayouts[panel].dock === side)) return 0;
-    return side === "left" || side === "right" ? Math.min(stageWidth * 0.38, 440) : Math.min(stageHeight * 0.42, 340);
+    const peers = (Object.keys(panelLayouts) as EditorPanel[]).filter((panel) => panelOpen[panel] && panelLayouts[panel].dock === side);
+    if (!peers.length) return 0;
+    const vertical = side === "left" || side === "right";
+    const fallback = vertical ? Math.min(stageWidth * 0.38, 440) : Math.min(stageHeight * 0.42, 340);
+    const custom = peers.map((panel) => panelLayouts[panel].dockSize).find((size) => Number.isFinite(size));
+    const oppositeSide: PanelDock = side === "left" ? "right" : side === "right" ? "left" : side === "top" ? "bottom" : "top";
+    const oppositeDefault = vertical ? Math.min(stageWidth * 0.38, 440) : Math.min(stageHeight * 0.42, 340);
+    const oppositeCustom = (Object.keys(panelLayouts) as EditorPanel[])
+      .filter((panel) => panelOpen[panel] && panelLayouts[panel].dock === oppositeSide)
+      .map((panel) => panelLayouts[panel].dockSize)
+      .find((size) => Number.isFinite(size));
+    const available = vertical ? stageWidth : stageHeight;
+    const minimumCenter = vertical ? 240 : 160;
+    const maxSize = Math.max(180, available - Math.min(oppositeCustom ?? oppositeDefault, available) - minimumCenter);
+    return Math.max(180, Math.min(custom ?? fallback, maxSize));
+  }
+
+  function updateDockSize(side: PanelDock, dockSize: number) {
+    const layouts = { ...panelLayouts };
+    for (const panel of Object.keys(layouts) as EditorPanel[]) {
+      if (layouts[panel].dock === side) layouts[panel] = { ...layouts[panel], dockSize };
+    }
+    panelLayouts = layouts;
   }
 
   function stageContentStyle(): string {
@@ -144,7 +165,8 @@
               x: Number.isFinite(layout.x) ? layout.x! : 16,
               y: Number.isFinite(layout.y) ? layout.y! : 16,
               width: Number.isFinite(layout.width) ? Math.max(220, layout.width!) : 480,
-              height: Number.isFinite(layout.height) ? Math.max(140, layout.height!) : 280
+              height: Number.isFinite(layout.height) ? Math.max(140, layout.height!) : 280,
+              dockSize: Number.isFinite(layout.dockSize) ? Math.max(180, layout.dockSize!) : undefined
             };
           }
         }
@@ -187,7 +209,61 @@
     panelLayouts[panel] = { ...panelLayouts[panel], dock: "floating", x: windowRect.left - stageRect.left, y: windowRect.top - stageRect.top };
   }
 
+  function startPanelResize(event: PointerEvent, panel: EditorPanel, edge: ResizeEdge) {
+    if (event.button !== 0) return;
+    const windowRect = (event.currentTarget as HTMLElement).closest(".panel-window")?.getBoundingClientRect();
+    const stageRect = stageHost?.getBoundingClientRect();
+    if (!windowRect || !stageRect) return;
+    event.preventDefault();
+    event.stopPropagation();
+    (event.currentTarget as HTMLElement).setPointerCapture(event.pointerId);
+    focusedPanel = panel;
+    resizingPanel = {
+      panel,
+      edge,
+      dock: panelLayouts[panel].dock,
+      startX: event.clientX,
+      startY: event.clientY,
+      left: windowRect.left - stageRect.left,
+      top: windowRect.top - stageRect.top,
+      width: windowRect.width,
+      height: windowRect.height,
+      stageWidth: stageRect.width,
+      stageHeight: stageRect.height
+    };
+  }
+
+  function resizePanel(event: PointerEvent) {
+    if (!resizingPanel) return;
+    const resize = resizingPanel;
+    const dx = event.clientX - resize.startX;
+    const dy = event.clientY - resize.startY;
+    if (resize.dock !== "floating") {
+      const delta = resize.dock === "left" ? dx : resize.dock === "right" ? -dx : resize.dock === "top" ? dy : -dy;
+      const size = resize.dock === "left" || resize.dock === "right" ? resize.width : resize.height;
+      updateDockSize(resize.dock, Math.max(180, size + delta));
+      return;
+    }
+
+    const west = resize.edge.includes("w");
+    const east = resize.edge.includes("e");
+    const north = resize.edge.includes("n");
+    const south = resize.edge.includes("s");
+    let left = resize.left + (west ? dx : 0);
+    let top = resize.top + (north ? dy : 0);
+    let width = resize.width + (east ? dx : west ? -dx : 0);
+    let height = resize.height + (south ? dy : north ? -dy : 0);
+    width = Math.max(220, Math.min(width, resize.stageWidth));
+    height = Math.max(140, Math.min(height, resize.stageHeight));
+    if (west) left = resize.left + resize.width - width;
+    if (north) top = resize.top + resize.height - height;
+    left = Math.max(0, Math.min(left, resize.stageWidth - width));
+    top = Math.max(0, Math.min(top, resize.stageHeight - height));
+    panelLayouts[resize.panel] = { ...panelLayouts[resize.panel], x: left, y: top, width, height };
+  }
+
   function movePanelDrag(event: PointerEvent) {
+    if (resizingPanel) { resizePanel(event); return; }
     if (!draggingPanel) return;
     const drag = draggingPanel;
     const x = event.clientX - drag.stageLeft - drag.offsetX;
@@ -206,6 +282,7 @@
   }
 
   function endPanelDrag() {
+    resizingPanel = null;
     if (!draggingPanel) return;
     if (snapTarget) panelLayouts[draggingPanel.panel] = { ...panelLayouts[draggingPanel.panel], dock: snapTarget };
     draggingPanel = null;
@@ -988,12 +1065,14 @@ when clicked
             <section class="panel-window" class:floating-panel={panelLayouts.hierarchy.dock === "floating"} style={panelWindowStyle("hierarchy")} use:rememberPanelSize={"hierarchy"}>
               <header class="panel-window-title"><button class="panel-drag-handle" type="button" aria-label="Drag Hierarchy panel to move or snap" onpointerdown={(event) => startPanelDrag(event, "hierarchy")}><strong>Hierarchy</strong><span>Drag to move or snap</span></button><button class="panel-close" type="button" aria-label="Close Hierarchy" onclick={() => panelOpen.hierarchy = false}><X size={13} /></button></header>
               <div class="panel-window-body sidebar-panel-body"><Hierarchy scene={scene} {selectedIds} onSelect={selectEntity} onSelectMany={selectEntities} onGroup={groupSelection} onRename={(id, name) => apply([{ op: "update", id, components: {}, name }])} onDelete={deleteEntity} onReparent={reparentEntity} onOpenScript={openScript} onContextMenu={openEntityMenu} onContextMenuEmpty={(x, y) => openEntityMenu(null, x, y, null, "hierarchy")} /></div>
+              <PanelResizeHandles panelName="Hierarchy" dock={panelLayouts.hierarchy.dock} onResizeStart={(event, edge) => startPanelResize(event, "hierarchy", edge)} />
             </section>
           {/if}
           {#if panelOpen.inspector}
             <section class="panel-window" class:floating-panel={panelLayouts.inspector.dock === "floating"} style={panelWindowStyle("inspector")} use:rememberPanelSize={"inspector"}>
               <header class="panel-window-title"><button class="panel-drag-handle" type="button" aria-label="Drag Inspector panel to move or snap" onpointerdown={(event) => startPanelDrag(event, "inspector")}><strong>Inspector</strong><span>Drag to move or snap</span></button><button class="panel-close" type="button" aria-label="Close Inspector" onclick={() => panelOpen.inspector = false}><X size={13} /></button></header>
               <div class="panel-window-body sidebar-panel-body"><Inspector {scene} entity={selectedEntity} onUpdate={updateComponent} onRemove={(component) => selectedId && apply([{ op: "update", id: selectedId, components: { [component]: null } }])} onAdd={addComponent} onKeyframe={addKeyframe} onOpenScript={() => selectedId && openScript(selectedId)} onRename={(name) => selectedId && apply([{ op: "update", id: selectedId, components: {}, name }])} onReparent={(parent) => selectedId && reparentEntity(selectedId, parent)} /></div>
+              <PanelResizeHandles panelName="Inspector" dock={panelLayouts.inspector.dock} onResizeStart={(event, edge) => startPanelResize(event, "inspector", edge)} />
             </section>
           {/if}
           {#if panelOpen.console}
@@ -1011,18 +1090,21 @@ when clicked
                   <button type="submit" disabled={!commandText.trim() || playState !== "stopped"}>Run</button>
                 </form>
               </div>
+              <PanelResizeHandles panelName="Console" dock={panelLayouts.console.dock} onResizeStart={(event, edge) => startPanelResize(event, "console", edge)} />
             </section>
           {/if}
           {#if panelOpen.ai}
             <section class="panel-window" class:floating-panel={panelLayouts.ai.dock === "floating"} style={panelWindowStyle("ai")} use:rememberPanelSize={"ai"}>
               <header class="panel-window-title"><button class="panel-drag-handle" type="button" aria-label="Drag AI panel to move or snap" onpointerdown={(event) => startPanelDrag(event, "ai")}><strong>AI</strong><span>Drag to move or snap</span></button><button class="panel-close" type="button" aria-label="Close AI" onclick={() => panelOpen.ai = false}><X size={13} /></button></header>
               <div class="panel-window-body"><AIPanel messages={aiMessages} loading={aiLoading} prompt={aiPrompt} onPromptChange={(value) => aiPrompt = value} onSubmit={submitAI} onUndo={undoAIChange} /></div>
+              <PanelResizeHandles panelName="AI" dock={panelLayouts.ai.dock} onResizeStart={(event, edge) => startPanelResize(event, "ai", edge)} />
             </section>
           {/if}
           {#if panelOpen.timeline}
             <section class="panel-window" class:floating-panel={panelLayouts.timeline.dock === "floating"} style={panelWindowStyle("timeline")} use:rememberPanelSize={"timeline"}>
               <header class="panel-window-title"><button class="panel-drag-handle" type="button" aria-label="Drag Timeline panel to move or snap" onpointerdown={(event) => startPanelDrag(event, "timeline")}><strong>Timeline</strong><span>Drag to move or snap</span></button><button class="panel-close" type="button" aria-label="Close Timeline" onclick={() => panelOpen.timeline = false}><X size={13} /></button></header>
               <div class="panel-window-body"><Timeline {scene} {selectedId} playhead={timelineTime} onPlayheadChange={(value) => timelineTime = value} onTrackChange={(tracks) => selectedId && changeTracks(selectedId, tracks)} /></div>
+              <PanelResizeHandles panelName="Timeline" dock={panelLayouts.timeline.dock} onResizeStart={(event, edge) => startPanelResize(event, "timeline", edge)} />
             </section>
           {/if}
           {#if draggingPanel && snapTarget}
@@ -1079,11 +1161,11 @@ when clicked
 </main>
 
 <style>
-  .stage{position:relative;box-sizing:border-box;flex:1;min-height:0;display:flex}
+  .stage{position:relative;z-index:0;isolation:isolate;box-sizing:border-box;flex:1;min-height:0;display:flex}
   .scene-content-window{position:absolute;z-index:3;min-width:0;min-height:0}
   .panel-workspace{position:absolute;inset:0;z-index:5;overflow:hidden;pointer-events:none}
-  .panel-window{position:absolute;display:flex;min-width:220px;min-height:140px;flex-direction:column;overflow:hidden;pointer-events:auto;border:1px solid #454450;border-radius:7px;background:#191a21;box-shadow:0 8px 28px #0008}
-  .panel-window.floating-panel{resize:both;overflow:hidden;min-width:220px;min-height:140px}
+  .panel-window{position:absolute;display:flex;min-width:220px;min-height:140px;flex-direction:column;overflow:hidden;pointer-events:auto;border:1px solid #454450;border-radius:0;background:#191a21;box-shadow:none}
+  .panel-window.floating-panel{overflow:hidden;min-width:220px;min-height:140px}
   .panel-window-title{display:flex;flex:0 0 32px;align-items:center;gap:10px;padding:0 8px 0 12px;border-bottom:1px solid #ffffff12;background:#22232d;color:#dedce8;cursor:grab;user-select:none}
   .panel-window-title:active{cursor:grabbing}
   .panel-window-title strong{font-size:10px;font-weight:600}
@@ -1093,6 +1175,7 @@ when clicked
   .panel-close{display:grid;width:22px;height:22px;flex:none;place-items:center;border:0;border-radius:4px;background:transparent;color:#9795a3;cursor:pointer}
   .panel-close:hover{background:#ffffff12;color:#fff}
   .panel-window-body{display:flex;min-width:0;min-height:0;flex:1;flex-direction:column;overflow:hidden}
+  .editor :global(.toolbar){position:relative;z-index:20}
   .panel-window-body :global(.ai-panel){flex:1}
   .panel-window-body :global(.timeline){min-height:0;flex:1;border-top:0}
   .sidebar-panel-body :global(.hierarchy),.sidebar-panel-body :global(.inspector){width:100%;min-width:0;min-height:0;flex:1;flex-basis:auto;border-right:0;border-left:0}
