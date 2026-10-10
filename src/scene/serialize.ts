@@ -8,7 +8,7 @@ interface SavedScene {
   entities: Entity[];
 }
 
-function omitDefaultFields(componentName: string, fields: Record<string, unknown>): Record<string, unknown> {
+export function omitDefaultFields(componentName: string, fields: Record<string, unknown>): Record<string, unknown> {
   const schema = componentSchemas[componentName];
   if (!schema) return structuredClone(fields);
   return Object.fromEntries(Object.entries(fields).filter(([name, value]) => {

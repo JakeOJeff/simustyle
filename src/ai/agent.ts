@@ -1,6 +1,7 @@
 import { applyOps } from "../scene/applyOps";
 import type { Scene, SceneOp } from "../scene/types";
 import { validateScripts } from "../runtime/scripts";
+import { tidyCreates } from "./placement";
 
 export interface SceneAgentReply {
   summary: string;
@@ -12,6 +13,8 @@ export interface SceneAgentRequest {
   userPrompt: string;
   correctionErrors: string[];
   responseSchema: Record<string, unknown>;
+  /** The rejected reply as JSON, sent back with the errors so the model can correct it. */
+  previousReply: string;
 }
 
 export interface SceneAgentDependencies {
@@ -48,17 +51,22 @@ export async function runSceneAgent(scene: Scene, userPrompt: string, dependenci
   const systemPrompt = dependencies.buildSystemPrompt(scene);
   const maxRetries = Math.max(0, Math.min(3, dependencies.maxRetries ?? 3));
   let correctionErrors: string[] = [];
+  let previousReply = "";
   for (let attempt = 1; attempt <= maxRetries + 1; attempt += 1) {
     let raw: unknown;
     try {
-      raw = await dependencies.complete({ systemPrompt, userPrompt, correctionErrors, responseSchema: dependencies.responseSchema });
+      raw = await dependencies.complete({ systemPrompt, userPrompt, correctionErrors, responseSchema: dependencies.responseSchema, previousReply });
     } catch (error) {
       const reason = error instanceof Error ? error.message : String(error);
       return { ok: false, ops: [], errors: [`AI request failed: ${reason}`], attempts: attempt };
     }
     const reply = replyFrom(raw);
+    previousReply = typeof raw === "string" ? raw : JSON.stringify(raw) ?? "";
     if (!reply) correctionErrors = ["Response must be a JSON object with a string summary and an ops array."];
     else {
+      const tidy = tidyCreates(scene, reply.ops);
+      reply.ops = tidy.ops;
+      if (tidy.notes.length) reply.summary = `${reply.summary.trim()} (Adjusted: ${tidy.notes.join("; ")}.)`;
       const result = applyOps(scene, reply.ops);
       const scriptErrors = result.errors.length ? [] : validateScripts(result.scene).map((issue) => `Entity '${issue.entityId}', line ${issue.line}, column ${issue.column}: ${issue.message}`);
       correctionErrors = [...result.errors, ...scriptErrors];

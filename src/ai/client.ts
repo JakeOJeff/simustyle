@@ -3,7 +3,7 @@ import { AI_RESPONSE_JSON_SCHEMA } from "./prompt";
 import { desktopChat, isDesktopRuntime } from "../platform/desktop";
 
 export interface ChatMessage {
-  role: "system" | "user";
+  role: "system" | "user" | "assistant";
   content: string;
 }
 
@@ -12,13 +12,16 @@ export async function requestSceneEdit(
   systemPrompt: string,
   userPrompt: string,
   correctionErrors: string[] = [],
-  responseSchema: Record<string, unknown> = AI_RESPONSE_JSON_SCHEMA.schema
+  responseSchema: Record<string, unknown> = AI_RESPONSE_JSON_SCHEMA.schema,
+  previousReply = ""
 ): Promise<unknown> {
   const messages: ChatMessage[] = [
     { role: "system", content: systemPrompt },
     { role: "user", content: userPrompt }
   ];
   if (correctionErrors.length > 0) {
+    // Show the rejected reply so the model corrects it instead of starting over.
+    if (previousReply) messages.push({ role: "assistant", content: previousReply });
     messages.push({
       role: "user",
       content: `Fix only these errors and return the full corrected JSON response: ${JSON.stringify(correctionErrors)}`

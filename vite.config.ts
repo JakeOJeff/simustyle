@@ -158,12 +158,12 @@ function standaloneRuntime() {
 }
 
 function isChatRequest(value: unknown): value is {
-  messages: { role: "system" | "user"; content: string }[];
+  messages: { role: "system" | "user" | "assistant"; content: string }[];
   responseFormat: Record<string, unknown>;
 } {
   if (!isRecord(value) || !Array.isArray(value.messages) || !isRecord(value.responseFormat)) return false;
   return value.messages.length >= 2 && value.messages.length <= 8 && value.messages.every((message) =>
-    isRecord(message) && (message.role === "system" || message.role === "user") &&
+    isRecord(message) && (message.role === "system" || message.role === "user" || message.role === "assistant") &&
     typeof message.content === "string" && message.content.length <= 50_000
   );
 }

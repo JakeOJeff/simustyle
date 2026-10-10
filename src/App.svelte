@@ -365,8 +365,8 @@
       const result = await runSceneAgent(scene, prompt, {
         buildSystemPrompt,
         responseSchema: AI_RESPONSE_JSON_SCHEMA.schema,
-        complete: ({ systemPrompt, userPrompt, correctionErrors, responseSchema }) =>
-          requestSceneEdit(systemPrompt, userPrompt, correctionErrors, responseSchema)
+        complete: ({ systemPrompt, userPrompt, correctionErrors, responseSchema, previousReply }) =>
+          requestSceneEdit(systemPrompt, userPrompt, correctionErrors, responseSchema, previousReply)
       });
       const id = `ai_${nextAIId++}`;
       if (!result.ok || !result.scene || !result.inverseOps) {

@@ -86,7 +86,7 @@ The editor provides syntax highlighting, line numbers, starter examples, and inl
 
 ## AI scene assistant
 
-Open the AI window and describe a scene change in the prompt box; Ctrl+Enter sends the request. Review the proposed operations and apply them to make one undoable change. Generated script source and scene operations are validated before application. AI requires a configured provider and network access.
+Open the AI window and describe a scene change in the prompt box; Ctrl+Enter sends the request. Review the proposed operations and apply them to make one undoable change. Generated script source and scene operations are validated before application. New objects are placed on free floor space when no position is given, lifted if they would sink into the floor, and renamed if their name is already taken; the reply mentions any adjustment. AI requires a configured provider and network access.
 
 In the browser development server, set `AI_API_KEY` and `AI_MODEL` in the ignored `.env` file. `AI_BASE_URL` is optional and defaults to OpenAI's `/v1` API. Never expose a provider key with a `VITE_` variable. In the desktop app, configure the provider from AI Settings; the API key is stored in the operating system credential store. See [installation and desktop setup](../README.md#install-and-run).
 
