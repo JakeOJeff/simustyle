@@ -296,7 +296,9 @@ class Parser {
     switch (name) {
       case "set": return finish(this.parseSet(start));
       case "change": case "increase": case "decrease": return finish(this.parseChange(start));
-      case "add": case "subtract": return finish(this.parseAdd(start));
+      // "add a box" creates an object; "add 10 to score" still adds to a variable.
+      case "add": if (this.atCreatable()) return command(this.parseCreate(start)); return finish(this.parseAdd(start));
+      case "subtract": return finish(this.parseAdd(start));
       case "wait": {
         if (this.atLineEnd()) this.failAt(this.peek(), "Say how long to wait, for example 'wait 1 second'");
         const seconds = this.parseExpression();
@@ -375,11 +377,16 @@ class Parser {
         return command({ name: "stop", target: this.atLineEnd() ? self() : this.parseTarget() });
       }
       case "turn": case "rotate": {
-        const turnStarts = () => this.word("left") || this.word("right") || this.word("around") || this.word("by") || this.startsNumber();
+        const turnStarts = () => this.word("left") || this.word("right") || this.word("around") || this.word("by") || this.word("to") || this.startsNumber();
         const target = turnStarts() ? self() : this.parseTarget();
-        if (this.word("by")) this.advance();
+        // "rotate box1 to 0 90 0" sets the rotation; "rotate box1 (by) 90" adds to it.
+        const mode = this.word("to") ? "to" : "by";
+        if (this.word("by") || this.word("to")) this.advance();
         let amount: ScriptVector;
-        if (this.word("around")) {
+        if (mode === "to") {
+          const first = this.parseUnary();
+          amount = this.startsValue() ? [first, this.parseComponent(), this.parseComponent()] : [this.zero(start), first, this.zero(start)];
+        } else if (this.word("around")) {
           const word = this.advance();
           amount = [this.zero(word), { kind: "number", value: 180, line: word.line, column: word.column }, this.zero(word)];
         } else if (this.word("left") || this.word("right")) {
@@ -392,7 +399,7 @@ class Parser {
         }
         if (this.word("degrees") || this.word("degree") || this.word("deg")) this.advance();
         const duration = this.parseDuration();
-        return command({ name: "turn", target, amount, ...(duration ? { duration } : {}) });
+        return command({ name: "turn", target, mode, amount, ...(duration ? { duration } : {}) });
       }
       case "scale": case "resize":
         return this.parseResize(start, this.word("to") || this.word("by") ? self() : this.parseTarget());
@@ -478,26 +485,80 @@ class Parser {
     return this.parsePostfix();
   }
 
-  /** create a red ball at 0 5 0 · spawn a box above me called "Crate" */
+  /** The mesh shape a noun names ("balls" → sphere), or undefined. */
+  private meshShape(token: Token): string | undefined {
+    if (token.kind !== "identifier") return undefined;
+    const noun = token.value.toLowerCase();
+    const shape = SHAPE_NOUNS[noun] ?? (noun.endsWith("s") ? SHAPE_NOUNS[noun.slice(0, -1)] ?? (noun.endsWith("es") ? SHAPE_NOUNS[noun.slice(0, -2)] : undefined) : undefined);
+    return shape && meshShapes.has(shape) ? shape : undefined;
+  }
+
+  /** After "add": does a shape follow ("add a box", "add 3 red balls") rather than a value ("add 1 to score")? */
+  private atCreatable(): boolean {
+    let offset = 0;
+    while (["a", "an", "another", "new"].includes(this.peek(offset).value)) offset += 1;
+    if (this.peek(offset).kind === "number") offset += 1;
+    const token = this.peek(offset);
+    if (token.kind === "color" || (token.kind === "identifier" && COLOR_NAMES[token.value.toLowerCase()] && this.meshShape(this.peek(offset + 1)))) return true;
+    return this.meshShape(token) !== undefined;
+  }
+
+  /**
+   * create a red ball at 0 5 0 · spawn a box above me called "Crate" · add 3 boxes named crate
+   * add a box named crate if not exists. Clauses after the shape can come in any order.
+   */
   private parseCreate(start: Token): ScriptCommand {
     while (this.word("a") || this.word("an") || this.word("another") || this.word("new")) this.advance();
+    let count: number | undefined;
+    if (this.at("number")) {
+      const token = this.advance();
+      count = Number(token.value);
+      if (!Number.isInteger(count) || count < 1 || count > 100) this.failAt(token, "Say how many to make as a whole number from 1 to 100");
+    }
     let color: ScriptExpression | undefined;
     if (this.atColor()) color = this.parseColor();
     const shapeToken = this.peek();
-    const noun = shapeToken.value.toLowerCase();
-    const shape = SHAPE_NOUNS[noun.endsWith("s") && noun.length > 3 ? noun.slice(0, -1) : noun];
-    if (shapeToken.kind !== "identifier" || !shape || !meshShapes.has(shape)) this.failAt(shapeToken, `Say what shape to ${start.value}: ball, box, cylinder, cone, capsule, or plane`);
+    const shape = this.meshShape(shapeToken);
+    if (!shape) this.failAt(shapeToken, `Say what shape to ${start.value}: ball, box, cylinder, cone, capsule, or plane`);
     this.advance();
     let place: MoveDestination | undefined;
     let called: ScriptExpression | undefined;
+    let onlyIfMissing = false;
     while (!this.atLineEnd()) {
       if (this.word("at")) { this.advance(); place = { kind: "point", value: this.parseVector() }; continue; }
-      if (this.word("called") || this.word("named")) { this.advance(); called = this.parseExpression(); continue; }
+      if (this.word("called") || this.word("named")) { this.advance(); called = this.parseName(); continue; }
+      if (this.word("colored") || this.word("coloured")) { this.advance(); color = this.parseColor(); continue; }
+      if (this.atIfMissing()) { onlyIfMissing = true; continue; }
       const relation = this.parseRelation();
       if (relation) { place = { kind: "relative", relation, target: this.parseTarget() }; continue; }
-      this.failAt(this.peek(), "Expected 'at x y z', a place such as 'above me', or 'called \"name\"'");
+      this.failAt(this.peek(), "Expected 'at x y z', a place such as 'above me', 'named crate', or 'if not exists'");
     }
-    return { name: "create", shape, ...(color ? { color } : {}), ...(place ? { place } : {}), ...(called ? { called } : {}) };
+    return { name: "create", shape, ...(count ? { count } : {}), ...(color ? { color } : {}), ...(place ? { place } : {}), ...(called ? { called } : {}), ...(onlyIfMissing ? { onlyIfMissing } : {}) };
+  }
+
+  /** "named crate", "named big crate", "named "Crate"", or "named (variable)" for a computed name. */
+  private parseName(): ScriptExpression {
+    const token = this.peek();
+    if (token.kind === "string" || token.value === "(") return this.parseExpression();
+    const words: string[] = [];
+    while ((this.at("identifier") || this.at("number")) && !this.atClauseWord()) words.push(this.advance().value);
+    if (!words.length) this.failAt(token, "Say the name, for example 'named crate'");
+    return { kind: "string", value: words.join(" "), line: token.line, column: token.column };
+  }
+
+  /** Words that end a multi-word name and start the next clause of an add/create line. */
+  private atClauseWord(): boolean {
+    return ["at", "named", "called", "colored", "coloured", "if", "unless", "above", "below", "under", "beside", "near", "next", "on", "left", "right", "behind", "in", "over", "to"].includes(this.peek().value);
+  }
+
+  /** if not exists · if it does not exist · if missing · unless it exists */
+  private atIfMissing(): boolean {
+    const words = [0, 1, 2, 3, 4].map((offset) => this.peek(offset).value.toLowerCase());
+    const phrases = [["if", "not", "exists"], ["if", "not", "exist"], ["if", "missing"], ["unless", "exists"], ["unless", "it", "exists"], ["if", "it", "does", "not", "exist"]];
+    const phrase = phrases.find((candidate) => candidate.every((word, index) => words[index] === word));
+    if (!phrase) return false;
+    for (const _ of phrase) this.advance();
+    return true;
   }
 
   private restWords(): string[] {
@@ -628,6 +689,8 @@ class Parser {
       return { kind: "point", value: this.parseVector() };
     }
     if (this.word("by")) { this.advance(); return { kind: "offset", value: this.parseVector() }; }
+    // "move box1 at 1 2 3" reads like "add box at 1 2 3".
+    if (this.word("at") && this.peek(1).kind !== "identifier") { this.advance(); return { kind: "point", value: this.parseVector() }; }
     if (this.atDirection()) {
       const word = this.advance();
       const amount: ScriptExpression = this.atLineEnd() || this.atDuration() ? { kind: "number", value: 1, line: word.line, column: word.column } : this.parseUnary();

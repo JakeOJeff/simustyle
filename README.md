@@ -71,16 +71,16 @@ when I receive "win"
 | Kind | Sentences |
 | --- | --- |
 | Events | `when game starts` · `forever` · `every 2 seconds` · `when clicked` · `when space is pressed` (also `when I press left`, `when the a key is pressed`) · `when I touch [something]` · `when I receive "message"` |
-| Move | `move up 2`, `move to 0 2 0`, `move by 1 0 0`, `move above the box` (below, beside, left of, right of, in front of, behind), `go to 3 1 0`, add `over 1 second` to glide |
-| Turn and size | `turn left`, `turn right 45`, `turn around`, `scale by 2`, `grow by 2`, `shrink by 2`, `scale to 0.5` |
+| Move | `move up 2`, `move to 0 2 0`, `move box1 at 1 2 3`, `move by 1 0 0`, `move above the box` (below, beside, left of, right of, in front of, behind), `go to 3 1 0`, add `over 1 second` to glide |
+| Turn and size | `turn left`, `turn right 45`, `turn around`, `rotate box1 by 0 90 0`, `rotate box1 to 0 45 0`, `scale by 2`, `grow by 2`, `shrink by 2`, `scale to 0.5` |
 | Look | `paint red`, `paint the cube #33aaff`, `hide`, `show`, `spin`, `bounce`, `float`, `pulse`, `shake`, `wobble`, `sway`, `orbit`, `flash`, `tumble` (add `slowly`, `fast`, `gently`, `wildly`), `animate the box like a bouncing ball`, `stop` |
-| Make and remove | `create a red ball at 0 3 0`, `create a box above me called "Crate"`, `destroy it`, `destroy all cones` |
+| Make and remove | `add box`, `add a red ball named big rock at 1 2 3`, `add 3 boxes named crate` (crate1, crate2, crate3), `add box named crate if not exists`, `create a box above me called "Crate"`, `delete box1`, `destroy all cones`. Clauses after the shape (`at`, `named`, `colored`, a place, `if not exists`) stack in any order. Unnamed objects are numbered without a space: Box1, Box2. |
 | Remember | `set score to 0`, `change score by 1`, `increase speed by 2`, `decrease lives`, `set my y to 3`, `set my color to green` |
 | Control | `wait 1 second`, `repeat 3 times`, `repeat until my y is more than 5`, `forever` (inside an event; needs a `wait`), `if … then` / `otherwise if` / `otherwise` |
 | Talk | `say "hi" score`, `broadcast "win"` |
 | Physics | `push up 5` (needs a dynamic RigidBody) |
 
-**Who:** `me`, `it` (the object just touched or clicked), a name (`ball`, `"Box 1"`), `my children`, `my parent`, `all red balls`, or a description: `the [nearest|biggest|smallest|highest|lowest] [color] <ball|box|cube|cylinder|cone|plane|light|group|name word|one> [above|below|beside|… <object>]`. Colors are matched by hue, so `#e5484d` counts as red. When several objects match a single-object command, the one nearest the script's object wins; `all …` acts on every match.
+**Who:** `me`, `it` (the object just touched or clicked), a name (`ball`, `box1`, `"big rock"`), `my children`, `my parent`, `all red balls`, or a description: `the [nearest|biggest|smallest|highest|lowest] [color] <ball|box|cube|cylinder|cone|plane|light|group|name word|one> [above|below|beside|… <object>]`. Colors are matched by hue, so `#e5484d` counts as red. When several objects match a single-object command, the one nearest the script's object wins; `all …` acts on every match.
 
 **Values:** numbers, `"text"`, colors, `true`/`false`, variables, `my x`/`y`/`z`/`size`/`color`/`name`, `x of the ball`, `distance to the player`, `random 1 to 10`, `key space is pressed`, and `time`. Compare with `is`, `is not`, `is more than`, `is less than`, `is at least`, `is at most`, and combine with `and`, `or`, `not`, and `+ - * /`. Colons at the end of event and `if` lines are optional.
 

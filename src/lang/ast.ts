@@ -81,12 +81,13 @@ export type ScriptCommand =
   | { name: "destroy"; target: ScriptTarget }
   | { name: "animate"; target: ScriptTarget; words: string[]; wordsLine: number; wordsColumn: number }
   | { name: "stop"; target: ScriptTarget }
-  | { name: "turn"; target: ScriptTarget; amount: ScriptVector; duration?: ScriptExpression }
+  | { name: "turn"; target: ScriptTarget; mode: "to" | "by"; amount: ScriptVector; duration?: ScriptExpression }
   | { name: "scale"; target: ScriptTarget; mode: "to" | "by"; amount: ScriptExpression; duration?: ScriptExpression }
   | { name: "paint"; target: ScriptTarget; color: ScriptExpression }
   | { name: "push"; target: ScriptTarget; vector: ScriptVector }
   | { name: "hide" | "show"; target: ScriptTarget }
-  | { name: "create"; shape: string; color?: ScriptExpression; place?: MoveDestination; called?: ScriptExpression }
+  /** count makes several copies; onlyIfMissing skips creating when the name (or, unnamed, the shape) already exists. */
+  | { name: "create"; shape: string; count?: number; color?: ScriptExpression; place?: MoveDestination; called?: ScriptExpression; onlyIfMissing?: boolean }
   | { name: "say"; args: ScriptExpression[] };
 
 export type ScriptExpression =

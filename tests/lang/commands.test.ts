@@ -145,3 +145,43 @@ describe("scene command runtime", () => {
     expect(result.issues[0]?.message).toContain("Play");
   });
 });
+
+describe("add command", () => {
+  const named = (scene: Scene, name: string) => scene.entities.find((entity) => entity.name === name);
+
+  it("adds objects with numbered names and stacked clauses", () => {
+    let scene = ScriptRuntime.runOnce(createEmptyScene(), "add box").scene;
+    scene = ScriptRuntime.runOnce(scene, "add a box").scene;
+    expect(scene.entities.map((entity) => entity.name)).toEqual(["Box1", "Box2"]);
+    const result = ScriptRuntime.runOnce(scene, "add a red ball named big rock at 1 2 3");
+    expect(result.issues).toEqual([]);
+    const rock = named(result.scene, "big rock");
+    expect(rock?.components.Transform?.position).toEqual([1, 2, 3]);
+    expect(rock?.components.Material?.color).toBe("#e5484d");
+    expect(named(ScriptRuntime.runOnce(scene, "add box at 0 1 0 named crate").scene, "crate")).toBeDefined();
+  });
+
+  it("adds several copies and skips existing names with 'if not exists'", () => {
+    const scene = ScriptRuntime.runOnce(createEmptyScene(), "add 3 boxes named crate").scene;
+    expect(scene.entities.map((entity) => entity.name)).toEqual(["crate1", "crate2", "crate3"]);
+    expect(new Set(scene.entities.map((entity) => JSON.stringify(entity.components.Transform?.position))).size).toBe(3);
+    const once = ScriptRuntime.runOnce(createEmptyScene(), "add box named crate if not exists").scene;
+    expect(ScriptRuntime.runOnce(once, "add box named crate if not exists").scene.entities).toHaveLength(1);
+    expect(ScriptRuntime.runOnce(once, "add box named crate").scene.entities.map((entity) => entity.name)).toEqual(["crate", "crate2"]);
+  });
+
+  it("keeps 'add 1 to score' as arithmetic", () => {
+    const program = parseScript("set score to 0\nadd 1 to score");
+    expect(program.statements[1]?.kind).toBe("assign");
+  });
+
+  it("lets move, rotate, paint, and delete target objects by name", () => {
+    let scene = ScriptRuntime.runOnce(createEmptyScene(), "add 2 boxes").scene;
+    const result = ScriptRuntime.runOnce(scene, "move box1 at 4 5 6\nrotate box1 to 0 90 0\npaint box2 blue\ndelete box2");
+    expect(result.issues).toEqual([]);
+    scene = result.scene;
+    expect(named(scene, "Box1")?.components.Transform?.position).toEqual([4, 5, 6]);
+    expect(named(scene, "Box1")?.components.Transform?.rotation).toEqual([0, 90, 0]);
+    expect(named(scene, "Box2")).toBeUndefined();
+  });
+});

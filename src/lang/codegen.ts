@@ -43,12 +43,12 @@ function commandCode(command: ScriptCommand, line: number): string {
   let fields: string;
   switch (command.name) {
     case "move": fields = `target:${targetCode(command.target)},destination:${destinationCode(command.destination)},duration:${duration(command.duration)}`; break;
-    case "turn": fields = `target:${targetCode(command.target)},amount:${vector(command.amount)},duration:${duration(command.duration)}`; break;
+    case "turn": fields = `target:${targetCode(command.target)},mode:${quote(command.mode)},amount:${vector(command.amount)},duration:${duration(command.duration)}`; break;
     case "scale": fields = `target:${targetCode(command.target)},mode:${quote(command.mode)},amount:${expression(command.amount)},duration:${duration(command.duration)}`; break;
     case "paint": fields = `target:${targetCode(command.target)},color:${expression(command.color)}`; break;
     case "push": fields = `target:${targetCode(command.target)},vector:${vector(command.vector)}`; break;
     case "animate": fields = `target:${targetCode(command.target)},words:${JSON.stringify(command.words)}`; break;
-    case "create": fields = `shape:${quote(command.shape)},color:${command.color ? expression(command.color) : "null"},place:${command.place ? destinationCode(command.place) : "null"},called:${command.called ? expression(command.called) : "null"}`; break;
+    case "create": fields = `shape:${quote(command.shape)},color:${command.color ? expression(command.color) : "null"},place:${command.place ? destinationCode(command.place) : "null"},called:${command.called ? expression(command.called) : "null"},count:${command.count ?? 1},onlyIfMissing:${command.onlyIfMissing === true}`; break;
     case "say": return `ctx.call("print", [${command.args.map(expression).join(", ")}]);`;
     default: fields = `target:${targetCode(command.target)}`;
   }

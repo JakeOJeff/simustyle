@@ -13,6 +13,7 @@
   import SettingsPanel from "./editor/SettingsPanel.svelte";
   import ScriptEditor from "./editor/ScriptEditor.svelte";
   import { ScriptRuntime, scriptOps } from "./runtime/scripts";
+  import { uniqueName } from "./runtime/commands";
   import { chooseSceneToOpen, chooseSceneToSave, getDesktopAiSettings, isDesktopRuntime, readSceneFile, saveDesktopAiSettings, writeSceneFile } from "./platform/desktop";
   import type { VideoExportConfig, VideoExportProgress } from "./export/video";
   import type { AnimationTrack, AnimationValue } from "./runtime/animator";
@@ -413,14 +414,14 @@
 
   function createPrimitive(shape: "box" | "sphere" | "cylinder" | "cone" | "plane" | "capsule") {
     const label = shape[0].toUpperCase() + shape.slice(1);
-    let index = scene.entities.filter((entity) => entity.components.Mesh?.shape === shape).length + 1;
+    let index = 1;
     while (scene.entities.some((entity) => entity.id === `${shape}_${index}`)) index += 1;
     const id = `${shape}_${index}`;
     // Place new primitives in a deterministic spiral so they remain visible and pickable.
     const placement = scene.entities.length;
     const angle = placement * 2.399963229728653;
     const radius = 1.5 * Math.sqrt(placement);
-    if (apply([{ op: "create", id, name: `${label} ${index}`, parent: null, components: {
+    if (apply([{ op: "create", id, name: uniqueName(scene, label), parent: null, components: {
       Transform: { position: [radius * Math.cos(angle), shape === "plane" ? 0.01 : 0.5, radius * Math.sin(angle)], rotation: shape === "plane" ? [-90, 0, 0] : [0, 0, 0] }, Mesh: { shape }, Material: { color: "#8b7cff" }
     } }])) selectEntity(id);
     primitiveMenuOpen = false;

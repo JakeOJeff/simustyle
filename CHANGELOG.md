@@ -4,6 +4,13 @@ Record meaningful project changes during the event, newest first.
 
 ## Event build log
 
+### 2026-10-11T02:20:00+05:30 — Add objects with `add` and target them by name
+
+- Changed: `add box`, `add a red ball named big rock at 1 2 3`, `add 3 boxes named crate`, and `add box named crate if not exists` now create objects from the Console or scripts; clauses after the shape stack in any order, and `add 1 to score` still does arithmetic. `named` accepts bare (multi-word) names. New objects get unique names without a space (Box1, Box2; crate, crate2), from both commands and the toolbar Add menu, so `move box1 at 1 2 3`, `rotate box1 to 0 90 0`, `paint box2 blue`, and `delete box2` reach them. `rotate … to` sets an absolute rotation and `move … at x y z` is an alias for `to`. Files: `src/lang/ast.ts`, `src/lang/parser.ts`, `src/lang/codegen.ts`, `src/runtime/commands.ts`, `src/runtime/scripts.ts`, `src/App.svelte`, `tests/lang/commands.test.ts`, `README.md`.
+- Why: Participant asked for an `add` command with stackable position/name options, name-based targeting for the other commands, and `Box1`-style names.
+- Validation: `npm run check` passed TypeScript, Svelte diagnostics, all 89 tests (4 new), and the production build (existing large-chunk warning).
+- Limitations: `if not exists` applies to `add` only; other commands still report a missing object. Names containing clause words (`at`, `on`, `to`, …) need quotes. Lights and cameras cannot be added by command. Duplicate still names copies "<name> Copy". Not exercised in the browser.
+
 ### 2026-10-11T02:11:00+05:30 — Add visible panel resize edges and square styling
 
 - Changed: Added resize handles to every floating panel edge and corner, plus center-facing handles for docked panels. Removed panel window corner rounding and shadows, and kept toolbar menus above panels. Added `src/editor/PanelResizeHandles.svelte`; updated `src/App.svelte` and `README.md`.

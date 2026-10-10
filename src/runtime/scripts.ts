@@ -6,7 +6,7 @@ import { parseScript } from "../lang/parser";
 import type { ScriptProgram } from "../lang/ast";
 import { COLOR_NAMES, DIRECTIONS, matchAnimation, type RelationName } from "../lang/vocabulary";
 import type { Entity } from "../scene/types";
-import { MotionController, describedMatches, findNamed, placeRelative, positionOf, rotationOf, scaleOf, type RuntimeDescription } from "./commands";
+import { MotionController, describedMatches, findNamed, halfExtents, placeRelative, positionOf, rotationOf, scaleOf, uniqueName, type RuntimeDescription } from "./commands";
 
 /** Generated handler bodies are generator functions: `yield n` means "wait n seconds". */
 type Runner = (ctx: ScriptContext, state: Record<string, unknown>) => Generator<number, void, unknown>;
@@ -20,13 +20,13 @@ type Vector = [number, number, number];
 type RuntimeDestination = { kind: "point"; value: Vector } | { kind: "offset"; value: Vector } | { kind: "direction"; direction: keyof typeof DIRECTIONS; amount: number } | { kind: "relative"; relation: RelationName; target: RuntimeTarget };
 type RuntimeCommand = { line: number } & (
   | { name: "move"; target: RuntimeTarget; destination: RuntimeDestination; duration: number | null }
-  | { name: "turn"; target: RuntimeTarget; amount: Vector; duration: number | null }
+  | { name: "turn"; target: RuntimeTarget; mode: "to" | "by"; amount: Vector; duration: number | null }
   | { name: "scale"; target: RuntimeTarget; mode: "to" | "by"; amount: number; duration: number | null }
   | { name: "paint"; target: RuntimeTarget; color: string }
   | { name: "push"; target: RuntimeTarget; vector: Vector }
   | { name: "destroy" | "hide" | "show" | "stop"; target: RuntimeTarget }
   | { name: "animate"; target: RuntimeTarget; words: string[] }
-  | { name: "create"; shape: string; color: string | null; place: RuntimeDestination | null; called: unknown });
+  | { name: "create"; shape: string; color: string | null; place: RuntimeDestination | null; called: unknown; count: number; onlyIfMissing: boolean });
 interface ScriptContext {
   readonly time: number; readonly dt: number; self: Handle | null; other?: Handle;
   param(name: string): unknown; get(path: string[]): unknown; set(path: string[], operator: string, value: unknown): void;
@@ -337,9 +337,12 @@ export class ScriptRuntime {
         if (next) this.applyChanges(this.motion.set(entity, "position", next, duration), ownerId, line);
         return;
       }
-      case "turn":
-        this.applyChanges(this.motion.set(entity, "rotation", rotationOf(entity).map((part, index) => part + Number(command.amount[index])) as Vector, duration), ownerId, line);
+      case "turn": {
+        const next = command.mode === "to" ? command.amount.map(Number) as Vector : rotationOf(entity).map((part, index) => part + Number(command.amount[index])) as Vector;
+        if (next.some((part) => !Number.isFinite(part))) { this.report(ownerId, line, "rotate: angles must be numbers."); return; }
+        this.applyChanges(this.motion.set(entity, "rotation", next, duration), ownerId, line);
         return;
+      }
       case "scale": {
         const amount = Number(command.amount);
         if (!Number.isFinite(amount) || amount <= 0) { this.report(ownerId, line, "scale: the amount must be a positive number."); return; }
@@ -390,24 +393,33 @@ export class ScriptRuntime {
     return next;
   }
 
-  /** create a red ball at 0 5 0 · create a box above me called "Crate" */
+  /** create a red ball at 0 5 0 · add 3 boxes named crate · add a box named crate if not exists */
   private create(command: Extract<RuntimeCommand, { name: "create" }>, ownerId: string): void {
     const label = command.shape === "sphere" ? "Ball" : command.shape === "box" ? "Box" : command.shape[0]!.toUpperCase() + command.shape.slice(1);
-    const name = command.called === null || command.called === undefined ? label : String(command.called);
-    let index = 1;
-    while (this.currentScene.entities.some((entity) => entity.id === `${command.shape}_${index}`)) index += 1;
-    const id = `${command.shape}_${index}`;
+    const named = command.called !== null && command.called !== undefined && String(command.called).trim() !== "";
+    const base = named ? String(command.called).trim() : label;
+    if (command.onlyIfMissing && (named ? findNamed(this.currentScene, base) : this.currentScene.entities.some((entity) => entity.components.Mesh?.shape === command.shape))) return;
+    const count = Math.max(1, Math.floor(command.count ?? 1));
     const owner = this.currentScene.entities.find((entity) => entity.id === ownerId);
     const color = command.color ? (COLOR_NAMES[command.color.toLowerCase()] ?? command.color) : "#8b7cff";
-    const entity: Entity = { id, name, parent: null, components: {
-      Transform: { position: owner ? positionOf(owner) : [0, 0.5, 0], ...(command.shape === "plane" ? { rotation: [-90, 0, 0] } : {}) },
-      Mesh: { shape: command.shape }, Material: { color }
-    } };
-    // With no place given, new objects appear just above whoever created them.
-    const position = command.place ? this.destinationFor(entity, command.place, ownerId, command.line) : owner ? placeRelative(entity, owner, "above") : [0, 0.5, 0] as Vector;
-    if (!position) return;
-    entity.components.Transform!.position = position;
-    this.applyChanges([{ op: "create", ...entity }], ownerId, command.line);
+    for (let copy = 0; copy < count; copy += 1) {
+      let index = 1;
+      while (this.currentScene.entities.some((entity) => entity.id === `${command.shape}_${index}`)) index += 1;
+      const id = `${command.shape}_${index}`;
+      // Unnamed objects are always numbered (Box1, Box2); a single named object keeps its exact name while it is free.
+      const name = uniqueName(this.currentScene, base, !named || count > 1);
+      const entity: Entity = { id, name, parent: null, components: {
+        Transform: { position: owner ? positionOf(owner) : [0, 0.5, 0], ...(command.shape === "plane" ? { rotation: [-90, 0, 0] } : {}) },
+        Mesh: { shape: command.shape }, Material: { color }
+      } };
+      // With no place given, new objects appear just above whoever created them.
+      const position = command.place ? this.destinationFor(entity, command.place, ownerId, command.line) : owner ? placeRelative(entity, owner, "above") : [0, 0.5, 0] as Vector;
+      if (!position) return;
+      // Several copies line up along x instead of stacking inside each other.
+      position[0] += copy * (2 * halfExtents(entity)[0] + 0.5);
+      entity.components.Transform!.position = position;
+      this.applyChanges([{ op: "create", ...entity }], ownerId, command.line);
+    }
   }
 
   private random(min: number, max: number): number {

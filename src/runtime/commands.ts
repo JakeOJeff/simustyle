@@ -146,6 +146,18 @@ export function findNamed(scene: Scene, name: string): Entity | undefined {
     ?? scene.entities.find((entity) => normalize(entity.id) === key || normalize(entity.name) === key);
 }
 
+/**
+ * A name no other entity uses, so commands can target it: "Box" → "Box1", "Box2".
+ * With `numbered` false the base name is used as-is while it is free ("crate", then "crate2").
+ */
+export function uniqueName(scene: Scene, base: string, numbered = true): string {
+  const taken = new Set(scene.entities.map((entity) => normalize(entity.name)));
+  if (!numbered && !taken.has(normalize(base))) return base;
+  let index = numbered ? 1 : 2;
+  while (taken.has(normalize(`${base}${index}`))) index += 1;
+  return `${base}${index}`;
+}
+
 /** Where to put `mover` so it sits above/beside/... `anchor` without overlapping. */
 export function placeRelative(mover: Entity, anchor: Entity, relation: RelationName): Vector {
   const [ax, ay, az] = positionOf(anchor);
