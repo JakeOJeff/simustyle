@@ -3,13 +3,14 @@
 
   interface Props {
     scene: Scene;
-    selectedId: string | null;
+    selectedIds: string[];
     onSelect: (id: string) => void;
     onCreate: () => void;
     onDelete: (id: string) => void;
     onReparent: (id: string, parent: string | null) => void;
     onOpenScript: (id: string) => void;
     onContextMenu: (id: string, x: number, y: number) => void;
+    onContextMenuEmpty: (x: number, y: number) => void;
   }
 
   interface TreeRow {
@@ -17,7 +18,7 @@
     depth: number;
   }
 
-  let { scene, selectedId, onSelect, onCreate, onDelete, onReparent, onOpenScript, onContextMenu }: Props = $props();
+  let { scene, selectedIds, onSelect, onCreate, onDelete, onReparent, onOpenScript, onContextMenu, onContextMenuEmpty }: Props = $props();
 
   let rows = $derived.by(() => {
     const byParent = new Map<string, Entity[]>();
@@ -54,6 +55,10 @@
   event.preventDefault();
   const draggedId = event.dataTransfer?.getData("text/plain");
   if (draggedId) onReparent(draggedId, null);
+}} oncontextmenu={(event) => {
+  if ((event.target as HTMLElement).closest(".entity-row")) return;
+  event.preventDefault();
+  onContextMenuEmpty(event.clientX, event.clientY);
 }}>
   <header class="panel-header">
     <div>
@@ -70,10 +75,10 @@
   {:else}
     <ul class="entity-list" role="tree" aria-label="Scene entities">
       {#each rows as row (row.entity.id)}
-        <li class="entity-row" role="treeitem" aria-level={row.depth + 1} aria-selected={selectedId === row.entity.id} oncontextmenu={(event) => { event.preventDefault(); onContextMenu(row.entity.id, event.clientX, event.clientY); }}>
+        <li class="entity-row" role="treeitem" aria-level={row.depth + 1} aria-selected={selectedIds.includes(row.entity.id)} oncontextmenu={(event) => { event.preventDefault(); event.stopPropagation(); onContextMenu(row.entity.id, event.clientX, event.clientY); }}>
           <button
             class="select-button"
-            class:selected={selectedId === row.entity.id}
+            class:selected={selectedIds.includes(row.entity.id)}
             type="button"
             draggable="true"
             style={`padding-left: ${8 + row.depth * 15}px`}

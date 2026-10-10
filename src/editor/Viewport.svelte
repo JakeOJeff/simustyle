@@ -14,21 +14,24 @@
     scene: Scene;
     /** ID of the selected entity, or null when nothing is selected. */
     selectedId: string | null;
+    selectedIds: string[];
     /** Active transform gizmo mode. */
     mode: TransformMode;
     /** Request selection; the host owns and updates selection state. */
     onSelect: (id: string | null) => void;
+    onSelectMany: (ids: string[]) => void;
     /** Request a Transform update; the host should apply it through applyOps. */
     onTransform: (id: string, transform: TransformPatch, phase: TransformPhase) => void;
     onModeChange: (mode: TransformMode) => void;
-    onContextMenu: (id: string, x: number, y: number) => void;
+    onContextMenu: (id: string | null, x: number, y: number, position: Vec3 | null) => void;
     frameToken: number;
     focusToken: number;
     gridVisible: boolean;
   }
 
-  let { scene, selectedId, mode, onSelect, onTransform, onModeChange, onContextMenu, frameToken, focusToken, gridVisible }: Props = $props();
+  let { scene, selectedId, selectedIds, mode, onSelect, onSelectMany, onTransform, onModeChange, onContextMenu, frameToken, focusToken, gridVisible }: Props = $props();
   let host: HTMLDivElement;
+  let marquee: { left: number; top: number; width: number; height: number } | null = $state(null);
 
   function component(entity: Entity, name: string): Record<string, unknown> {
     return entity.components[name] ?? {};
@@ -90,10 +93,13 @@
     gizmo.setMode(mode);
     world.add(gizmo.getHelper());
     const entityObjects = new Map<string, THREE.Object3D>();
+    const selectionHelpers = new Map<string, THREE.BoxHelper>();
     const raycaster = new THREE.Raycaster();
     const pointer = new THREE.Vector2();
     let downX = 0;
     let downY = 0;
+    let marqueeStart: { x: number; y: number; pointerId: number } | null = null;
+    let orbitWasEnabled = true;
     let frame = 0;
     let disposed = false;
 
@@ -153,10 +159,56 @@
       const pickables = [...entityObjects.values()].filter((object) => object instanceof THREE.Mesh);
       const hit = raycaster.intersectObjects(pickables, false)[0]?.object;
       const entity = hit && [...entityObjects.entries()].find(([, object]) => object === hit)?.[0];
-      if (!entity) return;
       event.preventDefault();
-      onSelect(entity);
-      onContextMenu(entity, event.clientX, event.clientY);
+      if (entity) onSelect(entity);
+      const groundHit = raycaster.intersectObject(ground, false)[0]?.point;
+      onContextMenu(entity ?? null, event.clientX, event.clientY, groundHit ? [groundHit.x, 0, groundHit.z] : null);
+    }
+    function updateMarquee(event: PointerEvent) {
+      if (!marqueeStart) return;
+      const rect = renderer.domElement.getBoundingClientRect();
+      const x = event.clientX - rect.left;
+      const y = event.clientY - rect.top;
+      marquee = {
+        left: Math.min(marqueeStart.x, x),
+        top: Math.min(marqueeStart.y, y),
+        width: Math.abs(x - marqueeStart.x),
+        height: Math.abs(y - marqueeStart.y)
+      };
+    }
+    function finishMarquee(event: PointerEvent) {
+      if (!marqueeStart) return;
+      updateMarquee(event);
+      const rect = renderer.domElement.getBoundingClientRect();
+      const selection = marquee;
+      const ids: string[] = [];
+      if (selection && (selection.width > 4 || selection.height > 4)) {
+        camera.updateMatrixWorld();
+        for (const [id, object] of entityObjects) {
+          const bounds = new THREE.Box3().setFromObject(object);
+          if (bounds.isEmpty()) continue;
+          const screenPoints: THREE.Vector2[] = [];
+          for (let mask = 0; mask < 8; mask += 1) {
+            const point = new THREE.Vector3(
+              mask & 1 ? bounds.max.x : bounds.min.x,
+              mask & 2 ? bounds.max.y : bounds.min.y,
+              mask & 4 ? bounds.max.z : bounds.min.z
+            ).project(camera);
+            if (point.z < -1 || point.z > 1) continue;
+            screenPoints.push(new THREE.Vector2(((point.x + 1) / 2) * rect.width, ((1 - point.y) / 2) * rect.height));
+          }
+          if (!screenPoints.length) continue;
+          const minX = Math.min(...screenPoints.map((point) => point.x));
+          const maxX = Math.max(...screenPoints.map((point) => point.x));
+          const minY = Math.min(...screenPoints.map((point) => point.y));
+          const maxY = Math.max(...screenPoints.map((point) => point.y));
+          if (maxX >= selection.left && minX <= selection.left + selection.width && maxY >= selection.top && minY <= selection.top + selection.height) ids.push(id);
+        }
+      }
+      marqueeStart = null;
+      marquee = null;
+      orbit.enabled = orbitWasEnabled;
+      onSelectMany(ids);
     }
     function focusSelected() {
       const entity = currentEntity();
@@ -170,9 +222,33 @@
       camera.position.copy(target).add(direction.multiplyScalar(Math.max(2, size * 1.8)));
       camera.updateProjectionMatrix();
     }
-    const pointerDown = (event: PointerEvent) => { downX = event.clientX; downY = event.clientY; };
+    const pointerDown = (event: PointerEvent) => {
+      downX = event.clientX;
+      downY = event.clientY;
+      if (event.button === 0 && event.ctrlKey && !gizmo.dragging) {
+        event.preventDefault();
+        const rect = renderer.domElement.getBoundingClientRect();
+        marqueeStart = { x: event.clientX - rect.left, y: event.clientY - rect.top, pointerId: event.pointerId };
+        orbitWasEnabled = orbit.enabled;
+        orbit.enabled = false;
+        renderer.domElement.setPointerCapture(event.pointerId);
+      }
+    };
+    const pointerMove = (event: PointerEvent) => updateMarquee(event);
+    const pointerUp = (event: PointerEvent) => {
+      if (marqueeStart?.pointerId === event.pointerId) { finishMarquee(event); return; }
+      pick(event);
+    };
+    const pointerCancel = () => {
+      if (!marqueeStart) return;
+      marqueeStart = null;
+      marquee = null;
+      orbit.enabled = orbitWasEnabled;
+    };
     renderer.domElement.addEventListener("pointerdown", pointerDown);
-    renderer.domElement.addEventListener("pointerup", pick);
+    renderer.domElement.addEventListener("pointermove", pointerMove);
+    renderer.domElement.addEventListener("pointerup", pointerUp);
+    renderer.domElement.addEventListener("pointercancel", pointerCancel);
     renderer.domElement.addEventListener("contextmenu", pickContextMenu);
 
     function onKey(event: KeyboardEvent) {
@@ -236,6 +312,24 @@
         if (object.parent !== intendedParent) intendedParent.add(object);
       }
 
+      for (const [id, helper] of selectionHelpers) {
+        if (!selectedIds.includes(id) || !entityObjects.has(id)) {
+          helper.removeFromParent();
+          helper.geometry.dispose();
+          selectionHelpers.delete(id);
+        }
+      }
+      for (const id of selectedIds) {
+        const object = entityObjects.get(id);
+        if (!object) continue;
+        let helper = selectionHelpers.get(id);
+        if (!helper) {
+          helper = new THREE.BoxHelper(object, id === selectedId ? 0xa995ff : 0x70d8ff);
+          selectionHelpers.set(id, helper);
+          world.add(helper);
+        }
+        helper.update();
+      }
       const selected = selectedId ? entityObjects.get(selectedId) : undefined;
       if (selected && selected !== gizmo.object) gizmo.attach(selected);
       else if (!selected && gizmo.object) gizmo.detach();
@@ -255,6 +349,7 @@
       $effect(() => {
         scene;
         selectedId;
+        selectedIds;
         syncEntities();
       });
       $effect(() => {
@@ -278,7 +373,9 @@
       stopSync();
       resizeObserver.disconnect();
       renderer.domElement.removeEventListener("pointerdown", pointerDown);
-      renderer.domElement.removeEventListener("pointerup", pick);
+      renderer.domElement.removeEventListener("pointermove", pointerMove);
+      renderer.domElement.removeEventListener("pointerup", pointerUp);
+      renderer.domElement.removeEventListener("pointercancel", pointerCancel);
       renderer.domElement.removeEventListener("contextmenu", pickContextMenu);
       window.removeEventListener("keydown", onKey);
       gizmo.removeEventListener("objectChange", onObjectChange);
@@ -293,6 +390,7 @@
           else material.dispose();
         }
       }
+      for (const helper of selectionHelpers.values()) helper.geometry.dispose();
       ground.geometry.dispose();
       (ground.material as THREE.Material).dispose();
       renderer.dispose();
@@ -301,10 +399,15 @@
   });
 </script>
 
-<div class="viewport" bind:this={host} aria-label="3D scene viewport"></div>
+<div class="viewport" bind:this={host} aria-label="3D scene viewport">
+  {#if marquee}
+    <div class="selection-marquee" style={`left:${marquee.left}px;top:${marquee.top}px;width:${marquee.width}px;height:${marquee.height}px`}></div>
+  {/if}
+</div>
 
 <style>
   .viewport {
+    position: relative;
     width: 100%;
     height: 100%;
     min-width: 0;
@@ -312,6 +415,14 @@
     overflow: hidden;
     background: #202124;
     touch-action: none;
+  }
+
+  .selection-marquee {
+    position: absolute;
+    z-index: 1;
+    border: 1px solid #70d8ff;
+    background: #70d8ff24;
+    pointer-events: none;
   }
 
   .viewport :global(canvas) {

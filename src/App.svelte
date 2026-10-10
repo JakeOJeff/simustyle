@@ -20,7 +20,7 @@
   import { Box, Circle, Cone, Cylinder, FileCode2, Focus, FolderOpen, Grid3X3, Move3D, Pause, Play, Plus, Redo2, Rotate3D, Save, Scaling, Settings, Square, Undo2, X } from "@lucide/svelte";
   import { applyOps } from "./scene/applyOps";
   import { deserializeScene, serializeScene } from "./scene/serialize";
-  import { createEmptyScene, type Entity, type Scene, type SceneOp } from "./scene/types";
+  import { createEmptyScene, type Entity, type Scene, type SceneOp, type Vec3 } from "./scene/types";
   import type { PlayState, SimulationController } from "./runtime/physics";
 
   type ToolMode = "translate" | "rotate" | "scale";
@@ -28,6 +28,7 @@
 
   let scene: Scene = $state.raw(createEmptyScene());
   let selectedId: string | null = $state(null);
+  let selectedIds: string[] = $state([]);
   let mode: ToolMode = $state("translate");
   let gridVisible = $state(true);
   let focusToken = $state(0);
@@ -57,7 +58,7 @@
   let commandHistory: string[] = [];
   let commandHistoryIndex = -1;
   let consoleLog: { kind: "info" | "error" | "print"; text: string }[] = $state([]);
-  let contextMenu: { id: string; x: number; y: number } | null = $state(null);
+  let contextMenu: { id: string | null; x: number; y: number; position: Vec3 | null; source: "object" | "viewport" | "hierarchy" } | null = $state(null);
   let renameTarget: { id: string; name: string } | null = $state(null);
   let entityClipboard: Entity[] | null = $state.raw(null);
   const animatorPreview = new AnimatorRuntime();
@@ -66,6 +67,16 @@
   let simulation: SimulationController | null = null;
   let animationFrame = 0;
   let lastFrameTime = 0;
+
+  function selectEntity(id: string | null) {
+    selectedId = id;
+    selectedIds = id ? [id] : [];
+  }
+
+  function selectEntities(ids: string[]) {
+    selectedIds = ids;
+    selectedId = ids[0] ?? null;
+  }
 
   onMount(() => {
     if (isDesktopRuntime()) {
@@ -132,7 +143,7 @@
       redoStack = [];
       aiUndoRecords = { ...aiUndoRecords, [id]: result.inverseOps };
       const changed = result.ops.find((operation) => operation.op === "create" || operation.op === "update");
-      if (changed && (changed.op === "create" || changed.op === "update")) selectedId = changed.id;
+      if (changed && (changed.op === "create" || changed.op === "update")) selectEntity(changed.id);
       frameToken += 1;
       pushAIMessage({ id, role: "assistant", content: result.summary ?? "Scene updated.", summary: result.summary ?? "Scene updated.", operations: result.ops });
       message = result.summary ?? "AI changes applied";
@@ -186,7 +197,7 @@
     const radius = 1.5 * Math.sqrt(placement);
     if (apply([{ op: "create", id, name: `${label} ${index}`, parent: null, components: {
       Transform: { position: [radius * Math.cos(angle), shape === "plane" ? 0.01 : 0.5, radius * Math.sin(angle)], rotation: shape === "plane" ? [-90, 0, 0] : [0, 0, 0] }, Mesh: { shape }, Material: { color: "#8b7cff" }
-    } }])) selectedId = id;
+    } }])) selectEntity(id);
     primitiveMenuOpen = false;
   }
 
@@ -198,16 +209,16 @@
   function deleteEntity(id: string): boolean {
     const ids = descendantsInDeleteOrder(id);
     if (apply(ids.map((entityId) => ({ op: "delete" as const, id: entityId })))) {
-      if (ids.includes(selectedId ?? "")) selectedId = null;
+      if (ids.some((entityId) => selectedIds.includes(entityId))) selectEntities(selectedIds.filter((entityId) => !ids.includes(entityId)));
       return true;
     }
     return false;
   }
 
-  function openEntityMenu(id: string, x: number, y: number) {
+  function openEntityMenu(id: string | null, x: number, y: number, position: Vec3 | null = null, source: "object" | "viewport" | "hierarchy" = "object") {
     if (playState !== "stopped") { message = "Stop the simulation before editing entities."; return; }
-    selectedId = id;
-    contextMenu = { id, x: Math.max(8, Math.min(x, window.innerWidth - 210)), y: Math.max(8, Math.min(y, window.innerHeight - 300)) };
+    if (id) selectEntity(id);
+    contextMenu = { id, position, source, x: Math.max(8, Math.min(x, window.innerWidth - 210)), y: Math.max(8, Math.min(y, window.innerHeight - 300)) };
   }
 
   function copyEntity(id: string) {
@@ -228,7 +239,7 @@
     contextMenu = null;
   }
 
-  function pasteEntity() {
+  function pasteEntity(position: Vec3 | null = contextMenu?.position ?? null) {
     if (!entityClipboard || playState !== "stopped") return;
     const sourceTree = entityClipboard;
     const idMap = new Map<string, string>();
@@ -245,17 +256,20 @@
     const operations: SceneOp[] = sourceTree.map((source, index) => {
       const components = structuredClone(source.components);
       if (index === 0) {
-        const transform = components.Transform;
-        if (transform && Array.isArray(transform.position) && transform.position.length === 3) {
-          transform.position = [Number(transform.position[0]) + 1.5, Number(transform.position[1]), Number(transform.position[2]) + 1.5];
-        }
+        const transform = components.Transform ?? (components.Transform = {});
+        const current = Array.isArray(transform.position) && transform.position.length === 3 ? transform.position.map(Number) : [0, 0, 0];
+        transform.position = position
+          ? [position[0], current[1], position[2]]
+          : [current[0] + 1.5, current[1], current[2] + 1.5];
       }
       const parent = index === 0
-        ? (source.parent && scene.entities.some((entity) => entity.id === source.parent) ? source.parent : null)
+        ? (position || contextMenu?.source === "hierarchy" && contextMenu.id === null
+          ? null
+          : (source.parent && scene.entities.some((entity) => entity.id === source.parent) ? source.parent : null))
         : (source.parent ? idMap.get(source.parent) ?? source.parent : null);
       return { op: "create", id: idMap.get(source.id)!, name: index === 0 ? `${root.name} Copy` : source.name, parent, components };
     });
-    if (apply(operations)) selectedId = rootId;
+    if (apply(operations)) selectEntity(rootId);
     contextMenu = null;
   }
 
@@ -407,12 +421,12 @@ on start:
   function openScriptForSelection() {
     if (selectedId) { openScript(selectedId); return; }
     const existing = scene.entities.find((entity) => entity.components.Script && !entity.components.Mesh);
-    if (existing) { selectedId = existing.id; openScript(existing.id); return; }
+    if (existing) { selectEntity(existing.id); openScript(existing.id); return; }
     let index = 1;
     while (scene.entities.some((entity) => entity.id === `scene_script${index === 1 ? "" : `_${index}`}`)) index += 1;
     const id = `scene_script${index === 1 ? "" : `_${index}`}`;
     if (!apply([{ op: "create", id, name: "Scene Script", parent: null, components: { Transform: {}, Script: { source: scriptTemplate("the scene", true) } } }])) return;
-    selectedId = id;
+    selectEntity(id);
     openScript(id);
   }
 
@@ -483,7 +497,7 @@ on start:
     stopSimulation();
     activeGesture = null;
     scene = createEmptyScene();
-    selectedId = null;
+    selectEntity(null);
     undoStack = [];
     redoStack = [];
     scenePath = null;
@@ -523,7 +537,7 @@ on start:
         stopSimulation();
         scene = loadedScene;
         activeGesture = null;
-        selectedId = null;
+        selectEntity(null);
         undoStack = [];
         redoStack = [];
         scenePath = path;
@@ -543,7 +557,7 @@ on start:
       scene = loadedScene;
       scenePath = file.name;
       activeGesture = null;
-      selectedId = null;
+      selectEntity(null);
       undoStack = [];
       redoStack = [];
       message = `Opened ${file.name}`;
@@ -704,14 +718,14 @@ on start:
   </header>
 
   <div class="editor-body">
-    <Hierarchy scene={scene} {selectedId} onSelect={(id) => selectedId = id} onCreate={createBox} onDelete={deleteEntity} onReparent={reparentEntity} onOpenScript={openScript} onContextMenu={openEntityMenu} />
+    <Hierarchy scene={scene} {selectedIds} onSelect={selectEntity} onCreate={createBox} onDelete={deleteEntity} onReparent={reparentEntity} onOpenScript={openScript} onContextMenu={openEntityMenu} onContextMenuEmpty={(x, y) => openEntityMenu(null, x, y, null, "hierarchy")} />
     <section class="viewport-column">
       {#if openScripts.length}
         <div class="stage-tabs" role="tablist" aria-label="Open documents">
           <button role="tab" class="stage-tab" aria-selected={activeTab === "scene"} onclick={() => activeTab = "scene"}><Box size={13} /> Scene</button>
           {#each openScripts as id (id)}
             {@const entity = scene.entities.find((candidate) => candidate.id === id)}
-            <div class="stage-tab" role="tab" tabindex="0" aria-selected={activeTab === id} onclick={() => { activeTab = id; selectedId = id; }} onkeydown={(event) => { if (event.key === "Enter") activeTab = id; }}>
+            <div class="stage-tab" role="tab" tabindex="0" aria-selected={activeTab === id} onclick={() => { activeTab = id; selectEntity(id); }} onkeydown={(event) => { if (event.key === "Enter") activeTab = id; }}>
               <FileCode2 size={13} /> {entity?.name ?? id}{#if scriptDrafts[id] !== undefined}<i class="dirty-dot" title="Unsaved changes">●</i>{/if}
               <button class="close-tab" aria-label="Close {entity?.name ?? id} script" onclick={(event) => { event.stopPropagation(); closeScript(id); }}><X size={12} /></button>
             </div>
@@ -719,7 +733,7 @@ on start:
         </div>
       {/if}
       <div class="stage">
-        <Viewport scene={viewportScene} {selectedId} {mode} {frameToken} {focusToken} {gridVisible} onSelect={(id) => selectedId = id} onTransform={updateTransform} onModeChange={(nextMode) => mode = nextMode} onContextMenu={openEntityMenu} />
+        <Viewport scene={viewportScene} {selectedId} {selectedIds} {mode} {frameToken} {focusToken} {gridVisible} onSelect={selectEntity} onSelectMany={selectEntities} onTransform={updateTransform} onModeChange={(nextMode) => mode = nextMode} onContextMenu={(id, x, y, position) => openEntityMenu(id, x, y, position, id ? "object" : "viewport")} />
         {#if activeTab !== "scene" && openScripts.includes(activeTab)}
           {@const id = activeTab}
           {#key id}
@@ -770,14 +784,18 @@ on start:
   {#if contextMenu}
     <button class="context-dismiss" type="button" aria-label="Close entity menu" onclick={() => contextMenu = null}></button>
     <div class="entity-context-menu" style={`left:${contextMenu.x}px;top:${contextMenu.y}px`} role="menu" aria-label="Entity actions" tabindex="-1" oncontextmenu={(event) => event.preventDefault()}>
-      <button role="menuitem" onclick={() => cutEntity(contextMenu!.id)} disabled={playState !== "stopped"}>Cut</button>
-      <button role="menuitem" onclick={() => copyEntity(contextMenu!.id)}>Copy</button>
-      <button role="menuitem" onclick={pasteEntity} disabled={!entityClipboard || playState !== "stopped"}>Paste</button>
-      <div class="context-separator"></div>
-      <button role="menuitem" onclick={() => duplicateEntity(contextMenu!.id)} disabled={playState !== "stopped"}>Duplicate</button>
-      <button role="menuitem" onclick={() => { const entity = scene.entities.find((candidate) => candidate.id === contextMenu!.id); if (entity) renameTarget = { id: entity.id, name: entity.name }; contextMenu = null; }} disabled={playState !== "stopped"}>Rename</button>
-      <div class="context-separator"></div>
-      <button class="context-delete" role="menuitem" onclick={() => { deleteEntity(contextMenu!.id); contextMenu = null; }} disabled={playState !== "stopped"}>Delete</button>
+      {#if contextMenu.id}
+        <button role="menuitem" onclick={() => cutEntity(contextMenu!.id!)} disabled={playState !== "stopped"}>Cut</button>
+        <button role="menuitem" onclick={() => copyEntity(contextMenu!.id!)}>Copy</button>
+      {/if}
+      <button role="menuitem" onclick={() => pasteEntity(contextMenu?.position ?? null)} disabled={!entityClipboard || playState !== "stopped"}>Paste</button>
+      {#if contextMenu.id}
+        <div class="context-separator"></div>
+        <button role="menuitem" onclick={() => duplicateEntity(contextMenu!.id!)} disabled={playState !== "stopped"}>Duplicate</button>
+        <button role="menuitem" onclick={() => { const entity = scene.entities.find((candidate) => candidate.id === contextMenu!.id); if (entity) renameTarget = { id: entity.id, name: entity.name }; contextMenu = null; }} disabled={playState !== "stopped"}>Rename</button>
+        <div class="context-separator"></div>
+        <button class="context-delete" role="menuitem" onclick={() => { deleteEntity(contextMenu!.id!); contextMenu = null; }} disabled={playState !== "stopped"}>Delete</button>
+      {/if}
     </div>
   {/if}
   {#if renameTarget}

@@ -4,6 +4,13 @@ Record meaningful project changes during the event, newest first.
 
 ## Event build log
 
+### 2026-10-11T01:17:00+05:30 — Add marquee selection and empty-space paste
+
+- Changed: Ctrl-drag in the viewport now selects intersecting objects and highlights the full selection in the viewport and Hierarchy. Right-clicking empty viewport space opens the Paste menu at the pointer's ground position; right-clicking empty Hierarchy space opens a root-level Paste menu. Files: `src/App.svelte`, `src/editor/Viewport.svelte`, `src/editor/Hierarchy.svelte`, `README.md`, and `CHANGELOG.md`.
+- Why: Support selecting groups of objects and placing copies directly where the user points.
+- Validation: All 72 Vitest tests passed and `npm run build` passed with the existing large-chunk warning. `npm run check` is currently blocked by 6 TypeScript/Svelte diagnostics in the concurrent scripting changes (`src/lang/ast.ts`, `src/lang/checker.ts`, and `src/lang/codegen.ts`); the changed editor files produced no Svelte warnings. In-app browser interaction was unavailable for manual verification.
+- Limitations: The viewport gizmo still transforms the primary selected entity; group transforms are not implemented. The full type check remains blocked by the unrelated scripting changes described above.
+
 ### 2026-10-11T01:02:00+05:30 — Add entity context actions
 
 - Changed: Right-clicking an entity in the Hierarchy or on its mesh in the viewport opens a shared menu with Cut, Copy, Paste, Duplicate, Rename, and Delete. Rename is undoable through scene operations; paste and duplicate create an offset copy, and hierarchy deletion includes descendants. Updated `src/App.svelte`, `src/editor/Hierarchy.svelte`, `src/editor/Viewport.svelte`, `src/scene/types.ts`, `src/scene/applyOps.ts`, and `tests/scene/applyOps.test.ts`.
