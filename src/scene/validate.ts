@@ -61,6 +61,7 @@ function validateComponent(componentName: string, value: unknown, path: string, 
       continue;
     }
     if (schema.managedFields?.[fieldName] === "animationTracks" && Array.isArray(fieldValue)) continue;
+    if (schema.managedFields?.[fieldName] === "scriptParameters" && isRecord(fieldValue) && Object.values(fieldValue).every((value) => ["number", "boolean", "string"].includes(typeof value))) continue;
     errors.push(`${path}.${fieldName}: unknown field`);
   }
 }

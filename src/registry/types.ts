@@ -14,5 +14,5 @@ export interface ComponentSchema {
   fields: Record<string, FieldSchema>;
   requires?: string[];
   /** Data edited by a dedicated tool (for example the animation timeline). */
-  managedFields?: Record<string, "animationTracks">;
+  managedFields?: Record<string, "animationTracks" | "scriptParameters">;
 }

@@ -195,6 +195,8 @@
     const elapsed = Math.max(0, (time - lastFrameTime) / 1000);
     lastFrameTime = time;
     scene = simulation.advance(scene, elapsed);
+    const scriptMessages = simulation.takeScriptMessages();
+    if (scriptMessages.length) simulationWarnings = [...simulationWarnings, ...scriptMessages].slice(-30);
     animationFrame = requestAnimationFrame(physicsFrame);
   }
 
@@ -206,6 +208,7 @@
       const { SimulationController: Controller } = await import("./runtime/physics");
       simulation ??= new Controller();
       const warnings = await simulation.play(scene);
+      if (simulation.initialScene) scene = simulation.initialScene;
       simulationWarnings = warnings;
       if (simulation.state !== "playing") {
         message = warnings.join("; ") || "Could not start simulation";

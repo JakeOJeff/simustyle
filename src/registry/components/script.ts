@@ -6,5 +6,6 @@ export const scriptSchema: ComponentSchema = {
   requires: ["Transform"],
   fields: {
     source: { type: "string", default: "", multiline: true }
-  }
+  },
+  managedFields: { parameters: "scriptParameters" }
 };

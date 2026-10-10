@@ -1,6 +1,7 @@
 import * as RAPIER from "@dimforge/rapier3d-compat";
 import { applyOps } from "../scene/applyOps";
 import type { Entity, Scene, Vec3 } from "../scene/types";
+import { ScriptRuntime, scriptOps } from "./scripts";
 
 export type PlayState = "stopped" | "playing" | "paused";
 
@@ -8,6 +9,7 @@ interface BodyEntry {
   entity: Entity;
   body: RAPIER.RigidBody;
   type: string;
+  collider: RAPIER.Collider;
 }
 
 function record(entity: Entity, component: string): Record<string, unknown> {
@@ -67,6 +69,8 @@ export class PhysicsRuntime {
   readonly world: RAPIER.World;
   readonly warnings: string[] = [];
   private readonly bodies = new Map<string, BodyEntry>();
+  private readonly colliderEntities = new Map<number, string>();
+  private activeContacts = new Set<string>();
   private accumulator = 0;
   private readonly fixedTimestep: number;
 
@@ -113,8 +117,9 @@ export class PhysicsRuntime {
         .setDensity(0)
         .setFriction(number(data.friction, 0.5))
         .setRestitution(number(data.restitution, 0.2));
-      this.world.createCollider(collider, body);
-      this.bodies.set(entity.id, { entity, body, type });
+      const physicsCollider = this.world.createCollider(collider, body);
+      this.bodies.set(entity.id, { entity, body, type, collider: physicsCollider });
+      this.colliderEntities.set(physicsCollider.handle, entity.id);
     }
   }
 
@@ -154,12 +159,39 @@ export class PhysicsRuntime {
     }
   }
 
+  applyScriptAction(id: string, method: string, args: number[]): boolean {
+    const body = this.bodies.get(id)?.body;
+    if (!body) return false;
+    if (method === "applyImpulse" && args.length === 3) body.applyImpulse({ x: args[0]!, y: args[1]!, z: args[2]! }, true);
+    else if (method === "setVelocity" && args.length === 3) body.setLinvel({ x: args[0]!, y: args[1]!, z: args[2]! }, true);
+    else return false;
+    return true;
+  }
+
   /** Accumulate wall-clock time and advance only in fixed simulation steps. */
-  advance(scene: Scene, elapsedSeconds: number): Scene {
+  advance(scene: Scene, elapsedSeconds: number, onCollision?: (firstId: string, secondId: string) => void): Scene {
     this.accumulator += Math.max(0, Math.min(elapsedSeconds, 0.25));
     let changed = false;
     while (this.accumulator >= this.fixedTimestep) {
+      for (const [id, entry] of this.bodies) {
+        if (entry.type !== "kinematic") continue;
+        const entity = scene.entities.find((candidate) => candidate.id === id);
+        const position = vector(entity?.components.Transform?.position, [0, 0, 0]);
+        entry.body.setNextKinematicTranslation({ x: position[0], y: position[1], z: position[2] });
+      }
       this.world.step();
+      const contacts = new Set<string>();
+      for (const [id, entry] of this.bodies) {
+        this.world.contactPairsWith(entry.collider, (otherCollider) => {
+          const otherId = this.colliderEntities.get(otherCollider.handle);
+          if (!otherId || otherId === id) return;
+          const pair = [id, otherId].sort();
+          const key = pair.join("\u0000");
+          contacts.add(key);
+          if (!this.activeContacts.has(key)) onCollision?.(pair[0]!, pair[1]!);
+        });
+      }
+      this.activeContacts = contacts;
       this.accumulator -= this.fixedTimestep;
       changed = true;
     }
@@ -190,6 +222,8 @@ export class PhysicsRuntime {
   dispose(): void {
     this.world.free();
     this.bodies.clear();
+    this.colliderEntities.clear();
+    this.activeContacts.clear();
   }
 }
 
@@ -197,11 +231,23 @@ export class SimulationController {
   state: PlayState = "stopped";
   private runtime: PhysicsRuntime | null = null;
   private snapshot: Scene | null = null;
+  private scripts: ScriptRuntime | null = null;
+  private readonly scriptMessages: string[] = [];
+  private startedScene: Scene | null = null;
 
   async play(scene: Scene): Promise<string[]> {
     if (this.state !== "stopped") return [];
     this.snapshot = structuredClone(scene);
     try {
+      this.scripts = new ScriptRuntime(scene, 1, (id, method, args) => this.runtime?.applyScriptAction(id, method, args) ?? false);
+      const initial = this.scripts.start();
+      const initialOps = scriptOps(scene, initial);
+      if (initialOps.length) {
+        const result = applyOps(scene, initialOps);
+        if (!result.errors.length) scene = result.scene;
+      }
+      this.startedScene = scene;
+      this.scriptMessages.push(...this.scripts.takeIssues().map((issue) => `${issue.entityId}:${issue.line}:${issue.column} ${issue.message}`));
       this.runtime = await PhysicsRuntime.create(scene);
       this.state = "playing";
       return this.runtime.warnings;
@@ -222,15 +268,36 @@ export class SimulationController {
 
   advance(scene: Scene, elapsedSeconds: number): Scene {
     if (this.state !== "playing" || !this.runtime) return scene;
-    return this.runtime.advance(scene, elapsedSeconds);
+    const before = scene;
+    if (this.scripts) scene = this.scripts.advance(elapsedSeconds);
+    const operations = scriptOps(before, scene);
+    if (operations.length) {
+      const result = applyOps(before, operations);
+      if (result.errors.length) this.scriptMessages.push(...result.errors);
+      else scene = result.scene;
+    }
+    const simulated = this.runtime.advance(scene, elapsedSeconds, (firstId, secondId) => {
+      this.scripts?.collide(firstId, secondId);
+      this.scripts?.collide(secondId, firstId);
+    });
+    if (this.scripts) {
+      this.scriptMessages.push(...this.scripts.takeIssues().map((issue) => `${issue.entityId}:${issue.line}:${issue.column} ${issue.message}`));
+      this.scriptMessages.push(...this.scripts.takePrints().map((entry) => `${entry.entityId}: ${entry.values.map(String).join(" ")}`));
+    }
+    return simulated;
   }
 
   stop(): Scene | null {
     const snapshot = this.snapshot;
     this.runtime?.dispose();
+    this.scripts = null;
+    this.startedScene = null;
     this.runtime = null;
     this.snapshot = null;
     this.state = "stopped";
     return snapshot ? structuredClone(snapshot) : null;
   }
+
+  takeScriptMessages(): string[] { return this.scriptMessages.splice(0); }
+  get initialScene(): Scene | null { return this.startedScene ? structuredClone(this.startedScene) : null; }
 }
