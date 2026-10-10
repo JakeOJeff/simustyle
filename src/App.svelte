@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { onDestroy } from "svelte";
+  import { onDestroy, onMount } from "svelte";
   import Inspector from "./editor/Inspector.svelte";
   import Hierarchy from "./editor/Hierarchy.svelte";
   import Viewport from "./editor/Viewport.svelte";
@@ -9,11 +9,13 @@
   import { runSceneAgent } from "./ai/agent";
   import Timeline from "./editor/Timeline.svelte";
   import ExportMenu from "./editor/ExportMenu.svelte";
+  import SettingsPanel from "./editor/SettingsPanel.svelte";
+  import { chooseSceneToOpen, chooseSceneToSave, getDesktopAiSettings, isDesktopRuntime, readSceneFile, saveDesktopAiSettings, writeSceneFile } from "./platform/desktop";
   import type { VideoExportConfig, VideoExportProgress } from "./export/video";
   import type { AnimationTrack, AnimationValue } from "./runtime/animator";
   import { AnimatorRuntime } from "./runtime/animator";
   import { componentSchemas } from "./registry";
-  import { Box, Circle, Cone, Cylinder, Focus, FolderOpen, Grid3X3, Move3D, Pause, Play, Plus, Redo2, Rotate3D, Save, Scaling, Square, Undo2 } from "@lucide/svelte";
+  import { Box, Circle, Cone, Cylinder, Focus, FolderOpen, Grid3X3, Move3D, Pause, Play, Plus, Redo2, Rotate3D, Save, Scaling, Settings, Square, Undo2 } from "@lucide/svelte";
   import { applyOps } from "./scene/applyOps";
   import { deserializeScene, serializeScene } from "./scene/serialize";
   import { createEmptyScene, type Scene, type SceneOp } from "./scene/types";
@@ -42,12 +44,23 @@
   let aiUndoRecords: Record<string, SceneOp[]> = $state({});
   let nextAIId = 1;
   let timelineTime = $state(0);
+  let settingsOpen = $state(false);
+  let aiSettings = $state({ apiKeyConfigured: false, model: "gpt-4o-mini", baseUrl: "https://api.openai.com/v1" });
+  let scenePath: string | null = null;
   const animatorPreview = new AnimatorRuntime();
   let openInput: HTMLInputElement;
   let activeGesture: { id: string; initial: Scene; operation: SceneOp | null } | null = null;
   let simulation: SimulationController | null = null;
   let animationFrame = 0;
   let lastFrameTime = 0;
+
+  onMount(() => {
+    if (isDesktopRuntime()) {
+      void getDesktopAiSettings().then((settings) => aiSettings = settings).catch((error) => {
+        message = error instanceof Error ? error.message : "Could not load AI settings";
+      });
+    }
+  });
 
   let selectedEntity = $derived(scene.entities.find((entity) => entity.id === selectedId) ?? null);
   let viewportScene = $derived(bottomTab === "timeline" && playState === "stopped" ? animatorPreview.evaluate(scene, timelineTime).scene : scene);
@@ -154,8 +167,12 @@
     let index = scene.entities.filter((entity) => entity.components.Mesh?.shape === shape).length + 1;
     while (scene.entities.some((entity) => entity.id === `${shape}_${index}`)) index += 1;
     const id = `${shape}_${index}`;
+    // Place new primitives in a deterministic spiral so they remain visible and pickable.
+    const placement = scene.entities.length;
+    const angle = placement * 2.399963229728653;
+    const radius = 1.5 * Math.sqrt(placement);
     if (apply([{ op: "create", id, name: `${label} ${index}`, parent: null, components: {
-      Transform: { position: [0, shape === "plane" ? 0.01 : 0.5, 0] }, Mesh: { shape }, Material: { color: "#8b7cff" }
+      Transform: { position: [radius * Math.cos(angle), shape === "plane" ? 0.01 : 0.5, radius * Math.sin(angle)], rotation: shape === "plane" ? [-90, 0, 0] : [0, 0, 0] }, Mesh: { shape }, Material: { color: "#8b7cff" }
     } }])) selectedId = id;
     primitiveMenuOpen = false;
   }
@@ -265,10 +282,23 @@
     selectedId = null;
     undoStack = [];
     redoStack = [];
+    scenePath = null;
     message = "New scene";
   }
 
-  function saveScene() {
+  async function saveScene() {
+    if (isDesktopRuntime()) {
+      try {
+        const path = scenePath ?? await chooseSceneToSave("untitled.simu");
+        if (!path) return;
+        await writeSceneFile(path, serializeScene(scene));
+        scenePath = path;
+        message = `Saved ${path.split(/[\\/]/).at(-1) ?? "scene"}`;
+      } catch (error) {
+        message = error instanceof Error ? error.message : "Unable to save scene file";
+      }
+      return;
+    }
     const file = new Blob([serializeScene(scene)], { type: "application/json" });
     const url = URL.createObjectURL(file);
     const anchor = document.createElement("a");
@@ -279,7 +309,26 @@
     message = "Scene saved";
   }
 
-  async function loadScene(event: Event) {
+  async function loadScene(event?: Event) {
+    if (isDesktopRuntime()) {
+      try {
+        const path = await chooseSceneToOpen();
+        if (!path) return;
+        const loadedScene = deserializeScene(await readSceneFile(path));
+        stopSimulation();
+        scene = loadedScene;
+        activeGesture = null;
+        selectedId = null;
+        undoStack = [];
+        redoStack = [];
+        scenePath = path;
+        message = `Opened ${path.split(/[\\/]/).at(-1) ?? "scene"}`;
+      } catch (error) {
+        message = error instanceof Error ? error.message : "Unable to open scene file";
+      }
+      return;
+    }
+    if (!event) return;
     const input = event.currentTarget as HTMLInputElement;
     const file = input.files?.[0];
     if (!file) return;
@@ -287,6 +336,7 @@
       const loadedScene = deserializeScene(await file.text());
       stopSimulation();
       scene = loadedScene;
+      scenePath = file.name;
       activeGesture = null;
       selectedId = null;
       undoStack = [];
@@ -297,6 +347,14 @@
     } finally {
       input.value = "";
     }
+  }
+
+  async function saveAiSettings(settings: { model: string; baseUrl: string; apiKey: string }): Promise<void> {
+    aiSettings = await saveDesktopAiSettings({ model: settings.model, baseUrl: settings.baseUrl, ...(settings.apiKey ? { apiKey: settings.apiKey } : {}) });
+  }
+
+  async function removeAiKey(): Promise<void> {
+    aiSettings = await saveDesktopAiSettings({ ...aiSettings, apiKey: null });
   }
 
   function physicsFrame(time: number) {
@@ -394,7 +452,7 @@
     <div class="brand"><span class="brand-mark">S</span><span>SimuStyle</span></div>
     <div class="toolbar-group file-actions">
       <button title="New scene" aria-label="New scene" onclick={newScene}><Plus size={14} /> <span>New</span></button>
-      <button title="Open scene" aria-label="Open scene" onclick={() => openInput.click()}><FolderOpen size={14} /> <span>Open</span></button>
+      <button title="Open scene" aria-label="Open scene" onclick={() => isDesktopRuntime() ? void loadScene() : openInput.click()}><FolderOpen size={14} /> <span>Open</span></button>
       <button title="Save scene" aria-label="Save scene" onclick={saveScene}><Save size={14} /> <span>Save</span></button>
       <input bind:this={openInput} class="file-input" type="file" accept=".json,.scene.json,application/json" onchange={loadScene} />
     </div>
@@ -411,6 +469,7 @@
           <button role="menuitem" onclick={() => createPrimitive("box")}><Box size={15} /> Cube</button>
           <button role="menuitem" onclick={() => createPrimitive("sphere")}><Circle size={15} /> Sphere</button>
           <button role="menuitem" onclick={() => createPrimitive("cylinder")}><Cylinder size={15} /> Cylinder</button>
+          <button role="menuitem" onclick={() => createPrimitive("capsule")}><Circle size={15} /> Capsule</button>
           <button role="menuitem" onclick={() => createPrimitive("cone")}><Cone size={15} /> Cone</button>
           <button role="menuitem" onclick={() => createPrimitive("plane")}><Square size={15} /> Plane</button>
         </div>
@@ -423,6 +482,7 @@
     </div>
     <button class:active={gridVisible} class="view-toggle" title="Toggle floor grid" aria-label="Toggle floor grid" onclick={() => gridVisible = !gridVisible}><Grid3X3 size={15} /></button>
     <button class="view-toggle" title="Frame selected (F)" aria-label="Frame selected" disabled={!selectedId} onclick={() => focusToken += 1}><Focus size={15} /></button>
+    {#if isDesktopRuntime()}<button class="view-toggle" title="AI settings" aria-label="AI settings" onclick={() => settingsOpen = true}><Settings size={15} /></button>{/if}
     {#if playState === "stopped"}
       <button class="play-button" disabled={playStarting} onclick={startSimulation}><Play size={14} fill="currentColor" /> <span>{playStarting ? "Starting…" : "Play"}</span></button>
     {:else}
@@ -454,4 +514,13 @@
     <Inspector {scene} entity={selectedEntity} onUpdate={updateComponent} onRemove={(component) => selectedId && apply([{ op: "update", id: selectedId, components: { [component]: null } }])} onAdd={addComponent} onKeyframe={addKeyframe} />
   </div>
   <footer class="statusbar"><span><i></i> SCENE CORE</span><span>{scene.entities.length} {scene.entities.length === 1 ? "ENTITY" : "ENTITIES"}</span><span>Y-UP · METERS</span></footer>
+  {#if settingsOpen}
+    <div class="settings-overlay" role="presentation" onclick={(event) => { if (event.target === event.currentTarget) settingsOpen = false; }}>
+      <SettingsPanel model={aiSettings.model} baseUrl={aiSettings.baseUrl} hasApiKey={aiSettings.apiKeyConfigured} onSave={saveAiSettings} onRemoveKey={removeAiKey} onClose={() => settingsOpen = false} />
+    </div>
+  {/if}
 </main>
+
+<style>
+  .settings-overlay{position:fixed;inset:0;z-index:20;display:grid;place-items:center;padding:20px;background:#09090dc9;backdrop-filter:blur(5px)}
+</style>

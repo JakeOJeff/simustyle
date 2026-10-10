@@ -38,7 +38,8 @@ export function lexScript(source: string): Token[] {
       indent += text[pos] === "\t" ? 4 : 1;
       pos += 1;
     }
-    if (pos === text.length) continue;
+    // Blank and comment-only lines never open or close blocks.
+    if (pos === text.length || text.startsWith("--", pos)) continue;
 
     const line = lineIndex + 1;
     const current = indents[indents.length - 1]!;
@@ -59,6 +60,7 @@ export function lexScript(source: string): Token[] {
       const ch = text[pos]!;
       if (ch === " " || ch === "\t") { pos += 1; continue; }
       const column = pos + 1;
+      if (text.startsWith("--", pos)) break;
 
       if (ch === '"' || ch === "'") {
         const quote = ch;
@@ -93,7 +95,8 @@ export function lexScript(source: string): Token[] {
         pos += number[0].length;
         continue;
       }
-      const name = text.slice(pos).match(/^[A-Za-z_][A-Za-z_0-9]*/);
+      // Allow contractions such as "it's" so animation descriptions read naturally.
+      const name = text.slice(pos).match(/^[A-Za-z_][A-Za-z_0-9]*(?:'[A-Za-z]+)?/);
       if (name) {
         tokens.push({ kind: "identifier", value: name[0], line, column });
         pos += name[0].length;

@@ -1,4 +1,4 @@
-import type { ScriptExpression, ScriptProgram, ScriptStatement } from "./ast";
+import type { ScriptCommand, ScriptExpression, ScriptProgram, ScriptStatement, ScriptTarget } from "./ast";
 
 function quote(value: string): string { return JSON.stringify(value); }
 
@@ -9,12 +9,47 @@ function pathOf(expression: ScriptExpression): string[] | null {
   return parent ? [...parent, expression.property] : null;
 }
 
+function targetCode(target: ScriptTarget): string {
+  switch (target.kind) {
+    case "self": return "ctx.self";
+    case "name": return `{kind:"name",name:${quote(target.name)}}`;
+    case "describe": return `{kind:"describe",description:${JSON.stringify(target.description)}}`;
+    case "expression": return expressionCode(target.expression);
+  }
+}
+
+function commandCode(command: ScriptCommand): string {
+  const expression = (value: ScriptExpression) => expressionCode(value);
+  const vector = (values: ScriptExpression[]) => `[${values.map(expression).join(",")}]`;
+  let fields: string;
+  switch (command.name) {
+    case "move": {
+      const destination = command.destination.kind === "point" || command.destination.kind === "offset"
+        ? `{kind:${quote(command.destination.kind)},value:${vector(command.destination.value)}}`
+        : command.destination.kind === "direction"
+          ? `{kind:"direction",direction:${quote(command.destination.direction)},amount:${expression(command.destination.amount)}}`
+          : `{kind:"relative",relation:${quote(command.destination.relation)},target:${targetCode(command.destination.target)}}`;
+      fields = `target:${targetCode(command.target)},destination:${destination},duration:${command.duration ? expression(command.duration) : "null"}`;
+      break;
+    }
+    case "turn": fields = `target:${targetCode(command.target)},amount:${vector(command.amount)},duration:${command.duration ? expression(command.duration) : "null"}`; break;
+    case "scale": fields = `target:${targetCode(command.target)},mode:${quote(command.mode)},amount:${expression(command.amount)},duration:${command.duration ? expression(command.duration) : "null"}`; break;
+    case "paint": fields = `target:${targetCode(command.target)},color:${expression(command.color)}`; break;
+    case "push": fields = `target:${targetCode(command.target)},vector:${vector(command.vector)}`; break;
+    case "animate": fields = `target:${targetCode(command.target)},words:${JSON.stringify(command.words)}`; break;
+    case "say": return `ctx.call("print", [${command.args.map(expression).join(", ")}]);`;
+    default: fields = `target:${targetCode(command.target)}`;
+  }
+  return `ctx.command({name:${quote(command.name)},${fields}});`;
+}
+
 function expressionCode(expression: ScriptExpression): string {
   switch (expression.kind) {
     case "number": return String(expression.value);
     case "string": return quote(expression.value);
     case "boolean": return String(expression.value);
     case "color": return quote(expression.value);
+    case "describe": return `ctx.describe(${JSON.stringify(expression.description)})`;
     case "identifier":
       if (expression.name === "self") return "ctx.self";
       if (expression.name === "time" || expression.name === "dt") return `ctx.${expression.name}`;
@@ -59,6 +94,7 @@ function statementCode(statement: ScriptStatement, depth = 1): string {
     }
     case "while": return `${pad}{ let __guard = 0; while (${expressionCode(statement.condition)} && __guard++ < 10000) {\n${statement.body.map((child) => statementCode(child, depth + 1)).join("\n")}\n${pad}} }`;
     case "expression": return `${pad}${expressionCode(statement.expression)};`;
+    case "command": return `${pad}${commandCode(statement.command)}`;
   }
 }
 

@@ -4,6 +4,27 @@ Record meaningful project changes during the event, newest first.
 
 ## Event build log
 
+### 2026-10-11T00:33:00+05:30 — Fix primitive placement and script command validation
+
+- Changed: New primitives use distinct deterministic positions, the Add menu includes capsules, and README demo instructions match. Completed type checking and AST code generation for the pending natural-language script commands; scene mutations use `applyOps`, and unsupported animation commands or ignored durations produce console issues. Files: `src/App.svelte`, `src/lang/checker.ts`, `src/lang/codegen.ts`, `src/runtime/scripts.ts`, `README.md`, `SUBMISSION.md`, `AI_USAGE.md`, and `CHANGELOG.md`.
+- Why: Prevent newly added objects from covering one another and repair the incomplete script-command path that caused TypeScript errors and silent missing behavior.
+- Validation: `npm run check` passed TypeScript, Svelte diagnostics (0 errors/0 warnings), all 53 Vitest tests, and Vite production build. `cargo check --manifest-path src-tauri/Cargo.toml` could not run because Cargo is not installed.
+- Limitations: Timed scene commands apply immediately; `animate` and `stop` script commands report as unsupported. The Windows Tauri installer remains unverified without Cargo and the Windows build prerequisites. Live AI provider calls remain unverified without credentials.
+
+### 2026-10-11T00:14:00+05:30 — Add the Tauri desktop app
+
+- Changed: Added a Tauri v2 desktop shell, native scene open/save dialogs, bounded Rust scene file commands, a Rust AI chat command, model/base URL settings, and OS keyring storage for the API key. Added a settings screen, app icon, Tauri scripts, Windows NSIS bundle config, desktop setup instructions, and ignores for Rust build output. Files: `src-tauri/`, `src/platform/desktop.ts`, `src/editor/SettingsPanel.svelte`, `src/App.svelte`, `src/ai/client.ts`, `package.json`, `.gitignore`, `README.md`, `SUBMISSION.md`, `AI_USAGE.md`, and `CHANGELOG.md`.
+- Why: Provide a native desktop build with local scene workflows and keep provider credentials out of frontend storage.
+- Validation: Pending final Windows installer build and full app check.
+- Limitations: Live AI provider calls require a valid API key and network; no live provider request has been made. The installer and packaged app flow are awaiting build verification.
+
+### 2026-10-11T00:06:00+05:30 - Refine 3D editor workspace
+
+- Changed: Restyled the editor chrome around a clear docked 3D workspace, added Lucide controls, a primitive creation menu (cube, sphere, cylinder, cone, plane), a floor-grid toggle, and a Frame Selected viewport action. Documented the new controls. Files: `src/App.svelte`, `src/app.css`, `src/editor/Viewport.svelte`, `package.json`, `package-lock.json`, `README.md`, `AI_USAGE.md`, and `CHANGELOG.md`.
+- Why: Make common scene creation and viewport navigation easier to find, using interaction patterns familiar to 3D editors.
+- Validation: `npm run typecheck` passed; `npx svelte-check --tsconfig ./tsconfig.json` passed with 0 errors and 0 warnings; `npm run build` passed; a fresh Vite server returned HTTP 200 for `/`, `/src/App.svelte`, and the optimized Lucide module. No tests were run. Initial sandbox build/diagnostics hit a process-spawn restriction and passed when run outside the sandbox.
+- Limitations: Primitive creation currently covers the built-in mesh types; lights and cameras remain available through Inspector components. Visual review in an interactive browser has not been performed.
+
 ### 2026-10-11T00:04:00+05:30 — Build M7 scene exports
 
 - Changed: Added GLB conversion/export for scene meshes, materials, transforms, hierarchy, lights, and cameras; a standalone HTML exporter that bundles Three.js, OrbitControls, ScriptRuntime, AnimatorRuntime, and the shared SimulationController; and a WebM recorder with duration, resolution, progress, and cancellation controls. Added a toolbar export menu and script parameter controls for standalone pages. Files: `src/export/`, `src/editor/ExportMenu.svelte`, `src/editor/Viewport.svelte`, `src/App.svelte`, `src/runtime/scripts.ts`, `src/runtime/physics.ts`, `vite.config.ts`, `src/svelte.d.ts`, `tsconfig.json`, `package.json`, `package-lock.json`, `@lucide/svelte`, `tests/export/`, `README.md`, `SUBMISSION.md`, `DECISIONS.md`, `AI_USAGE.md`, and `CHANGELOG.md`.

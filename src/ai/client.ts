@@ -1,5 +1,6 @@
 /** Browser-side client for the Vite development server's secret-holding proxy. */
 import { AI_RESPONSE_JSON_SCHEMA } from "./prompt";
+import { desktopChat, isDesktopRuntime } from "../platform/desktop";
 
 export interface ChatMessage {
   role: "system" | "user";
@@ -24,23 +25,29 @@ export async function requestSceneEdit(
     });
   }
 
-  const response = await fetch("/api/ai/chat", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({
-      messages,
-      responseFormat: {
-        type: "json_schema",
-        json_schema: { ...AI_RESPONSE_JSON_SCHEMA, schema: responseSchema }
-      }
-    })
-  });
-  const payload: unknown = await response.json().catch(() => null);
-  if (!response.ok) {
-    const message = isRecord(payload) && typeof payload.error === "string"
-      ? payload.error
-      : `AI request failed with HTTP ${response.status}.`;
-    throw new Error(message);
+  const request = {
+    messages,
+    responseFormat: {
+      type: "json_schema",
+      json_schema: { ...AI_RESPONSE_JSON_SCHEMA, schema: responseSchema }
+    }
+  };
+  let payload: unknown;
+  if (isDesktopRuntime()) {
+    payload = await desktopChat(request);
+  } else {
+    const response = await fetch("/api/ai/chat", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(request)
+    });
+    payload = await response.json().catch(() => null);
+    if (!response.ok) {
+      const message = isRecord(payload) && typeof payload.error === "string"
+        ? payload.error
+        : `AI request failed with HTTP ${response.status}.`;
+      throw new Error(message);
+    }
   }
   if (!isRecord(payload) || typeof payload.content !== "string") {
     throw new Error("AI server returned an invalid response.");

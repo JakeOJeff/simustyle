@@ -7,6 +7,9 @@
   "scripts": {
     "dev": "vite --host 127.0.0.1",
     "build": "vite build",
+    "tauri": "tauri",
+    "tauri:dev": "tauri dev",
+    "tauri:build": "tauri build",
     "test": "vitest run",
     "test:watch": "vitest",
     "typecheck": "tsc --noEmit",
@@ -18,11 +21,14 @@
   "dependencies": {
     "@dimforge/rapier3d-compat": "^0.21.0",
     "@lucide/svelte": "^1.55.0",
+    "@tauri-apps/api": "^2.12.3",
+    "@tauri-apps/plugin-dialog": "^2.8.2",
     "svelte": "^5.57.2",
     "three": "^0.186.1"
   },
   "devDependencies": {
     "@sveltejs/vite-plugin-svelte": "^7.3.1",
+    "@tauri-apps/cli": "^2.12.1",
     "@types/node": "^26.6.5",
     "@types/three": "^0.186.0",
     "esbuild": "^0.28.2",

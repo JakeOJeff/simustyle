@@ -75,6 +75,7 @@ export function typecheckScript(program: ScriptProgram): ScriptDiagnostic[] {
       case "string": return "string";
       case "boolean": return "boolean";
       case "color": return "color";
+      case "describe": return "entity";
       case "identifier": {
         if (expression.name === "self" || eventNames.has(expression.name)) return "entity";
         if (expression.name === "time" || expression.name === "dt") return "number";
@@ -199,8 +200,40 @@ export function typecheckScript(program: ScriptProgram): ScriptDiagnostic[] {
         const condition = expressionType(statement.condition, variables, eventNames);
         if (condition !== "boolean" && condition !== "unknown") report(statement.condition, "while condition must be a boolean.");
         checkStatements(statement.body, new Map(variables), eventNames);
-      } else {
+      } else if (statement.kind === "expression") {
         expressionType(statement.expression, variables, eventNames);
+      } else if (statement.kind === "command") {
+        const command = statement.command;
+        const checkTarget = (target: import("./ast").ScriptTarget) => {
+          if (target.kind === "expression") expressionType(target.expression, variables, eventNames);
+          else if (target.kind === "describe" && target.description.relation) checkTarget(target.description.relation.target);
+        };
+        const requireType = (expression: ScriptExpression, expected: ValueType, label: string) => {
+          const actual = expressionType(expression, variables, eventNames);
+          if (actual !== expected && actual !== "unknown") report(expression, `${label} must be ${expected}.`);
+        };
+        if (command.name === "say") {
+          for (const argument of command.args) expressionType(argument, variables, eventNames);
+        } else {
+          checkTarget(command.target);
+          switch (command.name) {
+            case "move":
+              if (command.destination.kind === "point" || command.destination.kind === "offset") command.destination.value.forEach((value) => requireType(value, "number", "Coordinates"));
+              else if (command.destination.kind === "direction") requireType(command.destination.amount, "number", "Distance");
+              else checkTarget(command.destination.target);
+              if (command.duration) requireType(command.duration, "number", "Duration");
+              break;
+            case "turn": command.amount.forEach((value) => requireType(value, "number", "Turn amount")); if (command.duration) requireType(command.duration, "number", "Duration"); break;
+            case "scale": requireType(command.amount, "number", "Scale amount"); if (command.duration) requireType(command.duration, "number", "Duration"); break;
+            case "paint": requireType(command.color, "color", "Paint color"); break;
+            case "push": command.vector.forEach((value) => requireType(value, "number", "Push amount")); break;
+            case "animate":
+            case "destroy":
+            case "stop":
+            case "hide":
+            case "show": break;
+          }
+        }
       }
     }
   }
