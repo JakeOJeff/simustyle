@@ -4,6 +4,13 @@ Record meaningful project changes during the event, newest first.
 
 ## Event build log
 
+### 2026-10-11T03:48:00+05:30 — Accept conversational recolor requests
+
+- Changed: Added `make <object> <color>` as a paint command, with a short polite lead-in such as `can u like`; taught fuzzy-word detection that parser-supported click event wording and the request lead-in are understood. Documented the syntax in `README.md`. Files: `src/lang/parser.ts`, `src/lang/vocabulary.ts`, `src/lang/fuzzy.ts`, `README.md`, and `AI_USAGE.md`.
+- Why: Resolve the editor's parse error for `when i click this` followed by `can u like make the box red`, and avoid offering an AI Parse request for those understood words.
+- Validation: `npm run typecheck` and `npm run build` passed; `git diff --check` passed. Tests were not run. The build reports the existing large-chunk warning.
+- Limitations: `make` currently means recolor an existing object and requires a named color.
+
 ### 2026-10-11T03:40:00+05:30 — Focus the camera only on F
 
 - Changed: Clicking or selecting an object no longer moves the camera. The viewport's focus effects called `focusSelected()` inside a reactive effect, so reading the selection made them re-run on every selection or scene change; they are now `untrack`ed and only fire when F, View → Frame selected, or an AI apply requests it. Files: `src/editor/Viewport.svelte`.
