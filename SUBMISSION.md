@@ -5,7 +5,7 @@
 - **Project name:** SimuStyle Scene Agent
 - **Short description:** Converts plain-language scene requests into validated JSON operations that a 3D simulation editor can apply.
 - **Code repository URL:** https://github.com/JakeOJeff/simustyle
-- **Final submitted implementation commit SHA:** TODO — record after the final implementation commit.
+- **Final submitted implementation commit SHA:** `65050f60c658edd395ece6f50f9513f4b644d002` (current implementation checkpoint; update if implementation changes before submission).
 - **Working demo URL or local demo steps:** Run `npm start`, then send a request to `POST http://localhost:3000/api/parse`; see [README.md](README.md) for the request example. Or run `npm run parse -- "A colorful tower of blocks that a wrecking ball swings into"`.
 - **Demo access requirements:** Node.js 20+ and an OpenAI API key set as `OPENAI_API_KEY`. Do not include the key in the repository.
 
