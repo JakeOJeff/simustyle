@@ -1,23 +1,19 @@
 # Change log
 
-Record each meaningful project change during the event, newest first. Update this file in the same commit as the change. Use a real timestamp with timezone, for example `YYYY-MM-DDTHH:MM:SS+05:30`.
+Record meaningful project changes during the event, newest first.
 
 ## Event build log
 
-No project implementation has been recorded yet. Replace this sentence with entries as you build:
+### 2026-10-10T22:27:55+05:30 — Build the scene parser MVP
 
-```text
-## <actual timestamp> — <short change title>
-
-- Changed: <feature or files changed>
-- Why: <reason for the change>
-- Validation: <commands or manual checks actually run, with results>
-- Limitations: <known issues or "None identified in these checks">
-```
+- Changed: Added the Node.js CLI and HTTP API, OpenAI Responses API integration, scene prompt construction, runtime component registry support, local operation validation, and setup/demo documentation. Files: `package.json`, `src/cli.js`, `src/openai.js`, `src/prompts.js`, `src/server.js`, `src/validate.js`, `README.md`, `AI_USAGE.md`, and `SUBMISSION.md`.
+- Why: Turn plain-language scene edits into safe-to-review JSON operations for a host simulation.
+- Validation: `npm run check` passed. A Node smoke check accepted a valid operation, rejected an unsupported field, and rejected a dangling scene parent. A local HTTP smoke check passed `/health` and confirmed malformed scene input returns HTTP 400.
+- Limitations: Live generation requires an OpenAI API key and is unverified here. Script compilation and simulator application are outside this MVP.
 
 ## Template setup — 10 October 2026
 
 - Changed: Added the event README, rules, agent guide, change log, AI usage record, submission checklist, Git ignore rules, and pull request checklist.
 - Why: Give participants a consistent starting point for event rules, basic coding patterns, documented changes, and regular commits.
 - Validation: Checked local Markdown links, event detail consistency, required documents, and diff whitespace before publishing.
-- Limitations: Documentation scaffolding only; no participant project, application, or working demo is included. GitHub publication and template status are verified separately after creation.
+- Limitations: Documentation scaffolding only; no participant project, application, or working demo was included at template setup.

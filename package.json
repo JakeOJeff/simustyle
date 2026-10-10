@@ -1,0 +1,13 @@
+{
+  "name": "simustyle-scene-agent",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Turn plain-language scene requests into validated simulation JSON operations.",
+  "type": "module",
+  "scripts": {
+    "start": "node src/server.js",
+    "parse": "node src/cli.js",
+    "check": "node --check src/cli.js && node --check src/openai.js && node --check src/prompts.js && node --check src/server.js && node --check src/validate.js"
+  },
+  "engines": { "node": ">=20" }
+}
