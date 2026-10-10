@@ -92,7 +92,7 @@ In the browser development server, set `AI_API_KEY` and `AI_MODEL` in the ignore
 
 ## Animate and simulate
 
-Click the keyframe diamond next to an animatable Inspector field to add a key at the current playhead. Scrub Timeline to preview values. Tracks support Linear, Ease In Out, and Step interpolation. Transform animation on dynamic rigid bodies is skipped with a Console warning; animate static or kinematic transforms instead.
+Click the keyframe diamond next to an animatable Inspector field to add a key at the current playhead. In Timeline, drag a diamond to retime a key, click a track lane to seek, or use Left/Right (Shift for finer steps) and Home/End when a lane is focused. The timeline's Play/Pause and Stop controls preview the selected object's animation while editing. Tracks support Linear, Ease In Out, and Step interpolation. Transform animation on dynamic rigid bodies is skipped with a Console warning; animate static or kinematic transforms instead.
 
 Use **Play** to run scripts, animation, and physics. **Pause** freezes the simulation; **Step** advances one 60 fps frame while paused; **Stop** restores the scene to its pre-Play state. Script compilation errors appear in the editor and Console.
 

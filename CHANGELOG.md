@@ -4,6 +4,13 @@ Record meaningful project changes during the event, newest first.
 
 ## Event build log
 
+### 2026-10-11T05:25:00+05:30 — Make the animation timeline easier to edit
+
+- Changed: Added timeline Play/Pause and Stop preview controls, draggable keyframe diamonds, click-to-seek track lanes, and keyboard seeking with arrows and Home/End. Updated the animation instructions in README, the user guide, in-app Docs, and AI usage record. Files: `src/editor/Timeline.svelte`, `README.md`, `docs/USER_GUIDE.md`, `src/editor/DocsPanel.svelte`, and `AI_USAGE.md`.
+- Why: The participant wanted a more capable, Panzoid-style animation timeline with direct keyframe editing and preview controls.
+- Validation: `npm run typecheck`, `npx svelte-check --tsconfig ./tsconfig.json` (0 errors/0 warnings), `npm run build`, and `git diff --check` passed. Tests were not run.
+- Limitations: No graph-curve editor or zoom controls; preview operates on the selected entity's Animator tracks. The production build reports the existing large-chunk warning. Not manually exercised in a browser.
+
 ### 2026-10-11T05:19:00+05:30 — Make Parse adaptive and add object hover cards
 
 - Changed: **✦ Parse** now runs in escalating stages instead of always rewriting the full script with AI. Stage 1 fixes typos (edit distance with swapped letters) and a short synonym list locally, keeping a change only if it adds no diagnostic on its line. Stage 2 sends AI only the remaining problem lines, each with its event line and problems, plus a compact one-line-per-object scene list, and splices back line replacements (up to two passes when a fix reveals an error the parser had masked). Stage 3 rewrites the full script only when the targeted fix fails or the model reports it needs context. All stages share one system prompt so providers can reuse cached prompt prefixes. The review dialog shows the stage, AI call count, and highlighted changed lines. Hovering an object name, quoted name, `me`/`my`, `my children`/`my parent`, or a shape noun in the script editor shows a card with the object's type, color, position, parent, children, and distance from the script owner. Files: `src/lang/autocorrect.ts` (new), `src/ai/scriptRewrite.ts`, `src/lang/fuzzy.ts`, `src/lang/highlight.ts`, `src/editor/ScriptEditor.svelte`, `src/editor/DocsPanel.svelte`, `tests/ai/scriptRewrite.test.ts` (new), `README.md`, `docs/USER_GUIDE.md`, and `AI_USAGE.md`.

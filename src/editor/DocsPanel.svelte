@@ -79,7 +79,7 @@ when space is pressed
 
     <section id="docs-animation-play">
       <h2>Animation and Play</h2>
-      <p>Add keyframes from Inspector, then scrub Timeline to preview them. Tracks support Linear, Ease In Out, and Step interpolation. Transform tracks on dynamic rigid bodies are skipped with a Console warning; use a static or kinematic body for transform animation.</p>
+      <p>Add keyframes from Inspector, then drag keyframe diamonds to retime them or click a track lane to seek. Use the Timeline Play/Pause and Stop controls to preview while editing; focused lanes also support Left/Right, Shift for finer steps, and Home/End. Tracks support Linear, Ease In Out, and Step interpolation. Transform tracks on dynamic rigid bodies are skipped with a Console warning; use a static or kinematic body for transform animation.</p>
       <p><b>Play</b> runs scripts, animation, and physics. <b>Pause</b> freezes the simulation. <b>Step</b> advances one 60 fps frame while paused. <b>Stop</b> restores the scene snapshot from before Play. Script errors appear inline and in Console.</p>
     </section>
 
