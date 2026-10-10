@@ -22,7 +22,7 @@ export class ScriptError extends Error {
   }
 }
 
-const operators = ["..", "+=", "-=", "*=", "/=", "==", "!=", "<=", ">=", "+", "-", "*", "/", "%", "=", "<", ">"]; 
+const operators = ["..", "+=", "-=", "*=", "/=", "==", "!=", "<=", ">=", "+", "-", "*", "/", "%", "=", "<", ">"];
 const punctuation = new Set([":", ".", ",", "(", ")"]);
 
 export function lexScript(source: string): Token[] {
