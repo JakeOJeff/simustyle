@@ -20,7 +20,7 @@
   import { Box, Circle, Cone, Cylinder, FileCode2, Focus, FolderOpen, Grid3X3, Move3D, Pause, Play, Plus, Redo2, Rotate3D, Save, Scaling, Settings, Square, Undo2, X } from "@lucide/svelte";
   import { applyOps } from "./scene/applyOps";
   import { deserializeScene, serializeScene } from "./scene/serialize";
-  import { createEmptyScene, type Scene, type SceneOp } from "./scene/types";
+  import { createEmptyScene, type Entity, type Scene, type SceneOp } from "./scene/types";
   import type { PlayState, SimulationController } from "./runtime/physics";
 
   type ToolMode = "translate" | "rotate" | "scale";
@@ -57,6 +57,9 @@
   let commandHistory: string[] = [];
   let commandHistoryIndex = -1;
   let consoleLog: { kind: "info" | "error" | "print"; text: string }[] = $state([]);
+  let contextMenu: { id: string; x: number; y: number } | null = $state(null);
+  let renameTarget: { id: string; name: string } | null = $state(null);
+  let entityClipboard: Entity[] | null = $state.raw(null);
   const animatorPreview = new AnimatorRuntime();
   let openInput: HTMLInputElement;
   let activeGesture: { id: string; initial: Scene; operation: SceneOp | null } | null = null;
@@ -192,10 +195,87 @@
     return [...children.flatMap((child) => descendantsInDeleteOrder(child.id)), id];
   }
 
-  function deleteEntity(id: string) {
+  function deleteEntity(id: string): boolean {
     const ids = descendantsInDeleteOrder(id);
     if (apply(ids.map((entityId) => ({ op: "delete" as const, id: entityId })))) {
       if (ids.includes(selectedId ?? "")) selectedId = null;
+      return true;
+    }
+    return false;
+  }
+
+  function openEntityMenu(id: string, x: number, y: number) {
+    if (playState !== "stopped") { message = "Stop the simulation before editing entities."; return; }
+    selectedId = id;
+    contextMenu = { id, x: Math.max(8, Math.min(x, window.innerWidth - 210)), y: Math.max(8, Math.min(y, window.innerHeight - 300)) };
+  }
+
+  function copyEntity(id: string) {
+    const entity = scene.entities.find((candidate) => candidate.id === id);
+    if (!entity) return;
+    entityClipboard = descendantsInDeleteOrder(id).reverse().map((entityId) => structuredClone(scene.entities.find((candidate) => candidate.id === entityId)!));
+    message = `Copied ${entity.name}`;
+    contextMenu = null;
+  }
+
+  function cutEntity(id: string) {
+    const entity = scene.entities.find((candidate) => candidate.id === id);
+    if (!entity) return;
+    const copied = descendantsInDeleteOrder(id).reverse().map((entityId) => structuredClone(scene.entities.find((candidate) => candidate.id === entityId)!));
+    if (!deleteEntity(id)) return;
+    entityClipboard = copied;
+    message = `Cut ${entity.name}`;
+    contextMenu = null;
+  }
+
+  function pasteEntity() {
+    if (!entityClipboard || playState !== "stopped") return;
+    const sourceTree = entityClipboard;
+    const idMap = new Map<string, string>();
+    const usedIds = new Set(scene.entities.map((entity) => entity.id));
+    for (const source of sourceTree) {
+      let suffix = 1;
+      let id = `${source.id}_copy`;
+      while (usedIds.has(id)) id = `${source.id}_copy${++suffix}`;
+      usedIds.add(id);
+      idMap.set(source.id, id);
+    }
+    const root = sourceTree[0];
+    const rootId = idMap.get(root.id)!;
+    const operations: SceneOp[] = sourceTree.map((source, index) => {
+      const components = structuredClone(source.components);
+      if (index === 0) {
+        const transform = components.Transform;
+        if (transform && Array.isArray(transform.position) && transform.position.length === 3) {
+          transform.position = [Number(transform.position[0]) + 1.5, Number(transform.position[1]), Number(transform.position[2]) + 1.5];
+        }
+      }
+      const parent = index === 0
+        ? (source.parent && scene.entities.some((entity) => entity.id === source.parent) ? source.parent : null)
+        : (source.parent ? idMap.get(source.parent) ?? source.parent : null);
+      return { op: "create", id: idMap.get(source.id)!, name: index === 0 ? `${root.name} Copy` : source.name, parent, components };
+    });
+    if (apply(operations)) selectedId = rootId;
+    contextMenu = null;
+  }
+
+  function duplicateEntity(id: string) {
+    const entity = scene.entities.find((candidate) => candidate.id === id);
+    if (!entity) return;
+    const previousClipboard = entityClipboard;
+    entityClipboard = descendantsInDeleteOrder(id).reverse().map((entityId) => structuredClone(scene.entities.find((candidate) => candidate.id === entityId)!));
+    pasteEntity();
+    entityClipboard = previousClipboard;
+  }
+
+  function commitRename() {
+    if (!renameTarget) return;
+    const name = renameTarget.name.trim();
+    if (!name) { message = "Entity name cannot be empty"; return; }
+    if (apply([{ op: "update", id: renameTarget.id, components: {}, name }])) {
+      message = `Renamed entity to ${name}`;
+      renameTarget = null;
+      contextMenu = null;
     }
   }
 
@@ -624,7 +704,7 @@ on start:
   </header>
 
   <div class="editor-body">
-    <Hierarchy scene={scene} {selectedId} onSelect={(id) => selectedId = id} onCreate={createBox} onDelete={deleteEntity} onReparent={reparentEntity} onOpenScript={openScript} />
+    <Hierarchy scene={scene} {selectedId} onSelect={(id) => selectedId = id} onCreate={createBox} onDelete={deleteEntity} onReparent={reparentEntity} onOpenScript={openScript} onContextMenu={openEntityMenu} />
     <section class="viewport-column">
       {#if openScripts.length}
         <div class="stage-tabs" role="tablist" aria-label="Open documents">
@@ -639,7 +719,7 @@ on start:
         </div>
       {/if}
       <div class="stage">
-        <Viewport scene={viewportScene} {selectedId} {mode} {frameToken} {focusToken} {gridVisible} onSelect={(id) => selectedId = id} onTransform={updateTransform} onModeChange={(nextMode) => mode = nextMode} />
+        <Viewport scene={viewportScene} {selectedId} {mode} {frameToken} {focusToken} {gridVisible} onSelect={(id) => selectedId = id} onTransform={updateTransform} onModeChange={(nextMode) => mode = nextMode} onContextMenu={openEntityMenu} />
         {#if activeTab !== "scene" && openScripts.includes(activeTab)}
           {@const id = activeTab}
           {#key id}
@@ -687,6 +767,30 @@ on start:
       <SettingsPanel model={aiSettings.model} baseUrl={aiSettings.baseUrl} hasApiKey={aiSettings.apiKeyConfigured} onSave={saveAiSettings} onRemoveKey={removeAiKey} onClose={() => settingsOpen = false} />
     </div>
   {/if}
+  {#if contextMenu}
+    <button class="context-dismiss" type="button" aria-label="Close entity menu" onclick={() => contextMenu = null}></button>
+    <div class="entity-context-menu" style={`left:${contextMenu.x}px;top:${contextMenu.y}px`} role="menu" aria-label="Entity actions" tabindex="-1" oncontextmenu={(event) => event.preventDefault()}>
+      <button role="menuitem" onclick={() => cutEntity(contextMenu!.id)} disabled={playState !== "stopped"}>Cut</button>
+      <button role="menuitem" onclick={() => copyEntity(contextMenu!.id)}>Copy</button>
+      <button role="menuitem" onclick={pasteEntity} disabled={!entityClipboard || playState !== "stopped"}>Paste</button>
+      <div class="context-separator"></div>
+      <button role="menuitem" onclick={() => duplicateEntity(contextMenu!.id)} disabled={playState !== "stopped"}>Duplicate</button>
+      <button role="menuitem" onclick={() => { const entity = scene.entities.find((candidate) => candidate.id === contextMenu!.id); if (entity) renameTarget = { id: entity.id, name: entity.name }; contextMenu = null; }} disabled={playState !== "stopped"}>Rename</button>
+      <div class="context-separator"></div>
+      <button class="context-delete" role="menuitem" onclick={() => { deleteEntity(contextMenu!.id); contextMenu = null; }} disabled={playState !== "stopped"}>Delete</button>
+    </div>
+  {/if}
+  {#if renameTarget}
+    <div class="rename-overlay" role="presentation" onclick={(event) => { if (event.target === event.currentTarget) renameTarget = null; }}>
+      <div class="rename-dialog" role="dialog" aria-modal="true" aria-labelledby="rename-title">
+        <h2 id="rename-title">Rename entity</h2>
+        <form onsubmit={(event) => { event.preventDefault(); commitRename(); }}>
+          <input aria-label="Entity name" bind:value={renameTarget.name} maxlength="100" />
+          <div class="rename-actions"><button type="button" onclick={() => renameTarget = null}>Cancel</button><button type="submit" disabled={!renameTarget.name.trim()}>Rename</button></div>
+        </form>
+      </div>
+    </div>
+  {/if}
 </main>
 
 <style>
@@ -711,4 +815,20 @@ on start:
   .command-bar input{flex:1;min-width:0;height:100%;border:0;outline:none;background:transparent;color:#e6e3f1;font:11px 'DM Mono',monospace}
   .command-bar button{height:22px;padding:0 10px;border:0;border-radius:4px;background:#1f2f3a;color:#a9def7;font-size:10px;cursor:pointer}.command-bar button:disabled{opacity:.4;cursor:default}
   .settings-overlay{position:fixed;inset:0;z-index:20;display:grid;place-items:center;padding:20px;background:#09090dc9;backdrop-filter:blur(5px)}
+  .context-dismiss{position:fixed;inset:0;z-index:30;border:0;background:transparent}
+  .entity-context-menu{position:fixed;z-index:31;width:194px;padding:5px;border:1px solid #383845;border-radius:8px;background:#1b1b23;box-shadow:0 12px 36px #0009}
+  .entity-context-menu button{display:block;width:100%;height:30px;padding:0 10px;border:0;border-radius:4px;background:transparent;color:#e6e3f1;text-align:left;font-size:11px;cursor:pointer}
+  .entity-context-menu button:hover:not(:disabled){background:#302d40}
+  .entity-context-menu button:disabled{opacity:.4;cursor:default}
+  .entity-context-menu .context-delete{color:#ff9ba2}
+  .context-separator{height:1px;margin:4px 3px;background:#ffffff18}
+  .rename-overlay{position:fixed;inset:0;z-index:40;display:grid;place-items:center;padding:20px;background:#09090dc9;backdrop-filter:blur(4px)}
+  .rename-dialog{width:min(360px,100%);padding:20px;border:1px solid #383845;border-radius:10px;background:#1b1b23;box-shadow:0 18px 50px #0009}
+  .rename-dialog h2{margin:0 0 14px;color:#e6e3f1;font-size:14px}
+  .rename-dialog input{box-sizing:border-box;width:100%;height:34px;padding:0 10px;border:1px solid #454451;border-radius:5px;background:#111217;color:#e6e3f1;font:12px 'DM Sans',sans-serif;outline:none}
+  .rename-dialog input:focus{border-color:#9585fa}
+  .rename-actions{display:flex;justify-content:flex-end;gap:8px;margin-top:16px}
+  .rename-actions button{height:28px;padding:0 12px;border:1px solid #454451;border-radius:5px;background:#25252f;color:#d6d3e0;font-size:10px;cursor:pointer}
+  .rename-actions button[type="submit"]{border-color:#7d6be6;background:#7562da;color:#fff}
+  .rename-actions button:disabled{opacity:.45;cursor:default}
 </style>

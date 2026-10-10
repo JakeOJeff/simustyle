@@ -22,7 +22,7 @@ export interface Scene {
 
 export type SceneOp =
   | { op: "create"; id: string; name: string; parent: string | null; components: Record<string, Record<string, unknown>> }
-  | { op: "update"; id: string; components: Record<string, Record<string, unknown> | null>; parent?: string | null }
+  | { op: "update"; id: string; components: Record<string, Record<string, unknown> | null>; parent?: string | null; name?: string }
   | { op: "delete"; id: string }
   | { op: "settings"; settings: Partial<SceneSettings> };
 

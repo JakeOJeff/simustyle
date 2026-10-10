@@ -9,6 +9,7 @@
     onDelete: (id: string) => void;
     onReparent: (id: string, parent: string | null) => void;
     onOpenScript: (id: string) => void;
+    onContextMenu: (id: string, x: number, y: number) => void;
   }
 
   interface TreeRow {
@@ -16,7 +17,7 @@
     depth: number;
   }
 
-  let { scene, selectedId, onSelect, onCreate, onDelete, onReparent, onOpenScript }: Props = $props();
+  let { scene, selectedId, onSelect, onCreate, onDelete, onReparent, onOpenScript, onContextMenu }: Props = $props();
 
   let rows = $derived.by(() => {
     const byParent = new Map<string, Entity[]>();
@@ -69,7 +70,7 @@
   {:else}
     <ul class="entity-list" role="tree" aria-label="Scene entities">
       {#each rows as row (row.entity.id)}
-        <li class="entity-row" role="treeitem" aria-level={row.depth + 1} aria-selected={selectedId === row.entity.id}>
+        <li class="entity-row" role="treeitem" aria-level={row.depth + 1} aria-selected={selectedId === row.entity.id} oncontextmenu={(event) => { event.preventDefault(); onContextMenu(row.entity.id, event.clientX, event.clientY); }}>
           <button
             class="select-button"
             class:selected={selectedId === row.entity.id}

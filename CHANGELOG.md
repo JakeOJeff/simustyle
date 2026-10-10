@@ -4,6 +4,13 @@ Record meaningful project changes during the event, newest first.
 
 ## Event build log
 
+### 2026-10-11T01:02:00+05:30 — Add entity context actions
+
+- Changed: Right-clicking an entity in the Hierarchy or on its mesh in the viewport opens a shared menu with Cut, Copy, Paste, Duplicate, Rename, and Delete. Rename is undoable through scene operations; paste and duplicate create an offset copy, and hierarchy deletion includes descendants. Updated `src/App.svelte`, `src/editor/Hierarchy.svelte`, `src/editor/Viewport.svelte`, `src/scene/types.ts`, `src/scene/applyOps.ts`, and `tests/scene/applyOps.test.ts`.
+- Why: Provide expected direct object actions in both editor views.
+- Validation: `npm run check` passed TypeScript, Svelte diagnostics (0 errors/0 warnings), all 68 Vitest tests, and Vite production build. The in-app browser was unavailable for manual interaction verification. Build retains the existing large-chunk warning.
+- Limitations: Clipboard contents are local to the current editor session. Interactive viewport menu behavior has not yet been manually checked.
+
 ### 2026-10-11T00:55:00+05:30 — Add plain-English script commands and an in-app script editor
 
 - Changed: Fixed the Add menu and Hierarchy **+** buttons, which threw `structuredClone` errors on Svelte 5 state proxies (scene and undo stacks are now `$state.raw`). Completed the Scratch-style command language: `move`/`glide` (coordinates, offsets, directions, or above/below/beside/… another object, optionally `over Ns`), `turn`, `scale`, `paint`, `hide`/`show`, `destroy`, `push`, `say`, `animate … like <description>` with twelve keyword-matched styles, and `stop`; object descriptions such as `the nearest red ball above the box`; `--` comments. Added a tabbed script editor over the viewport with syntax highlighting, line numbers, inline problems, indentation keys, and a clickable reference; a toolbar **Script** button, Hierarchy script badges, an Inspector **Open in script editor** button, and a Console command bar that runs commands immediately as one undo step. The AI agent prompt documents the commands. Files: `src/App.svelte`, `src/editor/ScriptEditor.svelte`, `src/editor/Hierarchy.svelte`, `src/editor/Inspector.svelte`, `src/lang/` (`vocabulary.ts`, `highlight.ts`, `parser.ts`, `lexer.ts`, `checker.ts`, `codegen.ts`, `ast.ts`), `src/runtime/commands.ts`, `src/runtime/scripts.ts`, `src/runtime/physics.ts`, `src/ai/prompt.ts`, `tests/lang/commands.test.ts`, `README.md`, and `CHANGELOG.md`.

@@ -21,12 +21,13 @@
     /** Request a Transform update; the host should apply it through applyOps. */
     onTransform: (id: string, transform: TransformPatch, phase: TransformPhase) => void;
     onModeChange: (mode: TransformMode) => void;
+    onContextMenu: (id: string, x: number, y: number) => void;
     frameToken: number;
     focusToken: number;
     gridVisible: boolean;
   }
 
-  let { scene, selectedId, mode, onSelect, onTransform, onModeChange, frameToken, focusToken, gridVisible }: Props = $props();
+  let { scene, selectedId, mode, onSelect, onTransform, onModeChange, onContextMenu, frameToken, focusToken, gridVisible }: Props = $props();
   let host: HTMLDivElement;
 
   function component(entity: Entity, name: string): Record<string, unknown> {
@@ -133,7 +134,7 @@
     resizeObserver.observe(host);
     resize();
 
-    function setPointer(event: PointerEvent) {
+    function setPointer(event: { clientX: number; clientY: number }) {
       const rect = renderer.domElement.getBoundingClientRect();
       pointer.set(((event.clientX - rect.left) / rect.width) * 2 - 1, -((event.clientY - rect.top) / rect.height) * 2 + 1);
     }
@@ -145,6 +146,17 @@
       const hit = raycaster.intersectObjects(pickables, false)[0]?.object;
       const entity = hit && [...entityObjects.entries()].find(([, object]) => object === hit)?.[0];
       onSelect(entity ?? null);
+    }
+    function pickContextMenu(event: MouseEvent) {
+      setPointer(event);
+      raycaster.setFromCamera(pointer, camera);
+      const pickables = [...entityObjects.values()].filter((object) => object instanceof THREE.Mesh);
+      const hit = raycaster.intersectObjects(pickables, false)[0]?.object;
+      const entity = hit && [...entityObjects.entries()].find(([, object]) => object === hit)?.[0];
+      if (!entity) return;
+      event.preventDefault();
+      onSelect(entity);
+      onContextMenu(entity, event.clientX, event.clientY);
     }
     function focusSelected() {
       const entity = currentEntity();
@@ -161,6 +173,7 @@
     const pointerDown = (event: PointerEvent) => { downX = event.clientX; downY = event.clientY; };
     renderer.domElement.addEventListener("pointerdown", pointerDown);
     renderer.domElement.addEventListener("pointerup", pick);
+    renderer.domElement.addEventListener("contextmenu", pickContextMenu);
 
     function onKey(event: KeyboardEvent) {
       if (event.target instanceof HTMLElement && (event.target.isContentEditable || ["INPUT", "TEXTAREA", "SELECT"].includes(event.target.tagName))) return;
@@ -266,6 +279,7 @@
       resizeObserver.disconnect();
       renderer.domElement.removeEventListener("pointerdown", pointerDown);
       renderer.domElement.removeEventListener("pointerup", pick);
+      renderer.domElement.removeEventListener("contextmenu", pickContextMenu);
       window.removeEventListener("keydown", onKey);
       gizmo.removeEventListener("objectChange", onObjectChange);
       gizmo.removeEventListener("dragging-changed", onDraggingChanged);

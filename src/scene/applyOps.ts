@@ -22,6 +22,7 @@ function operationShapeError(value: unknown, index: number): string | undefined 
     case "update":
       if (typeof value.id !== "string" || !isRecord(value.components)) return `${path}: update requires id and components`;
       if ("parent" in value && value.parent !== null && typeof value.parent !== "string") return `${path}.parent: must be an entity id or null`;
+      if ("name" in value && (typeof value.name !== "string" || !value.name.trim())) return `${path}.name: must be a non-empty string`;
       for (const [name, component] of Object.entries(value.components)) {
         if (component !== null && !isRecord(component)) return `${path}.components.${name}: must be an object or null`;
       }
@@ -59,7 +60,7 @@ function settingsPatch(value: Record<string, unknown>): Partial<Scene["settings"
   return result;
 }
 
-function inverseForUpdate(entity: Entity, changes: Record<string, Record<string, unknown> | null>, parent?: string | null): SceneOp {
+function inverseForUpdate(entity: Entity, changes: Record<string, Record<string, unknown> | null>, parent?: string | null, name?: string): SceneOp {
   const inverse: Record<string, Record<string, unknown> | null> = {};
   for (const [componentName, patch] of Object.entries(changes)) {
     const current = entity.components[componentName];
@@ -78,13 +79,18 @@ function inverseForUpdate(entity: Entity, changes: Record<string, Record<string,
       inverse[componentName] = restore;
     }
   }
-  return parent === undefined
-    ? { op: "update", id: entity.id, components: inverse }
-    : { op: "update", id: entity.id, components: inverse, parent: entity.parent };
+  return {
+    op: "update",
+    id: entity.id,
+    components: inverse,
+    ...(parent !== undefined ? { parent: entity.parent } : {}),
+    ...(name !== undefined ? { name: entity.name } : {})
+  };
 }
 
-function updateEntity(entity: Entity, changes: Record<string, Record<string, unknown> | null>, parent?: string | null): void {
+function updateEntity(entity: Entity, changes: Record<string, Record<string, unknown> | null>, parent?: string | null, name?: string): void {
   if (parent !== undefined) entity.parent = parent;
+  if (name !== undefined) entity.name = name;
   for (const [componentName, patch] of Object.entries(changes)) {
     if (patch === null) {
       delete entity.components[componentName];
@@ -139,8 +145,8 @@ export function applyOps(scene: Scene, inputOps: readonly unknown[]): ApplyOpsRe
           errors.push(`${path}: entity '${operation.id}' does not exist`);
           break;
         }
-        inverses.unshift(inverseForUpdate(entity, operation.components, operation.parent));
-        updateEntity(entity, operation.components, operation.parent);
+        inverses.unshift(inverseForUpdate(entity, operation.components, operation.parent, operation.name));
+        updateEntity(entity, operation.components, operation.parent, operation.name);
         break;
       }
       case "delete": {

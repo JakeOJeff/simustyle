@@ -96,4 +96,16 @@ describe("applyOps", () => {
     expect(history.undo()).toEqual([]);
     expect(history.scene.entities.find((entity) => entity.id === "child")?.parent).toBeNull();
   });
+
+  it("renames entities through update ops and restores the name on undo", () => {
+    const history = new SceneHistory(createEmptyScene());
+    expect(history.apply([box])).toEqual([]);
+    expect(history.apply([{ op: "update", id: "box", components: {}, name: "Renamed box" }])).toEqual([]);
+    expect(history.scene.entities[0].name).toBe("Renamed box");
+    expect(history.undo()).toEqual([]);
+    expect(history.scene.entities[0].name).toBe("Box");
+    expect(history.redo()).toEqual([]);
+    expect(history.scene.entities[0].name).toBe("Renamed box");
+    expect(applyOps(history.scene, [{ op: "update", id: "box", components: {}, name: "  " }]).errors).toContain("ops[0].name: must be a non-empty string");
+  });
 });
