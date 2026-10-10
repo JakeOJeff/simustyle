@@ -5,7 +5,8 @@
   import { TransformControls } from "three/addons/controls/TransformControls.js";
   import type { Entity, Scene, Vec3 } from "../scene/types";
 
-  type TransformMode = "translate" | "rotate" | "scale";
+  /** "select" picks objects without showing a transform gizmo. */
+  type TransformMode = "select" | "translate" | "rotate" | "scale";
   type TransformPhase = "start" | "change" | "end";
   type TransformPatch = { position?: Vec3; rotation?: Vec3; scale?: Vec3 };
 
@@ -27,9 +28,13 @@
     frameToken: number;
     focusToken: number;
     gridVisible: boolean;
+    /** Gizmo axes follow the world or the object's own rotation. */
+    space: "world" | "local";
+    /** Snap moves to 0.5 m, turns to 15°, and scaling to 0.1 steps. */
+    snap: boolean;
   }
 
-  let { scene, selectedId, selectedIds, mode, onSelect, onSelectMany, onTransform, onModeChange, onContextMenu, frameToken, focusToken, gridVisible }: Props = $props();
+  let { scene, selectedId, selectedIds, mode, onSelect, onSelectMany, onTransform, onModeChange, onContextMenu, frameToken, focusToken, gridVisible, space, snap }: Props = $props();
   let host: HTMLDivElement;
   let marquee: { left: number; top: number; width: number; height: number } | null = $state(null);
 
@@ -90,7 +95,7 @@
     world.add(ground);
 
     const gizmo = new TransformControls(camera, renderer.domElement);
-    gizmo.setMode(mode);
+    if (mode !== "select") gizmo.setMode(mode);
     world.add(gizmo.getHelper());
     const entityObjects = new Map<string, THREE.Object3D>();
     const selectionHelpers = new Map<string, THREE.BoxHelper>();
@@ -255,7 +260,8 @@
 
     function onKey(event: KeyboardEvent) {
       if (event.target instanceof HTMLElement && (event.target.isContentEditable || ["INPUT", "TEXTAREA", "SELECT"].includes(event.target.tagName))) return;
-      if (event.key.toLowerCase() === "w") onModeChange("translate");
+      if (event.key.toLowerCase() === "q") onModeChange("select");
+      else if (event.key.toLowerCase() === "w") onModeChange("translate");
       else if (event.key.toLowerCase() === "e") onModeChange("rotate");
       else if (event.key.toLowerCase() === "r") onModeChange("scale");
       else if (event.key.toLowerCase() === "f") focusSelected();
@@ -359,8 +365,8 @@
         helper.update();
       }
       const selected = selectedId ? entityObjects.get(selectedId) : undefined;
-      if (selected && selected !== gizmo.object) gizmo.attach(selected);
-      else if (!selected && gizmo.object) gizmo.detach();
+      if (selected && mode !== "select" && selected !== gizmo.object) gizmo.attach(selected);
+      else if ((!selected || mode === "select") && gizmo.object) gizmo.detach();
       world.background = new THREE.Color(scene.settings.background);
       orbit.update();
     }
@@ -381,7 +387,13 @@
         syncEntities();
       });
       $effect(() => {
-        gizmo.setMode(mode);
+        if (mode !== "select") gizmo.setMode(mode);
+      });
+      $effect(() => {
+        gizmo.setSpace(space);
+        gizmo.setTranslationSnap(snap ? 0.5 : null);
+        gizmo.setRotationSnap(snap ? THREE.MathUtils.degToRad(15) : null);
+        gizmo.setScaleSnap(snap ? 0.1 : null);
       });
       $effect(() => {
         grid.visible = gridVisible;

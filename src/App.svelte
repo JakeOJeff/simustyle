@@ -10,6 +10,7 @@
   import Timeline from "./editor/Timeline.svelte";
   import PanelResizeHandles, { type ResizeEdge } from "./editor/PanelResizeHandles.svelte";
   import ExportMenu from "./editor/ExportMenu.svelte";
+  import TopBar, { type TopBarActions, type ToolMode } from "./editor/TopBar.svelte";
   import SettingsPanel from "./editor/SettingsPanel.svelte";
   import ScriptEditor from "./editor/ScriptEditor.svelte";
   import { ScriptRuntime, scriptOps } from "./runtime/scripts";
@@ -19,7 +20,7 @@
   import type { AnimationTrack, AnimationValue } from "./runtime/animator";
   import { AnimatorRuntime } from "./runtime/animator";
   import { componentSchemas } from "./registry";
-  import { Box, FolderPlus, Circle, Cone, Cylinder, FileCode2, Focus, FolderOpen, Grid3X3, Move3D, Pause, Play, Plus, Redo2, Rotate3D, Save, Scaling, Settings, Square, Undo2, X } from "@lucide/svelte";
+  import { Box, FileCode2, X } from "@lucide/svelte";
   import { applyOps } from "./scene/applyOps";
   import { groupOps, reparentOps, ungroupOps, uniqueId } from "./scene/hierarchy";
   import { keyName } from "./lang/vocabulary";
@@ -27,7 +28,6 @@
   import { createEmptyScene, type Entity, type Scene, type SceneOp, type Vec3 } from "./scene/types";
   import type { PlayState, SimulationController } from "./runtime/physics";
 
-  type ToolMode = "translate" | "rotate" | "scale";
   type EditorPanel = "hierarchy" | "inspector" | "console" | "ai" | "timeline";
   type PanelDock = "left" | "right" | "top" | "bottom" | "floating";
   type PanelLayout = { dock: PanelDock; x: number; y: number; width: number; height: number; dockSize?: number };
@@ -38,9 +38,13 @@
   let mode: ToolMode = $state("translate");
   let gridVisible = $state(true);
   let focusToken = $state(0);
-  let primitiveMenuOpen = $state(false);
-  let undoStack: SceneOp[][] = $state.raw([]);
+  let space: "world" | "local" = $state("world");
+  let snap = $state(false);
+  const emptyHistory: SceneOp[][] = [];
+  let undoStack: SceneOp[][] = $state.raw(emptyHistory);
   let redoStack: SceneOp[][] = $state.raw([]);
+  /** The undo history at the last new/open/save; any other history means unsaved changes. */
+  let savedHistory: SceneOp[][] = $state.raw(emptyHistory);
   let message = $state("Ready");
   let playState: PlayState = $state("stopped");
   let playStarting = $state(false);
@@ -70,7 +74,8 @@
   let timelineTime = $state(0);
   let settingsOpen = $state(false);
   let aiSettings = $state({ apiKeyConfigured: false, model: "gpt-4o-mini", baseUrl: "https://api.openai.com/v1" });
-  let scenePath: string | null = null;
+  let scenePath = $state<string | null>(null);
+  const sceneName = $derived(scenePath?.split(/[\\/]/).at(-1)?.replace(/(\.scene)?\.(json|simu)$/i, "") || "Untitled scene");
   // Script tabs open over the viewport, like script windows in Roblox Studio.
   let openScripts: string[] = $state([]);
   let activeTab: string = $state("scene");
@@ -424,7 +429,6 @@
     if (apply([{ op: "create", id, name: uniqueName(scene, label), parent: null, components: {
       Transform: { position: [radius * Math.cos(angle), shape === "plane" ? 0.01 : 0.5, radius * Math.sin(angle)], rotation: shape === "plane" ? [-90, 0, 0] : [0, 0, 0] }, Mesh: { shape }, Material: { color: "#8b7cff" }
     } }])) selectEntity(id);
-    primitiveMenuOpen = false;
   }
 
   function descendantsInDeleteOrder(id: string): string[] {
@@ -579,7 +583,8 @@
     if (playState !== "stopped") return;
     const ctrl = event.ctrlKey || event.metaKey;
     const key = event.key.toLowerCase();
-    if (ctrl && key === "z" && !event.shiftKey) { event.preventDefault(); undo(); }
+    if (ctrl && key === "s") { event.preventDefault(); void saveScene(); }
+    else if (ctrl && key === "z" && !event.shiftKey) { event.preventDefault(); undo(); }
     else if (ctrl && (key === "y" || (key === "z" && event.shiftKey))) { event.preventDefault(); redo(); }
     else if (ctrl && key === "g" && event.shiftKey) { event.preventDefault(); if (selectedId) ungroupEntity(selectedId); }
     else if (ctrl && key === "g") { event.preventDefault(); groupSelection(); }
@@ -807,6 +812,7 @@ when clicked
     selectEntity(null);
     undoStack = [];
     redoStack = [];
+    savedHistory = undoStack;
     scenePath = null;
     message = "New scene";
   }
@@ -819,6 +825,7 @@ when clicked
         if (!path) return;
         await writeSceneFile(path, serializeScene(scene));
         scenePath = path;
+        savedHistory = undoStack;
         message = `Saved ${path.split(/[\\/]/).at(-1) ?? "scene"}`;
       } catch (error) {
         message = error instanceof Error ? error.message : "Unable to save scene file";
@@ -832,6 +839,7 @@ when clicked
     anchor.download = "untitled.scene.json";
     anchor.click();
     URL.revokeObjectURL(url);
+    savedHistory = undoStack;
     message = "Scene saved";
   }
 
@@ -848,6 +856,7 @@ when clicked
         undoStack = [];
         redoStack = [];
         scenePath = path;
+        savedHistory = undoStack;
         message = `Opened ${path.split(/[\\/]/).at(-1) ?? "scene"}`;
       } catch (error) {
         message = error instanceof Error ? error.message : "Unable to open scene file";
@@ -867,6 +876,7 @@ when clicked
       selectEntity(null);
       undoStack = [];
       redoStack = [];
+      savedHistory = undoStack;
       message = `Opened ${file.name}`;
     } catch (error) {
       message = error instanceof Error ? error.message : "Unable to open scene file";
@@ -889,12 +899,15 @@ when clicked
     lastFrameTime = time;
     timelineTime += elapsed;
     scene = simulation.advance(scene, elapsed);
-    const scriptMessages = simulation.takeScriptMessages();
-    if (scriptMessages.length) {
-      simulationWarnings = [...simulationWarnings, ...scriptMessages].slice(-30);
-      for (const entry of scriptMessages) log(/^[^:\s]*:\d+:\d+ /.test(entry) ? "error" : "print", entry);
-    }
+    logScriptMessages();
     animationFrame = requestAnimationFrame(physicsFrame);
+  }
+
+  function logScriptMessages() {
+    const scriptMessages = simulation?.takeScriptMessages() ?? [];
+    if (!scriptMessages.length) return;
+    simulationWarnings = [...simulationWarnings, ...scriptMessages].slice(-30);
+    for (const entry of scriptMessages) log(/^[^:\s]*:\d+:\d+ /.test(entry) ? "error" : "print", entry);
   }
 
   async function startSimulation() {
@@ -969,6 +982,45 @@ when clicked
     message = "Simulation stopped; scene restored";
   }
 
+  /** Pause if needed, then advance the simulation by one 60 fps frame. */
+  function stepSimulation() {
+    if (!simulation || playState === "stopped") return;
+    if (playState === "playing") pauseSimulation();
+    const frame = 1 / 60;
+    simulation.resume();
+    scene = simulation.advance(scene, frame);
+    simulation.pause();
+    timelineTime += frame;
+    logScriptMessages();
+    message = "Stepped one frame";
+  }
+
+  const panelNames: EditorPanel[] = ["hierarchy", "inspector", "console", "ai", "timeline"];
+  const panelLabels: Record<EditorPanel, string> = { hierarchy: "Hierarchy", inspector: "Inspector", console: "Console", ai: "AI", timeline: "Timeline" };
+
+  const topBarActions: TopBarActions = {
+    newScene, saveScene: () => void saveScene(), undo, redo,
+    openScene: () => isDesktopRuntime() ? void loadScene() : openInput.click(),
+    cut: () => { if (selectedId) cutEntity(selectedId); },
+    copy: () => { if (selectedId) copyEntity(selectedId); },
+    paste: () => pasteEntity(null),
+    duplicate: () => { if (selectedId) duplicateEntity(selectedId); },
+    remove: () => { for (const id of [...selectedIds]) if (scene.entities.some((entity) => entity.id === id)) deleteEntity(id); },
+    rename: () => { if (selectedEntity) renameTarget = { id: selectedEntity.id, name: selectedEntity.name }; },
+    group: groupSelection,
+    togglePanel: (name) => { if (name in panelOpen) panelOpen[name as EditorPanel] = !panelOpen[name as EditorPanel]; },
+    frameSelected: () => focusToken += 1,
+    openSettings: () => settingsOpen = true,
+    setTool: (tool) => mode = tool,
+    toggleSpace: () => space = space === "world" ? "local" : "world",
+    toggleSnap: () => snap = !snap,
+    toggleGrid: () => gridVisible = !gridVisible,
+    addPrimitive: createPrimitive,
+    addGroup: () => { selectEntity(null); groupSelection(); },
+    openScript: openScriptForSelection,
+    play: () => void startSimulation(), pause: pauseSimulation, resume: resumeSimulation, stop: stopSimulation, step: stepSimulation
+  };
+
   onDestroy(() => {
     cancelAnimationFrame(animationFrame);
     simulation?.stop();
@@ -979,53 +1031,28 @@ when clicked
 <svelte:window onpointermove={movePanelDrag} onpointerup={endPanelDrag} onkeydown={windowKeyDown} onkeyup={windowKeyUp} />
 
 <main class="editor" class:simulation-playing={playState === "playing"} class:simulation-paused={playState === "paused"}>
-  <header class="toolbar">
-    <div class="brand"><span class="brand-mark">S</span><span>SimuStyle</span></div>
-    <div class="toolbar-group file-actions">
-      <button title="New scene" aria-label="New scene" onclick={newScene}><Plus size={14} /> <span>New</span></button>
-      <button title="Open scene" aria-label="Open scene" onclick={() => isDesktopRuntime() ? void loadScene() : openInput.click()}><FolderOpen size={14} /> <span>Open</span></button>
-      <button title="Save scene" aria-label="Save scene" onclick={saveScene}><Save size={14} /> <span>Save</span></button>
-      <input bind:this={openInput} class="file-input" type="file" accept=".json,.scene.json,application/json" onchange={loadScene} />
-    </div>
-    <div class="toolbar-group history-actions">
-      <button title="Undo" disabled={undoStack.length === 0 || playState !== "stopped"} onclick={undo}><Undo2 size={15} /> <span>Undo</span></button>
-      <button title="Redo" disabled={redoStack.length === 0 || playState !== "stopped"} onclick={redo}><Redo2 size={15} /> <span>Redo</span></button>
-    </div>
-    <ExportMenu scene={viewportScene} onVideoExport={exportVideo} />
-    <div class="toolbar-spacer"></div>
-    <div class="primitive-picker">
-      <button class="add-primitive" aria-expanded={primitiveMenuOpen} onclick={() => primitiveMenuOpen = !primitiveMenuOpen}><Plus size={14} /> Add</button>
-      {#if primitiveMenuOpen}
-        <div class="primitive-menu" role="menu" aria-label="Add mesh primitive">
-          <button role="menuitem" onclick={() => createPrimitive("box")}><Box size={15} /> Cube</button>
-          <button role="menuitem" onclick={() => createPrimitive("sphere")}><Circle size={15} /> Sphere</button>
-          <button role="menuitem" onclick={() => createPrimitive("cylinder")}><Cylinder size={15} /> Cylinder</button>
-          <button role="menuitem" onclick={() => createPrimitive("capsule")}><Circle size={15} /> Capsule</button>
-          <button role="menuitem" onclick={() => createPrimitive("cone")}><Cone size={15} /> Cone</button>
-          <button role="menuitem" onclick={() => createPrimitive("plane")}><Square size={15} /> Plane</button>
-          <div class="menu-separator"></div>
-          <button role="menuitem" onclick={() => { selectEntity(null); groupSelection(); primitiveMenuOpen = false; }}><FolderPlus size={15} /> Empty group</button>
-        </div>
-      {/if}
-    </div>
-    <button class="script-button" title="Open the selected object's script (or a scene script)" onclick={openScriptForSelection}><FileCode2 size={14} /> Script</button>
-    <div class="toolbar-group tools" aria-label="Transform tool">
-      <button class:active={mode === "translate"} aria-label="Move tool" title="Move (W)" onclick={() => mode = "translate"}><Move3D size={16} /></button>
-      <button class:active={mode === "rotate"} aria-label="Rotate tool" title="Rotate (E)" onclick={() => mode = "rotate"}><Rotate3D size={16} /></button>
-      <button class:active={mode === "scale"} aria-label="Scale tool" title="Scale (R)" onclick={() => mode = "scale"}><Scaling size={16} /></button>
-    </div>
-    <button class:active={gridVisible} class="view-toggle" title="Toggle floor grid" aria-label="Toggle floor grid" onclick={() => gridVisible = !gridVisible}><Grid3X3 size={15} /></button>
-    <button class="view-toggle" title="Frame selected (F)" aria-label="Frame selected" disabled={!selectedId} onclick={() => focusToken += 1}><Focus size={15} /></button>
-    {#if isDesktopRuntime()}<button class="view-toggle" title="AI settings" aria-label="AI settings" onclick={() => settingsOpen = true}><Settings size={15} /></button>{/if}
-    {#if playState === "stopped"}
-      <button class="play-button" disabled={playStarting} onclick={startSimulation}><Play size={14} fill="currentColor" /> <span>{playStarting ? "Starting…" : "Play"}</span></button>
-    {:else}
-      <div class="simulation-controls">
-        <button class="play-button" onclick={playState === "playing" ? pauseSimulation : resumeSimulation}>{#if playState === "playing"}<Pause size={14} fill="currentColor" /> Pause{:else}<Play size={14} fill="currentColor" /> Resume{/if}</button>
-        <button class="stop-button" onclick={stopSimulation}>■ Stop</button>
-      </div>
-    {/if}
-  </header>
+  <TopBar
+    {sceneName}
+    saved={undoStack === savedHistory}
+    editable={playState === "stopped"}
+    canUndo={undoStack.length > 0}
+    canRedo={redoStack.length > 0}
+    hasSelection={selectedId !== null}
+    canPaste={entityClipboard !== null}
+    tool={mode}
+    {space}
+    {snap}
+    {gridVisible}
+    panels={panelNames.map((name) => ({ name, label: panelLabels[name], open: panelOpen[name] }))}
+    showSettings={isDesktopRuntime()}
+    {playState}
+    {playStarting}
+    time={timelineTime}
+    actions={topBarActions}
+  >
+    {#snippet exportMenu()}<ExportMenu scene={viewportScene} onVideoExport={exportVideo} />{/snippet}
+  </TopBar>
+  <input bind:this={openInput} class="file-input" type="file" accept=".json,.scene.json,application/json" onchange={loadScene} />
 
   <div class="editor-body">
     <section class="viewport-column">
@@ -1042,7 +1069,7 @@ when clicked
         </div>
       {/if}
       <div class="stage" bind:this={stageHost} style={stageContentStyle()} use:observeStageSize>
-        <Viewport scene={viewportScene} {selectedId} {selectedIds} {mode} {frameToken} {focusToken} {gridVisible} onSelect={viewportSelect} onSelectMany={selectEntities} onTransform={updateTransform} onModeChange={(nextMode) => mode = nextMode} onContextMenu={(id, x, y, position) => openEntityMenu(id, x, y, position, id ? "object" : "viewport")} />
+        <Viewport scene={viewportScene} {selectedId} {selectedIds} {mode} {frameToken} {focusToken} {gridVisible} {space} {snap} onSelect={viewportSelect} onSelectMany={selectEntities} onTransform={updateTransform} onModeChange={(nextMode) => mode = nextMode} onContextMenu={(id, x, y, position) => openEntityMenu(id, x, y, position, id ? "object" : "viewport")} />
         {#if activeTab !== "scene" && openScripts.includes(activeTab)}
           {@const id = activeTab}
           <div class="scene-content-window" style={sceneContentStyle()}>
@@ -1176,7 +1203,6 @@ when clicked
   .panel-close{display:grid;width:22px;height:22px;flex:none;place-items:center;border:0;border-radius:4px;background:transparent;color:#9795a3;cursor:pointer}
   .panel-close:hover{background:#ffffff12;color:#fff}
   .panel-window-body{display:flex;min-width:0;min-height:0;flex:1;flex-direction:column;overflow:hidden}
-  .editor :global(.toolbar){position:relative;z-index:20}
   .panel-window-body :global(.ai-panel){flex:1}
   .panel-window-body :global(.timeline){min-height:0;flex:1;border-top:0}
   .sidebar-panel-body :global(.hierarchy),.sidebar-panel-body :global(.inspector){width:100%;min-width:0;min-height:0;flex:1;flex-basis:auto;border-right:0;border-left:0}
@@ -1196,8 +1222,6 @@ when clicked
   .dirty-dot{font-style:normal;color:#ffd479;font-size:8px}
   .close-tab{display:grid;place-items:center;width:18px;height:18px;border:0;border-radius:4px;background:none;color:#777583;cursor:pointer}
   .close-tab:hover{background:#ffffff12;color:#fff}
-  .script-button{height:30px;display:flex;align-items:center;gap:6px;padding:0 11px;border:1px solid #7fd1ff40;border-radius:6px;background:#1f2f3a;color:#a9def7;font-size:10px;cursor:pointer}
-  .script-button:hover{background:#26394a}
   .console-log{flex:1;min-height:0;overflow:auto;padding:0 15px 4px;font:10.5px/17px 'DM Mono',monospace;color:#a9a7b5}
   .console-hint{color:#77757f;font-family:'DM Sans',sans-serif;font-size:10.5px}.console-hint code{color:#7fd1ff;font-family:'DM Mono',monospace}
   .log-info{color:#8a8896}.log-print{color:#d9d7e2}.log-error{color:#ff8992}

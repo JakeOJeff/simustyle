@@ -4,6 +4,13 @@ Record meaningful project changes during the event, newest first.
 
 ## Event build log
 
+### 2026-10-11T02:45:00+05:30 — Redesign the top bar
+
+- Changed: Replaced the toolbar with a new top bar component matching the participant's mockup: scene name with Saved/Unsaved state and a New/Open/Save menu; File, Edit (undo/redo, cut/copy/paste, duplicate, rename, delete, group), and View (panel toggles, grid, frame selected, AI settings) menus; undo/redo; a Select/Move/Rotate/Scale tool group (new Select tool, Q, hides the gizmo); a World/Local gizmo-space toggle; a snap toggle (0.5 m, 15°, 0.1 scale); the grid toggle; Add and Script; a Play clock (time and 60 fps frame) with Stop, Step one frame, and Play/Pause/Resume; and an Export button. Added Ctrl+S to save. Removed the old toolbar styles. Files: `src/editor/TopBar.svelte` (new), `src/App.svelte`, `src/editor/Viewport.svelte`, `src/editor/ExportMenu.svelte`, `src/app.css`, `README.md`.
+- Why: Participant asked for the top navigation to follow their supplied design.
+- Validation: `npm run check` passed TypeScript, Svelte diagnostics (0 errors/0 warnings), all 89 tests, and the production build. Headless Chrome screenshots at 1600 px and 1000 px widths showed the new bar laid out as designed.
+- Limitations: Menus, Step, snapping, and World/Local were not clicked through in a browser. Saved state compares undo history, so redoing back to the saved point still shows Unsaved. The scene name comes from the opened/saved file name and cannot be edited in the bar.
+
 ### 2026-10-11T02:20:00+05:30 — Add objects with `add` and target them by name
 
 - Changed: `add box`, `add a red ball named big rock at 1 2 3`, `add 3 boxes named crate`, and `add box named crate if not exists` now create objects from the Console or scripts; clauses after the shape stack in any order, and `add 1 to score` still does arithmetic. `named` accepts bare (multi-word) names. New objects get unique names without a space (Box1, Box2; crate, crate2), from both commands and the toolbar Add menu, so `move box1 at 1 2 3`, `rotate box1 to 0 90 0`, `paint box2 blue`, and `delete box2` reach them. `rotate … to` sets an absolute rotation and `move … at x y z` is an alias for `to`. Files: `src/lang/ast.ts`, `src/lang/parser.ts`, `src/lang/codegen.ts`, `src/runtime/commands.ts`, `src/runtime/scripts.ts`, `src/App.svelte`, `tests/lang/commands.test.ts`, `README.md`.
