@@ -13,6 +13,7 @@
   import TopBar, { type TopBarActions, type ToolMode } from "./editor/TopBar.svelte";
   import SettingsPanel from "./editor/SettingsPanel.svelte";
   import ScriptEditor from "./editor/ScriptEditor.svelte";
+  import type { ParseEntity } from "./ai/scriptParse";
   import { ScriptRuntime, scriptOps } from "./runtime/scripts";
   import { uniqueName } from "./runtime/commands";
   import { chooseSceneToOpen, chooseSceneToSave, getDesktopAiSettings, isDesktopRuntime, readSceneFile, saveDesktopAiSettings, writeSceneFile } from "./platform/desktop";
@@ -692,6 +693,21 @@
   // --- Scripts ------------------------------------------------------------------
 
   let entityNames = $derived(new Set(scene.entities.flatMap((entity) => [entity.id.toLowerCase(), ...entity.name.toLowerCase().split(/\s+/)])));
+  // Compact object summaries for the script editor's AI Parse (names, shapes, colors, positions).
+  let parseEntities = $derived(scene.entities.map((entity): ParseEntity => {
+    const mesh = entity.components.Mesh;
+    const material = entity.components.Material;
+    const transform = entity.components.Transform;
+    const parent = entity.parent ? scene.entities.find((candidate) => candidate.id === entity.parent)?.name : undefined;
+    return {
+      id: entity.id,
+      name: entity.name,
+      ...(typeof mesh?.shape === "string" ? { shape: mesh.shape } : entity.components.Light ? { shape: "light" } : {}),
+      ...(typeof material?.color === "string" ? { color: material.color } : {}),
+      ...(Array.isArray(transform?.position) ? { position: transform.position as Vec3 } : {}),
+      ...(parent ? { parent } : {})
+    };
+  }));
 
   function storedSource(id: string): string {
     const source = scene.entities.find((entity) => entity.id === id)?.components.Script?.source;
@@ -1082,6 +1098,9 @@ when clicked
                 dirty={scriptDrafts[id] !== undefined}
                 readOnly={playState !== "stopped"}
                 {entityNames}
+                entities={parseEntities}
+                ownerId={id}
+                onPreviewEntity={(entityId) => selectEntity(entityId ?? id)}
                 onChange={(source) => scriptDrafts = { ...scriptDrafts, [id]: source }}
                 onCommit={() => commitScript(id)}
               />

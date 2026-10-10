@@ -25,13 +25,15 @@ export async function requestSceneEdit(
     });
   }
 
-  const request = {
-    messages,
-    responseFormat: {
-      type: "json_schema",
-      json_schema: { ...AI_RESPONSE_JSON_SCHEMA, schema: responseSchema }
-    }
-  };
+  return requestJson(messages, { ...AI_RESPONSE_JSON_SCHEMA, schema: responseSchema });
+}
+
+/** Sends chat messages through the proxy (or desktop shell) and returns the model's parsed JSON object. */
+export async function requestJson(
+  messages: ChatMessage[],
+  jsonSchema: { name: string; strict: boolean; schema: Record<string, unknown> }
+): Promise<unknown> {
+  const request = { messages, responseFormat: { type: "json_schema", json_schema: jsonSchema } };
   let payload: unknown;
   if (isDesktopRuntime()) {
     payload = await desktopChat(request);

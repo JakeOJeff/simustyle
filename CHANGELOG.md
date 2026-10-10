@@ -4,6 +4,13 @@ Record meaningful project changes during the event, newest first.
 
 ## Event build log
 
+### 2026-10-11T03:00:00+05:30 — AI Parse for loosely written scripts
+
+- Changed: The script editor draws a dashed box around words the language does not know (synonyms, misspelled names, descriptions like "the object near this") and around broken lines. A new **✦ Parse** button sends the script, the unclear words, and a summary of scene objects to the AI, which returns ranked replacements per phrase. Each box then shows its best guess, selects the object it refers to, and opens a confirm card; clicking a box lists the other options. **Confirm all** applies every chosen option. Options are kept only if their words are known and the line passes the parser and checker; if none survive, the model is retried once with the rejections. Added a shared `requestJson` helper to the AI client. Files: `src/lang/fuzzy.ts` (new), `src/ai/scriptParse.ts` (new), `src/ai/client.ts`, `src/editor/ScriptEditor.svelte`, `src/App.svelte`, `tests/lang/fuzzy.test.ts`, `tests/ai/scriptParse.test.ts`, `README.md`.
+- Why: Participant asked for an AI parser that turns loose wording, synonyms, and object descriptions into project object names and syntax, with a visible box and a confirm/choose step.
+- Validation: `npm run check` passed TypeScript, Svelte diagnostics (0 errors/0 warnings), all 97 tests (8 new), and the production build. One live model call through the dev proxy turned `when game begins` / `colour the object near this crimson` / `make it go up 2` into `starts`, `Box1`, `red`, and `move Box1 up 2`, all passing validation.
+- Limitations: The boxes, popover, and selection preview were not clicked through in a browser. Unclear-word detection is vocabulary-based, so a valid-looking sentence with the wrong meaning is not boxed. The object preview uses the existing selection highlight; the viewport is behind the script tab while it is open. The prompt was changed afterwards to always list other nearby objects as options; that change was not re-run against the live model.
+
 ### 2026-10-11T02:45:00+05:30 — Restyle editor scrollbars
 
 - Changed: Added thin dark scroll tracks with a brighter violet hover and active thumb, including Firefox scrollbar colors and WebKit scrollbar styling. Files: `src/app.css`.
