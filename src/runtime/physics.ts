@@ -224,6 +224,33 @@ export class PhysicsRuntime {
     return result.scene;
   }
 
+  /** Keep live rigid bodies aligned when a Console command edits the Play scene. */
+  syncSceneEdits(before: Scene, after: Scene): void {
+    const entities = new Map(after.entities.map((entity) => [entity.id, entity]));
+    for (const [id, entry] of this.bodies) {
+      const entity = entities.get(id);
+      if (!entity?.components.RigidBody) {
+        const colliderHandle = entry.collider.handle;
+        this.world.removeRigidBody(entry.body);
+        this.bodies.delete(id);
+        this.colliderEntities.delete(colliderHandle);
+        continue;
+      }
+      const oldEntity = before.entities.find((candidate) => candidate.id === id);
+      const oldTransform = oldEntity?.components.Transform;
+      const transform = entity.components.Transform;
+      if (JSON.stringify(oldTransform) === JSON.stringify(transform)) continue;
+      const position = vector(transform?.position, [0, 0, 0]);
+      const rotation = eulerToRotation(vector(transform?.rotation, [0, 0, 0]));
+      entry.body.setTranslation({ x: position[0], y: position[1], z: position[2] }, true);
+      entry.body.setRotation(rotation, true);
+      if (entry.type === "dynamic") entry.body.setLinvel({ x: 0, y: 0, z: 0 }, true);
+    }
+    const addedRigidBodies = after.entities.filter((entity) => entity.components.RigidBody && !this.bodies.has(entity.id));
+    if (addedRigidBodies.length) this.createBodies({ ...after, entities: addedRigidBodies });
+    this.activeContacts.clear();
+  }
+
   dispose(): void {
     this.world.free();
     this.bodies.clear();
@@ -315,6 +342,14 @@ export class SimulationController {
       this.scriptMessages.push(warning);
     }
     return animated.scene;
+  }
+
+  /** Execute a one-shot Console script against the live Play scene. */
+  runConsoleCommand(scene: Scene, source: string): ReturnType<typeof ScriptRuntime.runOnce> {
+    const result = ScriptRuntime.runOnce(scene, source, (id, method, args) => this.runtime?.applyScriptAction(id, method, args) ?? false);
+    this.runtime?.syncSceneEdits(scene, result.scene);
+    this.scripts?.setScene(result.scene);
+    return result;
   }
 
   stop(): Scene | null {

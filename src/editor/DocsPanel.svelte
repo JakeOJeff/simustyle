@@ -57,7 +57,7 @@
 when space is pressed
   move up 2 over 0.5 seconds</pre>
       <p>Tab and Shift+Tab indent, Enter auto-indents, and Ctrl+/ toggles comments. Apply changes with <b>Apply</b> or Ctrl+S. The editor also applies edits when you leave it, save, or start Play. <b>✦ Parse</b> asks AI to interpret the complete script in context and propose a valid rewrite; review the full script and explanation before using it.</p>
-      <p>Console runs supported plain-English commands immediately as one undoable edit. For example: <code>add a red ball named player at 0 2 0</code>, <code>move player above the box</code>, or <code>paint player blue</code>. Up and Down recall command history. Waits and glides complete immediately in Console.</p>
+      <p>Console runs supported plain-English commands immediately. While stopped, commands are one undoable edit; during Play or Pause, they affect the live simulation and Stop restores the original scene. For example: <code>add a red ball named player at 0 2 0</code>, <code>move player above the box</code>, or <code>paint player blue</code>. Up and Down recall command history. Waits and glides complete immediately in Console.</p>
       <h3>Common script sentences</h3>
       <ul>
         <li><b>Events:</b> <code>when game starts</code>, <code>forever</code>, <code>every 2 seconds</code>, <code>when clicked</code>, <code>when space is pressed</code>, <code>when I touch a coin</code>, <code>when I receive "win"</code>.</li>

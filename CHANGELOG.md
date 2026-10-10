@@ -4,6 +4,13 @@ Record meaningful project changes during the event, newest first.
 
 ## Event build log
 
+### 2026-10-11T04:37:00+05:30 — Run Console commands during Play
+
+- Changed: Enabled Console commands while the simulation is playing or paused. Live commands update the running script scene, synchronize rigid body edits and impulses with physics, and Stop still restores the pre-Play scene. Updated the Console hint, README, user guide, and in-app Docs. Files: `src/App.svelte`, `src/runtime/physics.ts`, `src/runtime/scripts.ts`, `README.md`, `docs/USER_GUIDE.md`, `src/editor/DocsPanel.svelte`, and `AI_USAGE.md`.
+- Why: Allow users to try and adjust scene commands without stopping the simulation.
+- Validation: `npm run typecheck`, `npx svelte-check --tsconfig ./tsconfig.json` (0 errors/0 warnings), `npm run build`, and `git diff --check` passed. Tests were not run. The build retains its large-chunk warning.
+- Limitations: Commands remain temporary to the current Play session and are discarded by Stop.
+
 ### 2026-10-11T04:34:00+05:30 — Preserve object-added script triggers
 
 - Changed: Added the `when [object] is added` event for objects created by scripts during Play. Tightened Parse instructions so event/condition intent cannot be replaced with an unrelated trigger, reduced scene context fields, and removed the automatic second model call after invalid output. Added the event to the script help and reference. Files: `src/lang/ast.ts`, `src/lang/parser.ts`, `src/lang/codegen.ts`, `src/runtime/scripts.ts`, `src/ai/prompt.ts`, `src/ai/scriptRewrite.ts`, `src/editor/Inspector.svelte`, `src/editor/ScriptEditor.svelte`, `README.md`, and `AI_USAGE.md`.

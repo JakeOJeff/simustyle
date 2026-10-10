@@ -539,11 +539,15 @@ export class ScriptRuntime {
   click(id: string): void { this.pendingEvents.push({ kind: "click", id }); }
 
   /**
-   * Run script statements once against a scene outside Play (the editor's command bar).
+   * Run script statements once against a scene (the editor's command bar).
    * Timed moves and waits finish instantly; looping animations need Play, so they are reported instead.
    */
-  static runOnce(scene: Scene, source: string): { scene: Scene; issues: ScriptIssue[]; prints: ScriptPrint[] } {
-    const runtime = new ScriptRuntime({ ...scene, entities: scene.entities.filter((entity) => !entity.components.Script) });
+  static runOnce(
+    scene: Scene,
+    source: string,
+    physicsActions?: (id: string, method: string, args: number[]) => boolean
+  ): { scene: Scene; issues: ScriptIssue[]; prints: ScriptPrint[] } {
+    const runtime = new ScriptRuntime({ ...scene, entities: scene.entities.filter((entity) => !entity.components.Script) }, 1, physicsActions);
     runtime.currentScene = scene;
     runtime.compile("", source);
     const instance = runtime.instances.get("");

@@ -52,7 +52,7 @@ Inspector edits the selected entity. Rename it in the Name field; edit Position,
 
 ## Console
 
-Type a supported plain-English scene command in the Console command bar and press Enter to apply it immediately as one undoable edit. For example:
+Type a supported plain-English scene command in the Console command bar and press Enter. While stopped, it applies as one undoable edit. During Play or Pause, it edits the live simulation; Stop restores the scene from before Play. For example:
 
 ```text
 add a red ball named player at 0 2 0

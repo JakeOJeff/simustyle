@@ -804,15 +804,20 @@ when clicked
   function runCommandBar() {
     const text = commandText.trim();
     if (!text) return;
-    if (playState !== "stopped") { message = "Stop the simulation to run commands on the scene."; return; }
     commandHistory = [text, ...commandHistory.filter((entry) => entry !== text)].slice(0, 30);
     commandHistoryIndex = -1;
     log("info", `> ${text}`);
-    const result = ScriptRuntime.runOnce(scene, text);
+    const result = playState === "stopped"
+      ? ScriptRuntime.runOnce(scene, text)
+      : simulation?.runConsoleCommand(scene, text);
+    if (!result) { message = "The simulation is not ready to run Console commands."; return; }
     for (const entry of result.prints) log("print", entry.values.map(String).join(" "));
     for (const issue of result.issues) log("error", issue.message);
     const ops = scriptOps(scene, result.scene);
-    if (ops.length && apply(ops)) message = `Ran: ${text}`;
+    if (ops.length) {
+      const applied = playState === "stopped" ? apply(ops) : (scene = result.scene, true);
+      if (applied) message = `Ran: ${text}`;
+    }
     else if (!ops.length && !result.issues.length && !result.prints.length) log("info", "Nothing changed.");
     if (!result.issues.length) commandText = "";
   }
@@ -1160,13 +1165,13 @@ when clicked
               <div class="panel-window-body console-body">
                 <div class="console-line"><span class="console-dot">●</span>{message}{#if simulationWarnings.length}<span> · {simulationWarnings.join(" · ")}</span>{/if}</div>
                 <div class="console-log" aria-live="polite" use:followLog={consoleLog.length}>
-                  {#if !consoleLog.length}<div class="console-hint">Type a command below to change the scene right now, for example <code>move the box up 2</code> or <code>paint the sphere red</code>. Use the Script button to make it run on Play.</div>{/if}
+                  {#if !consoleLog.length}<div class="console-hint">Type a command to change the scene, for example <code>move the box up 2</code> or <code>paint the sphere red</code>. {playState === "stopped" ? "Commands are undoable; use the Script button to make actions run on Play." : "Commands affect the live simulation and are discarded when you Stop."}</div>{/if}
                   {#each consoleLog as entry}<div class="log-{entry.kind}">{entry.text}</div>{/each}
                 </div>
                 <form class="command-bar" onsubmit={(event) => { event.preventDefault(); runCommandBar(); }}>
                   <span aria-hidden="true">›</span>
                   <input bind:this={commandInput} aria-label="Run a script command" placeholder="move the red ball above the box" bind:value={commandText} onkeydown={commandKey} spellcheck="false" autocomplete="off" />
-                  <button type="submit" disabled={!commandText.trim() || playState !== "stopped"}>Run</button>
+                  <button type="submit" disabled={!commandText.trim()}>Run</button>
                 </form>
               </div>
               <PanelResizeHandles panelName="Console" dock={panelLayouts.console.dock} onResizeStart={(event, edge) => startPanelResize(event, "console", edge)} />

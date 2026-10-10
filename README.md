@@ -94,7 +94,7 @@ when I receive "win"
 
 **Editor:** a **Start from…** menu with ready-made scripts (spin when clicked, arrow-key movement, collecting coins, falling balls, patrolling, lighting up a group), a **Help** panel with a one-minute guide and clickable examples, syntax highlighting, line numbers, inline problems (click one to jump to it), Tab/Shift+Tab indent, Enter auto-indent, Ctrl+/ comments. Edits apply on Ctrl+S, **Apply**, leaving the editor, Save, or Play.
 
-**Try sentences instantly:** type one in the Console command bar (for example `move the red ball above the box`) and press Enter. It changes the scene now as one undoable edit; waits and glides finish instantly. ↑/↓ recall history.
+**Try sentences instantly:** type one in the Console command bar (for example `move the red ball above the box`) and press Enter. While stopped, it changes the scene as one undoable edit; during Play or Pause, it changes the live simulation and Stop restores the original scene. Waits and glides finish instantly. ↑/↓ recall history.
 
 The original syntax (`param`, `let`, `on start:`, `every frame:`, `on collide(other):`, `while`, `self.<component>.<field>`, `print(...)`, and the built-in functions) still works. Unknown words and malformed sentences are compile errors with a line number; an object that cannot be found at run time is reported in the console.
 
