@@ -20,6 +20,15 @@ Expressions support numbers, strings, booleans, #RRGGBB or #RRGGBBAA colors, mem
 
 Built-ins: time, dt, random(a,b), sin, cos, abs, min, max, clamp, lerp, sqrt, print(...), spawn(prefabId,x,y,z), destroy(entity), find(name), self.
 Entity access: self.<component>.<field> (fields are checked against the component schemas), self.name, self.rigidbody.applyImpulse(x,y,z), self.rigidbody.setVelocity(x,y,z).
+
+Plain-English commands (one per line; prefer these for simple behavior):
+- move <obj> to <x> <y> <z> | move <obj> by <dx> <dy> <dz> | move <obj> up|down|left|right|forward|back <n> | move <obj> above|below|beside|left of|right of|in front of|behind <obj>
+- add "over <n>s" to move, turn, or scale to glide smoothly; glide <obj> ... is move with a default 1s glide
+- turn <obj> left|right <degrees> | turn <obj> by <x> <y> <z>; scale <obj> to|by <n>; paint <obj> <colorname|#rrggbb>; hide <obj>; show <obj>
+- destroy <obj>; push <obj> up <n> (dynamic RigidBody only); say <values...>
+- animate <obj> like <description> (styles: bounce, spin, float, pulse, shake, wobble, sway, orbit, flash, grow, shrink, tumble; speed words: slowly, fast); stop animating <obj>
+- <obj> is self, an entity id or name, a "quoted name", a variable, or a description: the [nearest|biggest|smallest|highest|lowest] [color] <ball|box|cube|cylinder|cone|plane|light|name word|one> [above|below|beside|... <obj>]
+- Coordinates are separated by spaces or commas; wrap arithmetic in parentheses: move self to (x + 1) 0 0. Comments start with --.
 Scripts are compiled from this language to a restricted runtime API. Do not put JavaScript, HTML, or any unsupported syntax in source.`;
 
 function fieldDescription(field: FieldSchema): Record<string, unknown> {

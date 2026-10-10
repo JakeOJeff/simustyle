@@ -340,6 +340,7 @@ class Parser {
 
   private parseComponent(): ScriptExpression {
     if (this.peek().value === ",") this.advance();
+    if (this.atLineEnd() || this.atDuration()) this.failAt(this.peek(), "Expected three numbers here: x y z (for example 'to 0 2 0')");
     if (this.peek().value === "(") {
       this.advance();
       const inner = this.parseExpression();

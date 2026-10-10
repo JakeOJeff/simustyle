@@ -10,12 +10,14 @@
   import Timeline from "./editor/Timeline.svelte";
   import ExportMenu from "./editor/ExportMenu.svelte";
   import SettingsPanel from "./editor/SettingsPanel.svelte";
+  import ScriptEditor from "./editor/ScriptEditor.svelte";
+  import { ScriptRuntime, scriptOps } from "./runtime/scripts";
   import { chooseSceneToOpen, chooseSceneToSave, getDesktopAiSettings, isDesktopRuntime, readSceneFile, saveDesktopAiSettings, writeSceneFile } from "./platform/desktop";
   import type { VideoExportConfig, VideoExportProgress } from "./export/video";
   import type { AnimationTrack, AnimationValue } from "./runtime/animator";
   import { AnimatorRuntime } from "./runtime/animator";
   import { componentSchemas } from "./registry";
-  import { Box, Circle, Cone, Cylinder, Focus, FolderOpen, Grid3X3, Move3D, Pause, Play, Plus, Redo2, Rotate3D, Save, Scaling, Settings, Square, Undo2 } from "@lucide/svelte";
+  import { Box, Circle, Cone, Cylinder, FileCode2, Focus, FolderOpen, Grid3X3, Move3D, Pause, Play, Plus, Redo2, Rotate3D, Save, Scaling, Settings, Square, Undo2, X } from "@lucide/svelte";
   import { applyOps } from "./scene/applyOps";
   import { deserializeScene, serializeScene } from "./scene/serialize";
   import { createEmptyScene, type Scene, type SceneOp } from "./scene/types";
@@ -24,14 +26,14 @@
   type ToolMode = "translate" | "rotate" | "scale";
   type BottomTab = "console" | "ai" | "timeline";
 
-  let scene: Scene = $state(createEmptyScene());
+  let scene: Scene = $state.raw(createEmptyScene());
   let selectedId: string | null = $state(null);
   let mode: ToolMode = $state("translate");
   let gridVisible = $state(true);
   let focusToken = $state(0);
   let primitiveMenuOpen = $state(false);
-  let undoStack: SceneOp[][] = $state([]);
-  let redoStack: SceneOp[][] = $state([]);
+  let undoStack: SceneOp[][] = $state.raw([]);
+  let redoStack: SceneOp[][] = $state.raw([]);
   let message = $state("Ready");
   let playState: PlayState = $state("stopped");
   let playStarting = $state(false);
@@ -41,12 +43,20 @@
   let aiPrompt = $state("");
   let aiLoading = $state(false);
   let aiMessages: AIPanelMessage[] = $state([]);
-  let aiUndoRecords: Record<string, SceneOp[]> = $state({});
+  let aiUndoRecords: Record<string, SceneOp[]> = $state.raw({});
   let nextAIId = 1;
   let timelineTime = $state(0);
   let settingsOpen = $state(false);
   let aiSettings = $state({ apiKeyConfigured: false, model: "gpt-4o-mini", baseUrl: "https://api.openai.com/v1" });
   let scenePath: string | null = null;
+  // Script tabs open over the viewport, like script windows in Roblox Studio.
+  let openScripts: string[] = $state([]);
+  let activeTab: string = $state("scene");
+  let scriptDrafts: Record<string, string> = $state({});
+  let commandText = $state("");
+  let commandHistory: string[] = [];
+  let commandHistoryIndex = -1;
+  let consoleLog: { kind: "info" | "error" | "print"; text: string }[] = $state([]);
   const animatorPreview = new AnimatorRuntime();
   let openInput: HTMLInputElement;
   let activeGesture: { id: string; initial: Scene; operation: SceneOp | null } | null = null;
@@ -272,10 +282,124 @@
   }
 
   function addComponent(component: string) {
-    if (selectedId) apply([{ op: "update", id: selectedId, components: { [component]: {} } }]);
+    if (!selectedId) return;
+    if (component === "Script") { openScript(selectedId); return; }
+    apply([{ op: "update", id: selectedId, components: { [component]: {} } }]);
+  }
+
+  // --- Scripts ------------------------------------------------------------------
+
+  let entityNames = $derived(new Set(scene.entities.flatMap((entity) => [entity.id.toLowerCase(), ...entity.name.toLowerCase().split(/s+/)])));
+
+  function storedSource(id: string): string {
+    const source = scene.entities.find((entity) => entity.id === id)?.components.Script?.source;
+    return typeof source === "string" ? source : "";
+  }
+
+  function scriptTemplate(name: string, sceneScript: boolean): string {
+    return sceneScript
+      ? `-- Scene script: control any object by its name or a description.
+-- Press Play to run it. Click examples on the right to insert them.
+on start:
+  say "Scene started"
+`
+      : `-- Script for ${name}. Press Play to run it.
+on start:
+  animate self like a gentle float
+`;
+  }
+
+  /** Open an entity's script in a tab, adding a Script component first if it has none. */
+  function openScript(id: string) {
+    const entity = scene.entities.find((candidate) => candidate.id === id);
+    if (!entity) return;
+    if (!entity.components.Script) {
+      const components: Record<string, Record<string, unknown>> = { Script: { source: scriptTemplate(entity.name, !entity.components.Mesh) } };
+      if (!entity.components.Transform) components.Transform = {};
+      if (!apply([{ op: "update", id, components }])) return;
+      message = `Added a script to ${entity.name}`;
+    }
+    if (!openScripts.includes(id)) openScripts = [...openScripts, id];
+    activeTab = id;
+  }
+
+  /** Toolbar Script button: the selected object's script, or a scene-wide script when nothing is selected. */
+  function openScriptForSelection() {
+    if (selectedId) { openScript(selectedId); return; }
+    const existing = scene.entities.find((entity) => entity.components.Script && !entity.components.Mesh);
+    if (existing) { selectedId = existing.id; openScript(existing.id); return; }
+    let index = 1;
+    while (scene.entities.some((entity) => entity.id === `scene_script${index === 1 ? "" : `_${index}`}`)) index += 1;
+    const id = `scene_script${index === 1 ? "" : `_${index}`}`;
+    if (!apply([{ op: "create", id, name: "Scene Script", parent: null, components: { Transform: {}, Script: { source: scriptTemplate("the scene", true) } } }])) return;
+    selectedId = id;
+    openScript(id);
+  }
+
+  function commitScript(id: string) {
+    const draft = scriptDrafts[id];
+    if (draft === undefined) return;
+    const { [id]: _done, ...rest } = scriptDrafts;
+    scriptDrafts = rest;
+    if (draft !== storedSource(id) && apply([{ op: "update", id, components: { Script: { source: draft } } }])) message = "Script saved";
+  }
+
+  function commitAllScripts() { for (const id of Object.keys(scriptDrafts)) commitScript(id); }
+
+  function closeScript(id: string) {
+    commitScript(id);
+    openScripts = openScripts.filter((candidate) => candidate !== id);
+    if (activeTab === id) activeTab = openScripts.at(-1) ?? "scene";
+  }
+
+  // Close tabs whose entity was deleted (including by undo or the AI agent).
+  $effect(() => {
+    const alive = openScripts.filter((id) => scene.entities.some((entity) => entity.id === id && entity.components.Script));
+    if (alive.length !== openScripts.length) {
+      openScripts = alive;
+      if (activeTab !== "scene" && !alive.includes(activeTab)) activeTab = "scene";
+    }
+  });
+
+  function log(kind: "info" | "error" | "print", text: string) { consoleLog = [...consoleLog, { kind, text }].slice(-60); }
+
+  /** Keep the newest console line in view. */
+  function followLog(node: HTMLElement, _length: number) {
+    node.scrollTop = node.scrollHeight;
+    return { update() { node.scrollTop = node.scrollHeight; } };
+  }
+
+  /** Command bar: run script lines against the scene now, as one undoable edit. */
+  function runCommandBar() {
+    const text = commandText.trim();
+    if (!text) return;
+    if (playState !== "stopped") { message = "Stop the simulation to run commands on the scene."; return; }
+    commandHistory = [text, ...commandHistory.filter((entry) => entry !== text)].slice(0, 30);
+    commandHistoryIndex = -1;
+    log("info", `> ${text}`);
+    const result = ScriptRuntime.runOnce(scene, text);
+    for (const entry of result.prints) log("print", entry.values.map(String).join(" "));
+    for (const issue of result.issues) log("error", issue.message);
+    const ops = scriptOps(scene, result.scene);
+    if (ops.length && apply(ops)) message = `Ran: ${text}`;
+    else if (!ops.length && !result.issues.length && !result.prints.length) log("info", "Nothing changed.");
+    if (!result.issues.length) commandText = "";
+  }
+
+  function commandKey(event: KeyboardEvent) {
+    if (event.key === "ArrowUp" && commandHistory.length) {
+      event.preventDefault();
+      commandHistoryIndex = Math.min(commandHistory.length - 1, commandHistoryIndex + 1);
+      commandText = commandHistory[commandHistoryIndex]!;
+    } else if (event.key === "ArrowDown" && commandHistoryIndex >= 0) {
+      event.preventDefault();
+      commandHistoryIndex -= 1;
+      commandText = commandHistoryIndex >= 0 ? commandHistory[commandHistoryIndex]! : "";
+    }
   }
 
   function newScene() {
+    scriptDrafts = {};
     stopSimulation();
     activeGesture = null;
     scene = createEmptyScene();
@@ -287,6 +411,7 @@
   }
 
   async function saveScene() {
+    commitAllScripts();
     if (isDesktopRuntime()) {
       try {
         const path = scenePath ?? await chooseSceneToSave("untitled.simu");
@@ -364,12 +489,16 @@
     timelineTime += elapsed;
     scene = simulation.advance(scene, elapsed);
     const scriptMessages = simulation.takeScriptMessages();
-    if (scriptMessages.length) simulationWarnings = [...simulationWarnings, ...scriptMessages].slice(-30);
+    if (scriptMessages.length) {
+      simulationWarnings = [...simulationWarnings, ...scriptMessages].slice(-30);
+      for (const entry of scriptMessages) log(/^[^:s]*:d+:d+ /.test(entry) ? "error" : "print", entry);
+    }
     animationFrame = requestAnimationFrame(physicsFrame);
   }
 
   async function startSimulation() {
     if (playStarting || playState !== "stopped") return;
+    commitAllScripts();
     playStarting = true;
     activeGesture = null;
     timelineTime = 0;
@@ -475,6 +604,7 @@
         </div>
       {/if}
     </div>
+    <button class="script-button" title="Open the selected object's script (or a scene script)" onclick={openScriptForSelection}><FileCode2 size={14} /> Script</button>
     <div class="toolbar-group tools" aria-label="Transform tool">
       <button class:active={mode === "translate"} aria-label="Move tool" title="Move (W)" onclick={() => mode = "translate"}><Move3D size={16} /></button>
       <button class:active={mode === "rotate"} aria-label="Rotate tool" title="Rotate (E)" onclick={() => mode = "rotate"}><Rotate3D size={16} /></button>
@@ -494,10 +624,38 @@
   </header>
 
   <div class="editor-body">
-    <Hierarchy scene={scene} {selectedId} onSelect={(id) => selectedId = id} onCreate={createBox} onDelete={deleteEntity} onReparent={reparentEntity} />
+    <Hierarchy scene={scene} {selectedId} onSelect={(id) => selectedId = id} onCreate={createBox} onDelete={deleteEntity} onReparent={reparentEntity} onOpenScript={openScript} />
     <section class="viewport-column">
-      <Viewport scene={viewportScene} {selectedId} {mode} {frameToken} {focusToken} {gridVisible} onSelect={(id) => selectedId = id} onTransform={updateTransform} onModeChange={(nextMode) => mode = nextMode} />
-      <div class="bottom-panel" class:ai-expanded={bottomTab === "ai"} class:timeline-expanded={bottomTab === "timeline"}>
+      {#if openScripts.length}
+        <div class="stage-tabs" role="tablist" aria-label="Open documents">
+          <button role="tab" class="stage-tab" aria-selected={activeTab === "scene"} onclick={() => activeTab = "scene"}><Box size={13} /> Scene</button>
+          {#each openScripts as id (id)}
+            {@const entity = scene.entities.find((candidate) => candidate.id === id)}
+            <div class="stage-tab" role="tab" tabindex="0" aria-selected={activeTab === id} onclick={() => { activeTab = id; selectedId = id; }} onkeydown={(event) => { if (event.key === "Enter") activeTab = id; }}>
+              <FileCode2 size={13} /> {entity?.name ?? id}{#if scriptDrafts[id] !== undefined}<i class="dirty-dot" title="Unsaved changes">●</i>{/if}
+              <button class="close-tab" aria-label="Close {entity?.name ?? id} script" onclick={(event) => { event.stopPropagation(); closeScript(id); }}><X size={12} /></button>
+            </div>
+          {/each}
+        </div>
+      {/if}
+      <div class="stage">
+        <Viewport scene={viewportScene} {selectedId} {mode} {frameToken} {focusToken} {gridVisible} onSelect={(id) => selectedId = id} onTransform={updateTransform} onModeChange={(nextMode) => mode = nextMode} />
+        {#if activeTab !== "scene" && openScripts.includes(activeTab)}
+          {@const id = activeTab}
+          {#key id}
+            <ScriptEditor
+              title={`${scene.entities.find((entity) => entity.id === id)?.name ?? id} — script`}
+              source={scriptDrafts[id] ?? storedSource(id)}
+              dirty={scriptDrafts[id] !== undefined}
+              readOnly={playState !== "stopped"}
+              {entityNames}
+              onChange={(source) => scriptDrafts = { ...scriptDrafts, [id]: source }}
+              onCommit={() => commitScript(id)}
+            />
+          {/key}
+        {/if}
+      </div>
+      <div class="bottom-panel" class:ai-expanded={bottomTab === "ai"} class:timeline-expanded={bottomTab === "timeline"} class:console-expanded={bottomTab === "console"}>
         <div class="bottom-tabs">
           <button class:selected={bottomTab === "console"} onclick={() => bottomTab = "console"}>Console</button>
           <button class:selected={bottomTab === "ai"} onclick={() => bottomTab = "ai"}>AI</button>
@@ -508,10 +666,20 @@
           <AIPanel messages={aiMessages} loading={aiLoading} prompt={aiPrompt} onPromptChange={(value) => aiPrompt = value} onSubmit={submitAI} onUndo={undoAIChange} />
         {:else if bottomTab === "timeline"}
           <Timeline {scene} {selectedId} playhead={timelineTime} onPlayheadChange={(value) => timelineTime = value} onTrackChange={(tracks) => selectedId && changeTracks(selectedId, tracks)} />
+        {:else}
+          <div class="console-log" aria-live="polite" use:followLog={consoleLog.length}>
+            {#if !consoleLog.length}<div class="console-hint">Type a command below to change the scene right now, for example <code>move the box up 2</code> or <code>paint the sphere red</code>. Use the Script button to make it run on Play.</div>{/if}
+            {#each consoleLog as entry}<div class="log-{entry.kind}">{entry.text}</div>{/each}
+          </div>
+          <form class="command-bar" onsubmit={(event) => { event.preventDefault(); runCommandBar(); }}>
+            <span aria-hidden="true">›</span>
+            <input aria-label="Run a script command" placeholder="move the red ball above the box" bind:value={commandText} onkeydown={commandKey} spellcheck="false" autocomplete="off" />
+            <button type="submit" disabled={!commandText.trim() || playState !== "stopped"}>Run</button>
+          </form>
         {/if}
       </div>
     </section>
-    <Inspector {scene} entity={selectedEntity} onUpdate={updateComponent} onRemove={(component) => selectedId && apply([{ op: "update", id: selectedId, components: { [component]: null } }])} onAdd={addComponent} onKeyframe={addKeyframe} />
+    <Inspector {scene} entity={selectedEntity} onUpdate={updateComponent} onRemove={(component) => selectedId && apply([{ op: "update", id: selectedId, components: { [component]: null } }])} onAdd={addComponent} onKeyframe={addKeyframe} onOpenScript={() => selectedId && openScript(selectedId)} />
   </div>
   <footer class="statusbar"><span><i></i> SCENE CORE</span><span>{scene.entities.length} {scene.entities.length === 1 ? "ENTITY" : "ENTITIES"}</span><span>Y-UP · METERS</span></footer>
   {#if settingsOpen}
@@ -522,5 +690,25 @@
 </main>
 
 <style>
+  .stage{position:relative;flex:1;min-height:0;display:flex}
+  .stage-tabs{height:32px;display:flex;align-items:stretch;gap:1px;padding:0 6px;background:#15161c;border-bottom:1px solid #ffffff0e;overflow-x:auto}
+  .stage-tab{display:flex;align-items:center;gap:6px;padding:0 6px 0 10px;border:0;border-top:2px solid transparent;background:transparent;color:#8a8896;font-size:10.5px;white-space:nowrap;cursor:pointer}
+  button.stage-tab{padding-right:12px}
+  .stage-tab[aria-selected="true"]{background:#1d1e26;color:#e6e3f1;border-top-color:#9585fa}
+  .stage-tab:hover{color:#d6d3e0}
+  .dirty-dot{font-style:normal;color:#ffd479;font-size:8px}
+  .close-tab{display:grid;place-items:center;width:18px;height:18px;border:0;border-radius:4px;background:none;color:#777583;cursor:pointer}
+  .close-tab:hover{background:#ffffff12;color:#fff}
+  .script-button{height:30px;display:flex;align-items:center;gap:6px;padding:0 11px;border:1px solid #7fd1ff40;border-radius:6px;background:#1f2f3a;color:#a9def7;font-size:10px;cursor:pointer}
+  .script-button:hover{background:#26394a}
+  :global(.bottom-panel.console-expanded){height:172px;min-height:140px;display:flex;flex-direction:column}
+  .console-log{flex:1;min-height:0;overflow:auto;padding:0 15px 4px;font:10.5px/17px 'DM Mono',monospace;color:#a9a7b5}
+  .console-hint{color:#77757f;font-family:'DM Sans',sans-serif;font-size:10.5px}.console-hint code{color:#7fd1ff;font-family:'DM Mono',monospace}
+  .log-info{color:#8a8896}.log-print{color:#d9d7e2}.log-error{color:#ff8992}
+  .command-bar{display:flex;align-items:center;gap:8px;margin:0 10px 8px;padding:0 4px 0 10px;height:30px;border:1px solid #ffffff14;border-radius:6px;background:#111217}
+  .command-bar:focus-within{border-color:#7fd1ff66}
+  .command-bar span{color:#7fd1ff;font:13px 'DM Mono',monospace}
+  .command-bar input{flex:1;min-width:0;height:100%;border:0;outline:none;background:transparent;color:#e6e3f1;font:11px 'DM Mono',monospace}
+  .command-bar button{height:22px;padding:0 10px;border:0;border-radius:4px;background:#1f2f3a;color:#a9def7;font-size:10px;cursor:pointer}.command-bar button:disabled{opacity:.4;cursor:default}
   .settings-overlay{position:fixed;inset:0;z-index:20;display:grid;place-items:center;padding:20px;background:#09090dc9;backdrop-filter:blur(5px)}
 </style>

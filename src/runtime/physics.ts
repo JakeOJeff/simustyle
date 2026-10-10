@@ -165,6 +165,10 @@ export class PhysicsRuntime {
     if (!body) return false;
     if (method === "applyImpulse" && args.length === 3) body.applyImpulse({ x: args[0]!, y: args[1]!, z: args[2]! }, true);
     else if (method === "setVelocity" && args.length === 3) body.setLinvel({ x: args[0]!, y: args[1]!, z: args[2]! }, true);
+    else if (method === "setTranslation" && args.length === 3) {
+      body.setTranslation({ x: args[0]!, y: args[1]!, z: args[2]! }, true);
+      body.setLinvel({ x: 0, y: 0, z: 0 }, true);
+    }
     else return false;
     return true;
   }

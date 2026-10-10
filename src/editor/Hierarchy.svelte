@@ -8,6 +8,7 @@
     onCreate: () => void;
     onDelete: (id: string) => void;
     onReparent: (id: string, parent: string | null) => void;
+    onOpenScript: (id: string) => void;
   }
 
   interface TreeRow {
@@ -15,7 +16,7 @@
     depth: number;
   }
 
-  let { scene, selectedId, onSelect, onCreate, onDelete, onReparent }: Props = $props();
+  let { scene, selectedId, onSelect, onCreate, onDelete, onReparent, onOpenScript }: Props = $props();
 
   let rows = $derived.by(() => {
     const byParent = new Map<string, Entity[]>();
@@ -92,6 +93,9 @@
             <span class="entity-icon" aria-hidden="true">&#9671;</span>
             <span class="entity-name">{row.entity.name}</span>
           </button>
+          {#if row.entity.components.Script}
+            <button class="script-badge" type="button" aria-label={`Edit ${row.entity.name} script`} title="Edit script" onclick={(event) => { event.stopPropagation(); onOpenScript(row.entity.id); }}>{"</>"}</button>
+          {/if}
           <button
             class="delete-button"
             type="button"
@@ -111,6 +115,23 @@
 </section>
 
 <style>
+  .script-badge {
+    flex: 0 0 auto;
+    height: 20px;
+    margin-right: 2px;
+    padding: 0 5px;
+    border: 1px solid #7fd1ff33;
+    border-radius: 4px;
+    background: #1f2f3a;
+    color: #a9def7;
+    font: 9px 'DM Mono', monospace;
+    cursor: pointer;
+  }
+
+  .script-badge:hover {
+    background: #26394a;
+  }
+
   .hierarchy {
     display: flex;
     width: 220px;

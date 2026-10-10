@@ -4,21 +4,32 @@ import { generateScript, type GeneratedScript } from "../lang/codegen";
 import { typecheckScript } from "../lang/checker";
 import { parseScript } from "../lang/parser";
 import type { ScriptProgram } from "../lang/ast";
-import { COLOR_NAMES, DIRECTIONS, SHAPE_NOUNS } from "../lang/vocabulary";
+import { DIRECTIONS, matchAnimation, type RelationName } from "../lang/vocabulary";
+import type { Entity } from "../scene/types";
+import { MotionController, findDescribed, findNamed, placeRelative, positionOf, rotationOf, scaleOf, type RuntimeDescription } from "./commands";
 
 type Runner = (ctx: ScriptContext, state: Record<string, unknown>) => void;
 interface ScriptInstance { id: string; program: ScriptProgram; generated: GeneratedScript; state: Record<string, unknown>; initialize: Runner; start?: Runner; frame?: Runner; collide?: Runner; intervals: { seconds: number; elapsed: number; run: Runner }[]; }
-type RuntimeTarget = string | { id?: string; name?: string; kind?: string; description?: { noun: string; colors: string[]; superlative?: string } } | null;
-type RuntimeDestination = { kind: "point"; value: number[] } | { kind: "offset"; value: number[] } | { kind: "direction"; direction: keyof typeof DIRECTIONS; amount: number } | { kind: "relative"; relation: string; target: RuntimeTarget };
-type RuntimeCommand = { name: "move"; target: RuntimeTarget; destination: RuntimeDestination; duration: number | null }
-  | { name: "turn"; target: RuntimeTarget; amount: number[]; duration: number | null }
+/** An entity handle ({id,name}), a by-name lookup, or a description, as emitted by codegen. */
+type RuntimeTarget = string | { id: string; name?: string } | { kind: "name"; name: string } | { kind: "describe"; description: RuntimeDescription } | null | undefined;
+type Vector = [number, number, number];
+type RuntimeDestination = { kind: "point"; value: Vector } | { kind: "offset"; value: Vector } | { kind: "direction"; direction: keyof typeof DIRECTIONS; amount: number } | { kind: "relative"; relation: RelationName; target: RuntimeTarget };
+type RuntimeCommand = { line: number } & (
+  | { name: "move"; target: RuntimeTarget; destination: RuntimeDestination; duration: number | null }
+  | { name: "turn"; target: RuntimeTarget; amount: Vector; duration: number | null }
   | { name: "scale"; target: RuntimeTarget; mode: "to" | "by"; amount: number; duration: number | null }
   | { name: "paint"; target: RuntimeTarget; color: string }
-  | { name: "push"; target: RuntimeTarget; vector: number[] }
+  | { name: "push"; target: RuntimeTarget; vector: Vector }
   | { name: "destroy" | "hide" | "show" | "stop"; target: RuntimeTarget }
-  | { name: "animate"; target: RuntimeTarget; words: string[] }
-  | { name: "say"; args: unknown[] };
-interface ScriptContext { time: number; dt: number; self: { id: string; name: string } | null; other?: { id: string; name: string }; param(name: string): unknown; get(path: string[]): unknown; set(path: string[], operator: string, value: unknown): void; call(name: string, args: unknown[]): unknown; command(command: RuntimeCommand): void; describe(description: { noun: string; colors: string[]; superlative?: string }): { id: string; name: string } | null; rigidbody(method: string, args: unknown[]): unknown; setMember(target: unknown, key: string, operator: string, value: unknown): void; assignLocal(current: unknown, operator: string, value: unknown): unknown; }
+  | { name: "animate"; target: RuntimeTarget; words: string[] });
+interface ScriptContext { time: number; dt: number; self: { id: string; name: string } | null; other?: { id: string; name: string }; param(name: string): unknown; get(path: string[]): unknown; set(path: string[], operator: string, value: unknown): void; call(name: string, args: unknown[]): unknown; command(command: RuntimeCommand): void; describe(description: RuntimeDescription): { id: string; name: string } | null; rigidbody(method: string, args: unknown[]): unknown; setMember(target: unknown, key: string, operator: string, value: unknown): void; assignLocal(current: unknown, operator: string, value: unknown): unknown; }
+
+function targetLabel(target: RuntimeTarget): string {
+  if (!target) return "(nothing)";
+  if (typeof target === "string") return `'${target}'`;
+  if ("kind" in target) return target.kind === "name" ? `'${target.name}'` : `'${target.description.text ?? `the ${target.description.noun}`}'`;
+  return `'${target.name ?? target.id}'`;
+}
 
 export interface ScriptIssue { entityId: string; line: number; column: number; message: string; }
 export interface ScriptPrint { entityId: string; values: unknown[]; }
@@ -51,6 +62,7 @@ export class ScriptRuntime {
   private currentScene: Scene;
   private elapsed = 0;
   private physicsActions: ((id: string, method: string, args: number[]) => boolean) | undefined;
+  private readonly motion = new MotionController();
 
   constructor(scene: Scene, seed = 1, physicsActions?: (id: string, method: string, args: number[]) => boolean) {
     this.currentScene = scene;
@@ -85,29 +97,7 @@ export class ScriptRuntime {
 
   private context(instance: ScriptInstance, dt: number, other?: { id: string; name: string }): ScriptContext {
     const self = () => this.currentScene.entities.find((entity) => entity.id === instance.id);
-    const resolve = (target: unknown) => {
-      if (target && typeof target === "object" && "id" in target) return this.currentScene.entities.find((entity) => entity.id === String((target as Record<string, unknown>).id));
-      if (target && typeof target === "object" && "kind" in target && target.kind === "name" && "name" in target) target = (target as Record<string, unknown>).name;
-      if (typeof target === "string") return this.currentScene.entities.find((entity) => entity.name === target || entity.id === target);
-      if (target && typeof target === "object" && "kind" in target && target.kind === "describe" && "description" in target) {
-        const description = target.description as { noun?: string; colors?: string[]; superlative?: string };
-        let matches = this.currentScene.entities.filter((entity) => {
-          const shape = entity.components.Mesh?.shape;
-          const noun = SHAPE_NOUNS[description.noun ?? ""];
-          return (!noun || (noun === "Light" || noun === "Camera" ? noun in entity.components : shape === noun)) &&
-            (description.colors ?? []).every((color) => entity.components.Material?.color === COLOR_NAMES[color]);
-        });
-        if (description.superlative === "nearest") matches = matches.sort((a, b) => Math.hypot(...(a.components.Transform?.position as number[] ?? [0, 0, 0])) - Math.hypot(...(b.components.Transform?.position as number[] ?? [0, 0, 0])));
-        if (description.superlative === "farthest") matches = matches.sort((a, b) => Math.hypot(...(b.components.Transform?.position as number[] ?? [0, 0, 0])) - Math.hypot(...(a.components.Transform?.position as number[] ?? [0, 0, 0])));
-        return matches[0];
-      }
-      return undefined;
-    };
-    const setFields = (id: string, component: string, fields: Record<string, unknown>) => {
-      const result = applyOps(this.currentScene, [{ op: "update", id, components: { [component]: fields } }]);
-      if (result.errors.length) this.issues.push({ entityId: instance.id, line: 1, column: 1, message: result.errors.join("; ") });
-      else this.currentScene = result.scene;
-    };
+    const resolve = (target: unknown): Entity | undefined => this.resolveTarget(target as RuntimeTarget, instance.id);
     const context: ScriptContext = {
       time: this.elapsed, dt, self: self() ? { id: instance.id, name: self()!.name } : null, ...(other ? { other } : {}),
       param: (name) => instance.state[name] ?? instance.program.params.find((param) => param.name === name)?.defaultValue,
@@ -157,7 +147,7 @@ export class ScriptRuntime {
           case "lerp": return Number(args[0]) + (Number(args[1]) - Number(args[0])) * Number(args[2]);
           case "print": this.prints.push({ entityId: instance.id, values: args }); return undefined;
           case "find": {
-            const found = this.currentScene.entities.find((entity) => entity.name === String(args[0]));
+            const found = findNamed(this.currentScene, String(args[0]));
             return found ? { id: found.id, name: found.name } : null;
           }
           case "destroy": {
@@ -181,44 +171,7 @@ export class ScriptRuntime {
         const entity = resolve({ kind: "describe", description });
         return entity ? { id: entity.id, name: entity.name } : null;
       },
-      command: (command) => {
-        if (command.name === "say") return;
-        if ((command.name === "move" || command.name === "turn" || command.name === "scale") && command.duration !== null) {
-          this.issues.push({ entityId: instance.id, line: 1, column: 1, message: "Timed scene commands currently apply immediately; duration was ignored." });
-        }
-        const entity = resolve(command.target);
-        if (!entity) { this.issues.push({ entityId: instance.id, line: 1, column: 1, message: "Scene command could not find its target entity." }); return; }
-        const transform = entity.components.Transform ?? {};
-        const position = (transform.position as number[] | undefined) ?? [0, 0, 0];
-        const rotation = (transform.rotation as number[] | undefined) ?? [0, 0, 0];
-        const scale = (transform.scale as number[] | undefined) ?? [1, 1, 1];
-        if (command.name === "destroy") {
-          const pending = [entity.id];
-          for (let index = 0; index < pending.length; index += 1) pending.push(...this.currentScene.entities.filter((item) => item.parent === pending[index]).map((item) => item.id));
-          const result = applyOps(this.currentScene, pending.reverse().map((id) => ({ op: "delete" as const, id })));
-          if (result.errors.length) this.issues.push({ entityId: instance.id, line: 1, column: 1, message: result.errors.join("; ") }); else this.currentScene = result.scene;
-        } else if (command.name === "move") {
-          const destination = command.destination;
-          let next = [...position];
-          if (destination.kind === "point") next = destination.value;
-          else if (destination.kind === "offset") next = position.map((part, index) => part + destination.value[index]!);
-          else if (destination.kind === "direction") next = position.map((part, index) => part + DIRECTIONS[destination.direction][index]! * destination.amount);
-          else {
-            const otherEntity = resolve(destination.target);
-            const otherPosition = (otherEntity?.components.Transform?.position as number[] | undefined) ?? [0, 0, 0];
-            const [x, y, z] = otherPosition;
-            const gap = 1.5;
-            next = destination.relation === "above" ? [x!, y! + gap, z!] : destination.relation === "below" ? [x!, y! - gap, z!] : destination.relation === "left" ? [x! - gap, y!, z!] : destination.relation === "right" ? [x! + gap, y!, z!] : destination.relation === "front" ? [x!, y!, z! - gap] : destination.relation === "behind" ? [x!, y!, z! + gap] : [x! + gap, y!, z!];
-          }
-          setFields(entity.id, "Transform", { position: next });
-        } else if (command.name === "turn") setFields(entity.id, "Transform", { rotation: rotation.map((part, index) => part + command.amount[index]!) });
-        else if (command.name === "scale") setFields(entity.id, "Transform", { scale: command.mode === "by" ? scale.map((part) => part * command.amount) : [command.amount, command.amount, command.amount] });
-        else if (command.name === "paint") setFields(entity.id, "Material", { color: command.color });
-        else if (command.name === "hide") setFields(entity.id, "Material", { opacity: 0 });
-        else if (command.name === "show") setFields(entity.id, "Material", { opacity: 1 });
-        else if (command.name === "push") this.physicsActions?.(entity.id, "applyImpulse", command.vector);
-        else if (command.name === "animate" || command.name === "stop") this.issues.push({ entityId: instance.id, line: 1, column: 1, message: `The '${command.name}' command is not implemented; use the Timeline to edit animations.` });
-      },
+      command: (command) => this.runCommand(command, instance.id),
       rigidbody: (method, args) => this.physicsActions?.(instance.id, method, args.map(Number)) ?? false,
       setMember: (target, key, operator, value) => {
         if (target && typeof target === "object") (target as Record<string, unknown>)[key] = applyOperator((target as Record<string, unknown>)[key], operator, value);
@@ -226,6 +179,106 @@ export class ScriptRuntime {
       assignLocal: applyOperator
     };
     return context;
+  }
+
+  /** Turn a command target into a scene entity. Bare names fall back to descriptions, so `move ball up` finds a sphere. */
+  private resolveTarget(target: RuntimeTarget, selfId: string | null): Entity | undefined {
+    if (!target) return undefined;
+    if (typeof target === "string") return this.resolveTarget({ kind: "name", name: target }, selfId);
+    const scene = this.currentScene;
+    if (!("kind" in target)) return scene.entities.find((entity) => entity.id === target.id);
+    const resolver = { scene, selfId, resolve: (nested: unknown) => this.resolveTarget(nested as RuntimeTarget, selfId) };
+    if (target.kind === "name") return findNamed(scene, target.name) ?? findDescribed({ colors: [], noun: target.name.toLowerCase() }, resolver);
+    return findDescribed(target.description, resolver);
+  }
+
+  private report(entityId: string, line: number, message: string): void {
+    this.issues.push({ entityId, line, column: 1, message });
+  }
+
+  private applyChanges(ops: SceneOp[], entityId: string, line: number): void {
+    if (!ops.length) return;
+    const result = applyOps(this.currentScene, ops);
+    if (result.errors.length) { this.report(entityId, line, result.errors.join("; ")); return; }
+    this.currentScene = result.scene;
+    // Physics owns dynamic bodies, so teleport them in Rapier as well or the next step would undo the move.
+    for (const op of ops) {
+      if (op.op !== "update" || !op.components.Transform) continue;
+      const entity = this.currentScene.entities.find((candidate) => candidate.id === op.id);
+      const position = op.components.Transform.position;
+      if (entity && Array.isArray(position) && this.isDynamic(entity)) this.physicsActions?.(entity.id, "setTranslation", position as number[]);
+    }
+  }
+
+  private isDynamic(entity: Entity): boolean {
+    return Boolean(entity.components.RigidBody) && (entity.components.RigidBody?.bodyType ?? "dynamic") === "dynamic";
+  }
+
+  private runCommand(command: RuntimeCommand, ownerId: string): void {
+    const { line } = command;
+    const entity = this.resolveTarget(command.target, ownerId);
+    if (!entity) { this.report(ownerId, line, `${command.name}: could not find ${targetLabel(command.target)} in the scene.`); return; }
+    const duration = "duration" in command && command.duration !== null ? Math.max(0, Number(command.duration)) : 0;
+    switch (command.name) {
+      case "destroy": {
+        const ids = [entity.id];
+        for (let index = 0; index < ids.length; index += 1) ids.push(...this.currentScene.entities.filter((item) => item.parent === ids[index]).map((item) => item.id));
+        for (const id of ids) this.motion.forget(id);
+        this.applyChanges(ids.reverse().map((id) => ({ op: "delete" as const, id })), ownerId, line);
+        return;
+      }
+      case "move": {
+        const destination = command.destination;
+        const position = positionOf(entity);
+        let next: Vector;
+        if (destination.kind === "point") next = destination.value.map(Number) as Vector;
+        else if (destination.kind === "offset") next = position.map((part, index) => part + Number(destination.value[index])) as Vector;
+        else if (destination.kind === "direction") next = position.map((part, index) => part + DIRECTIONS[destination.direction][index]! * Number(destination.amount)) as Vector;
+        else {
+          const anchor = this.resolveTarget(destination.target, ownerId);
+          if (!anchor) { this.report(ownerId, line, `move: could not find ${targetLabel(destination.target)} to move next to.`); return; }
+          if (anchor.id === entity.id) { this.report(ownerId, line, "move: an object cannot be placed relative to itself."); return; }
+          next = placeRelative(entity, anchor, destination.relation);
+        }
+        if (next.some((part) => !Number.isFinite(part))) { this.report(ownerId, line, "move: coordinates must be numbers."); return; }
+        this.applyChanges(this.motion.set(entity, "position", next, duration), ownerId, line);
+        return;
+      }
+      case "turn":
+        this.applyChanges(this.motion.set(entity, "rotation", rotationOf(entity).map((part, index) => part + Number(command.amount[index])) as Vector, duration), ownerId, line);
+        return;
+      case "scale": {
+        const amount = Number(command.amount);
+        if (!Number.isFinite(amount) || amount <= 0) { this.report(ownerId, line, "scale: the amount must be a positive number."); return; }
+        const next = command.mode === "by" ? scaleOf(entity).map((part) => part * amount) as Vector : [amount, amount, amount] as Vector;
+        this.applyChanges(this.motion.set(entity, "scale", next, duration), ownerId, line);
+        return;
+      }
+      case "paint":
+        if (!entity.components.Material) { this.report(ownerId, line, `paint: '${entity.name}' has no Material to color.`); return; }
+        this.applyChanges([{ op: "update", id: entity.id, components: { Material: { color: command.color } } }], ownerId, line);
+        return;
+      case "hide":
+      case "show":
+        if (!entity.components.Material) { this.report(ownerId, line, `${command.name}: '${entity.name}' has no Material.`); return; }
+        this.applyChanges([{ op: "update", id: entity.id, components: { Material: { opacity: command.name === "hide" ? 0 : 1 } } }], ownerId, line);
+        return;
+      case "push":
+        if (!this.isDynamic(entity) || !this.physicsActions?.(entity.id, "applyImpulse", command.vector.map(Number))) {
+          this.report(ownerId, line, `push: '${entity.name}' needs a dynamic RigidBody to be pushed.`);
+        }
+        return;
+      case "animate": {
+        const spec = matchAnimation(command.words);
+        if (!spec) { this.report(ownerId, line, `animate: no animation matches '${command.words.join(" ")}'.`); return; }
+        if (this.isDynamic(entity)) this.report(ownerId, line, `animate: '${entity.name}' has a dynamic RigidBody, so physics will fight the animation. Make it kinematic or remove the RigidBody.`);
+        this.applyChanges(this.motion.animate(entity, spec), ownerId, line);
+        return;
+      }
+      case "stop":
+        this.applyChanges(this.motion.stop(entity.id), ownerId, line);
+        return;
+    }
   }
 
   private random(min: number, max: number): number {
@@ -245,7 +298,27 @@ export class ScriptRuntime {
         if (interval.elapsed >= interval.seconds) { interval.elapsed %= interval.seconds; this.invoke(instance, interval.run, dt); }
       }
     }
+    this.applyChanges(this.motion.advance(this.currentScene, dt), "", 1);
     return this.currentScene;
+  }
+
+  /**
+   * Run script statements once against a scene outside Play (the editor's command bar).
+   * Timed moves finish instantly; looping animations need Play, so they are reported instead.
+   */
+  static runOnce(scene: Scene, source: string): { scene: Scene; issues: ScriptIssue[]; prints: ScriptPrint[] } {
+    const runtime = new ScriptRuntime({ ...scene, entities: scene.entities.filter((entity) => !entity.components.Script) });
+    runtime.currentScene = scene;
+    runtime.compile("", source);
+    const instance = runtime.instances.get("");
+    if (instance) {
+      if (instance.program.handlers.length) runtime.report("", instance.program.handlers[0]!.line, "Event handlers such as 'on start:' only run during Play. Put them in an object's script.");
+      else runtime.invoke(instance, instance.initialize, 0);
+      const settled = runtime.motion.settle();
+      if (settled.animating) runtime.report("", 1, "Animations loop during Play. Add the animate line to a script (for example under 'on start:') and press Play.");
+      runtime.applyChanges(settled.ops, "", 1);
+    }
+    return { scene: runtime.currentScene, issues: runtime.takeIssues(), prints: runtime.takePrints() };
   }
 
   collide(selfId: string, otherId: string): void {

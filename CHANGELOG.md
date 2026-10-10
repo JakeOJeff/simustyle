@@ -4,6 +4,13 @@ Record meaningful project changes during the event, newest first.
 
 ## Event build log
 
+### 2026-10-11T00:55:00+05:30 — Add plain-English script commands and an in-app script editor
+
+- Changed: Fixed the Add menu and Hierarchy **+** buttons, which threw `structuredClone` errors on Svelte 5 state proxies (scene and undo stacks are now `$state.raw`). Completed the Scratch-style command language: `move`/`glide` (coordinates, offsets, directions, or above/below/beside/… another object, optionally `over Ns`), `turn`, `scale`, `paint`, `hide`/`show`, `destroy`, `push`, `say`, `animate … like <description>` with twelve keyword-matched styles, and `stop`; object descriptions such as `the nearest red ball above the box`; `--` comments. Added a tabbed script editor over the viewport with syntax highlighting, line numbers, inline problems, indentation keys, and a clickable reference; a toolbar **Script** button, Hierarchy script badges, an Inspector **Open in script editor** button, and a Console command bar that runs commands immediately as one undo step. The AI agent prompt documents the commands. Files: `src/App.svelte`, `src/editor/ScriptEditor.svelte`, `src/editor/Hierarchy.svelte`, `src/editor/Inspector.svelte`, `src/lang/` (`vocabulary.ts`, `highlight.ts`, `parser.ts`, `lexer.ts`, `checker.ts`, `codegen.ts`, `ast.ts`), `src/runtime/commands.ts`, `src/runtime/scripts.ts`, `src/runtime/physics.ts`, `src/ai/prompt.ts`, `tests/lang/commands.test.ts`, `README.md`, and `CHANGELOG.md`.
+- Why: Adding objects did not work, and scripting was hard to find and limited to programmer-style syntax.
+- Validation: `npx tsc --noEmit` and `svelte-check` passed with 0 errors and 0 warnings; Vitest passed 67 tests, including 14 new command parser/checker/runtime tests. A headless Chrome run against the Vite dev server added a cube and sphere, ran command-bar commands (paint, relative move, and a not-found report), opened a script tab, showed inline errors, saved with Ctrl+S, and pressed Play: the sphere bounced, and `say` output reached the console.
+- Limitations: Animation styles are presets selected by keywords. Animations only run during Play. Dynamic rigid bodies are teleported by `move`, and physics competes with `animate`. `npm run build` passed; the standalone HTML export of command scripts and the Tauri desktop shell were not re-verified in this change.
+
 ### 2026-10-11T00:50:00+05:30 — Keep camera still during gizmo drags
 
 - Changed: Orbit controls are disabled while TransformControls is dragging and re-enabled when the gizmo drag ends. The listener is removed during viewport cleanup. Documented this interaction in README. Files: `src/editor/Viewport.svelte`, `README.md`, `AI_USAGE.md`, and `CHANGELOG.md`.

@@ -1,5 +1,6 @@
 import { componentSchemas } from "../registry";
 import type { FieldSchema } from "../registry/types";
+import { ANIMATION_STYLE_LIST, matchAnimation } from "./vocabulary";
 import type { ScriptExpression, ScriptProgram, ScriptStatement, ScriptTypeName } from "./ast";
 
 export interface ScriptDiagnostic {
@@ -228,6 +229,8 @@ export function typecheckScript(program: ScriptProgram): ScriptDiagnostic[] {
             case "paint": requireType(command.color, "color", "Paint color"); break;
             case "push": command.vector.forEach((value) => requireType(value, "number", "Push amount")); break;
             case "animate":
+              if (!matchAnimation(command.words)) diagnostics.push({ line: command.wordsLine, column: command.wordsColumn, message: `I don't know how to animate '${command.words.join(" ")}'. Try a word like: ${ANIMATION_STYLE_LIST}.` });
+              break;
             case "destroy":
             case "stop":
             case "hide":

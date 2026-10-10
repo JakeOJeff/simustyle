@@ -1,4 +1,4 @@
-import type { ScriptCommand, ScriptExpression, ScriptProgram, ScriptStatement, ScriptTarget } from "./ast";
+import type { EntityDescription, ScriptCommand, ScriptExpression, ScriptProgram, ScriptStatement, ScriptTarget } from "./ast";
 
 function quote(value: string): string { return JSON.stringify(value); }
 
@@ -12,13 +12,20 @@ function pathOf(expression: ScriptExpression): string[] | null {
 function targetCode(target: ScriptTarget): string {
   switch (target.kind) {
     case "self": return "ctx.self";
-    case "name": return `{kind:"name",name:${quote(target.name)}}`;
-    case "describe": return `{kind:"describe",description:${JSON.stringify(target.description)}}`;
+    // A bare name means a variable or parameter when one exists, otherwise an entity name.
+    case "name": return target.quoted ? `{kind:"name",name:${quote(target.name)}}` : `(state[${quote(target.name)}] ?? {kind:"name",name:${quote(target.name)}})`;
+    case "describe": return `{kind:"describe",description:${descriptionCode(target.description)}}`;
     case "expression": return expressionCode(target.expression);
   }
 }
 
-function commandCode(command: ScriptCommand): string {
+function descriptionCode(description: EntityDescription): string {
+  const relation = description.relation ? `,relation:{relation:${quote(description.relation.relation)},target:${targetCode(description.relation.target)}}` : "";
+  const superlative = description.superlative ? `,superlative:${quote(description.superlative)}` : "";
+  return `{text:${quote(description.text)},colors:${JSON.stringify(description.colors)},noun:${quote(description.noun)}${superlative}${relation}}`;
+}
+
+function commandCode(command: ScriptCommand, line: number): string {
   const expression = (value: ScriptExpression) => expressionCode(value);
   const vector = (values: ScriptExpression[]) => `[${values.map(expression).join(",")}]`;
   let fields: string;
@@ -40,7 +47,7 @@ function commandCode(command: ScriptCommand): string {
     case "say": return `ctx.call("print", [${command.args.map(expression).join(", ")}]);`;
     default: fields = `target:${targetCode(command.target)}`;
   }
-  return `ctx.command({name:${quote(command.name)},${fields}});`;
+  return `ctx.command({name:${quote(command.name)},line:${line},${fields}});`;
 }
 
 function expressionCode(expression: ScriptExpression): string {
@@ -49,7 +56,7 @@ function expressionCode(expression: ScriptExpression): string {
     case "string": return quote(expression.value);
     case "boolean": return String(expression.value);
     case "color": return quote(expression.value);
-    case "describe": return `ctx.describe(${JSON.stringify(expression.description)})`;
+    case "describe": return `ctx.describe(${descriptionCode(expression.description)})`;
     case "identifier":
       if (expression.name === "self") return "ctx.self";
       if (expression.name === "time" || expression.name === "dt") return `ctx.${expression.name}`;
@@ -94,7 +101,7 @@ function statementCode(statement: ScriptStatement, depth = 1): string {
     }
     case "while": return `${pad}{ let __guard = 0; while (${expressionCode(statement.condition)} && __guard++ < 10000) {\n${statement.body.map((child) => statementCode(child, depth + 1)).join("\n")}\n${pad}} }`;
     case "expression": return `${pad}${expressionCode(statement.expression)};`;
-    case "command": return `${pad}${commandCode(statement.command)}`;
+    case "command": return `${pad}${commandCode(statement.command, statement.line)}`;
   }
 }
 
@@ -118,7 +125,9 @@ export function generateScript(program: ScriptProgram): GeneratedScript {
     initialize: compileBody(program.statements),
     ...(handlers.start ? { start: compileBody(handlers.start.body) } : {}),
     ...(handlers.frame ? { frame: compileBody(handlers.frame.body) } : {}),
-    ...(handlers.collide ? { collide: compileBody(handlers.collide.body) } : {}),
+    // Expose the collision partner under the handler's own parameter name.
+    ...(handlers.collide ? { collide: `${handlers.collide.parameter ? `  state[${quote(handlers.collide.parameter)}] = ctx.other;
+` : ""}${compileBody(handlers.collide.body)}` } : {}),
     interval: program.handlers.filter((handler) => handler.event === "interval").map((handler) => ({ seconds: handler.intervalSeconds ?? 1, body: compileBody(handler.body) }))
   };
 }
