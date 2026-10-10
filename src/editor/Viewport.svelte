@@ -185,6 +185,8 @@
       if (selection && (selection.width > 4 || selection.height > 4)) {
         camera.updateMatrixWorld();
         for (const [id, object] of entityObjects) {
+          // Box selection picks visible objects; groups are chosen in the Hierarchy.
+          if (!(object instanceof THREE.Mesh)) continue;
           const bounds = new THREE.Box3().setFromObject(object);
           if (bounds.isEmpty()) continue;
           const screenPoints: THREE.Vector2[] = [];
@@ -260,33 +262,59 @@
     }
     window.addEventListener("keydown", onKey);
 
+    function disposeObject(object: THREE.Object3D) {
+      object.removeFromParent();
+      if (object instanceof THREE.Mesh) {
+        object.geometry.dispose();
+        const material = object.material;
+        if (Array.isArray(material)) material.forEach((item) => item.dispose());
+        else material.dispose();
+      }
+    }
+
+    function applyTransform(object: THREE.Object3D, entity: Entity) {
+      const transform = component(entity, "Transform");
+      object.position.fromArray(vec3(transform.position, [0, 0, 0]));
+      const rotation = vec3(transform.rotation, [0, 0, 0]);
+      object.rotation.set(THREE.MathUtils.degToRad(rotation[0]), THREE.MathUtils.degToRad(rotation[1]), THREE.MathUtils.degToRad(rotation[2]));
+      object.scale.fromArray(vec3(transform.scale, [1, 1, 1]));
+      object.name = entity.name;
+    }
+
     function syncEntities() {
-      const valid = new Set(scene.entities.filter((entity) => entity.components.Mesh).map((entity) => entity.id));
+      // Entities without a Mesh (groups, scene scripts, lights) become invisible Groups,
+      // so their Transform still moves the children placed inside them.
+      const live = new Map(scene.entities.map((entity) => [entity.id, entity]));
       for (const [id, object] of entityObjects) {
-        if (!valid.has(id)) {
-          object.removeFromParent();
-          if (object instanceof THREE.Mesh) {
-            object.geometry.dispose();
-            const material = object.material;
-            if (Array.isArray(material)) material.forEach((item) => item.dispose());
-            else material.dispose();
-          }
-          entityObjects.delete(id);
-        }
+        const entity = live.get(id);
+        if (entity && Boolean(entity.components.Mesh) === object instanceof THREE.Mesh) continue;
+        for (const child of [...object.children]) if (child.userData.entityId) world.add(child);
+        disposeObject(object);
+        entityObjects.delete(id);
       }
 
       for (const entity of scene.entities) {
         const meshData = entity.components.Mesh;
-        if (!meshData) continue;
-        const transform = component(entity, "Transform");
+        if (!meshData) {
+          let group = entityObjects.get(entity.id);
+          if (!group) {
+            group = new THREE.Group();
+            group.userData.entityId = entity.id;
+            entityObjects.set(entity.id, group);
+            world.add(group);
+          }
+          applyTransform(group, entity);
+          continue;
+        }
         const materialData = component(entity, "Material");
         let object = entityObjects.get(entity.id) as THREE.Mesh | undefined;
         if (!object) {
           object = new THREE.Mesh(geometryFor(meshData), new THREE.MeshStandardMaterial());
-          object.name = entity.name;
+          object.userData.entityId = entity.id;
           object.castShadow = true;
           object.receiveShadow = true;
           entityObjects.set(entity.id, object);
+          world.add(object);
         } else if (object.userData.shape !== meshData.shape || object.userData.radius !== meshData.radius || object.userData.height !== meshData.height) {
           object.geometry.dispose();
           object.geometry = geometryFor(meshData);
@@ -294,11 +322,7 @@
         object.userData.shape = meshData.shape;
         object.userData.radius = meshData.radius;
         object.userData.height = meshData.height;
-        object.position.fromArray(vec3(transform.position, [0, 0, 0]));
-        const rotation = vec3(transform.rotation, [0, 0, 0]);
-        object.rotation.set(THREE.MathUtils.degToRad(rotation[0]), THREE.MathUtils.degToRad(rotation[1]), THREE.MathUtils.degToRad(rotation[2]));
-        object.scale.fromArray(vec3(transform.scale, [1, 1, 1]));
-        object.name = entity.name;
+        applyTransform(object, entity);
         const material = object.material as THREE.MeshStandardMaterial;
         material.color.set(typeof materialData.color === "string" ? materialData.color : "#ffffff");
         material.metalness = typeof materialData.metalness === "number" ? materialData.metalness : 0;
@@ -307,8 +331,12 @@
         material.emissiveIntensity = typeof materialData.emissiveIntensity === "number" ? materialData.emissiveIntensity : 0;
         material.opacity = typeof materialData.opacity === "number" ? materialData.opacity : 1;
         material.transparent = material.opacity < 1;
-        const parent = entity.parent ? entityObjects.get(entity.parent) : undefined;
-        const intendedParent = parent ?? world;
+      }
+
+      // Parent once every object exists, so children listed before their parent still attach.
+      for (const entity of scene.entities) {
+        const object = entityObjects.get(entity.id)!;
+        const intendedParent = (entity.parent ? entityObjects.get(entity.parent) : undefined) ?? world;
         if (object.parent !== intendedParent) intendedParent.add(object);
       }
 

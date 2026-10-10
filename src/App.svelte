@@ -17,14 +17,16 @@
   import type { AnimationTrack, AnimationValue } from "./runtime/animator";
   import { AnimatorRuntime } from "./runtime/animator";
   import { componentSchemas } from "./registry";
-  import { Box, Circle, Cone, Cylinder, FileCode2, Focus, FolderOpen, Grid3X3, Move3D, Pause, Play, Plus, Redo2, Rotate3D, Save, Scaling, Settings, Square, Undo2, X } from "@lucide/svelte";
+  import { Box, FolderPlus, Circle, Cone, Cylinder, FileCode2, Focus, FolderOpen, Grid3X3, Move3D, Pause, Play, Plus, Redo2, Rotate3D, Save, Scaling, Settings, Square, Undo2, X } from "@lucide/svelte";
   import { applyOps } from "./scene/applyOps";
+  import { groupOps, reparentOps, ungroupOps, uniqueId } from "./scene/hierarchy";
+  import { keyName } from "./lang/vocabulary";
   import { deserializeScene, serializeScene } from "./scene/serialize";
   import { createEmptyScene, type Entity, type Scene, type SceneOp, type Vec3 } from "./scene/types";
   import type { PlayState, SimulationController } from "./runtime/physics";
 
   type ToolMode = "translate" | "rotate" | "scale";
-  type EditorPanel = "console" | "ai" | "timeline";
+  type EditorPanel = "hierarchy" | "inspector" | "console" | "ai" | "timeline";
   type PanelDock = "left" | "right" | "top" | "bottom" | "floating";
   type PanelLayout = { dock: PanelDock; x: number; y: number; width: number; height: number };
 
@@ -41,8 +43,10 @@
   let playState: PlayState = $state("stopped");
   let playStarting = $state(false);
   let simulationWarnings = $state<string[]>([]);
-  let panelOpen = $state<Record<EditorPanel, boolean>>({ console: true, ai: false, timeline: false });
+  let panelOpen = $state<Record<EditorPanel, boolean>>({ hierarchy: true, inspector: true, console: true, ai: false, timeline: false });
   let panelLayouts = $state<Record<EditorPanel, PanelLayout>>({
+    hierarchy: { dock: "left", x: 12, y: 12, width: 260, height: 420 },
+    inspector: { dock: "right", x: 16, y: 16, width: 300, height: 420 },
     console: { dock: "bottom", x: 12, y: 12, width: 500, height: 250 },
     ai: { dock: "right", x: 16, y: 16, width: 430, height: 340 },
     timeline: { dock: "bottom", x: 16, y: 16, width: 680, height: 250 }
@@ -98,7 +102,7 @@
     try {
       const saved = JSON.parse(localStorage.getItem("simustyle.panelWorkspace") ?? "null") as { open?: Record<string, unknown>; layouts?: Record<string, Partial<PanelLayout>> } | null;
       if (saved) {
-        for (const panel of ["console", "ai", "timeline"] as const) {
+        for (const panel of ["hierarchy", "inspector", "console", "ai", "timeline"] as const) {
           if (typeof saved.open?.[panel] === "boolean") panelOpen[panel] = saved.open[panel] as boolean;
           const layout = saved.layouts?.[panel];
           if (!layout) continue;
@@ -107,8 +111,8 @@
               dock: layout.dock as PanelDock,
               x: Number.isFinite(layout.x) ? layout.x! : 16,
               y: Number.isFinite(layout.y) ? layout.y! : 16,
-              width: Number.isFinite(layout.width) ? Math.max(260, layout.width!) : 480,
-              height: Number.isFinite(layout.height) ? Math.max(150, layout.height!) : 280
+              width: Number.isFinite(layout.width) ? Math.max(220, layout.width!) : 480,
+              height: Number.isFinite(layout.height) ? Math.max(140, layout.height!) : 280
             };
           }
         }
@@ -297,7 +301,6 @@
     return true;
   }
 
-  function createBox() { createPrimitive("box"); }
 
   function createPrimitive(shape: "box" | "sphere" | "cylinder" | "cone" | "plane" | "capsule") {
     const label = shape[0].toUpperCase() + shape.slice(1);
@@ -334,7 +337,8 @@
 
   function openEntityMenu(id: string | null, x: number, y: number, position: Vec3 | null = null, source: "object" | "viewport" | "hierarchy" = "object") {
     if (playState !== "stopped") { message = "Stop the simulation before editing entities."; return; }
-    if (id) selectEntity(id);
+    // Right-clicking inside a multi-selection keeps it, so "Group" can wrap all of it.
+    if (id && !selectedIds.includes(id)) selectEntity(id);
     contextMenu = { id, position, source, x: Math.max(8, Math.min(x, window.innerWidth - 210)), y: Math.max(8, Math.min(y, window.innerHeight - 300)) };
   }
 
@@ -410,8 +414,80 @@
     }
   }
 
+  /** Move an object into another (or to the top level) without moving it in the world. */
   function reparentEntity(id: string, parent: string | null) {
-    if (scene.entities.some((entity) => entity.id === id)) apply([{ op: "update", id, components: {}, parent }]);
+    if (playState !== "stopped") { message = "Stop the simulation before changing parents."; return; }
+    const { ops, error } = reparentOps(scene, id, parent);
+    if (error) { message = error; return; }
+    if (ops.length && apply(ops)) {
+      const name = (entityId: string | null) => scene.entities.find((entity) => entity.id === entityId)?.name ?? entityId;
+      message = parent ? `Put ${name(id)} inside ${name(parent)}` : `Moved ${name(id)} to the top level`;
+    }
+  }
+
+  /** Wrap the selection in a new group (Ctrl+G), or add an empty group when nothing is selected. */
+  function groupSelection() {
+    if (playState !== "stopped") return;
+    const id = uniqueId(scene, "group");
+    const name = `Group ${scene.entities.filter((entity) => /^group(_\d+)?$/.test(entity.id)).length + 1}`;
+    const ids = selectedIds.length ? selectedIds : selectedId ? [selectedId] : [];
+    if (!ids.length) {
+      if (apply([{ op: "create", id, name, parent: null, components: { Transform: {} } }])) { selectEntity(id); message = `Added ${name}. Drag objects onto it in the Hierarchy to put them inside.`; }
+      return;
+    }
+    const { ops, error } = groupOps(scene, ids, id, name);
+    if (error) { message = error; return; }
+    if (apply(ops)) { selectEntity(id); message = `Grouped ${ids.length} object${ids.length === 1 ? "" : "s"} into ${name}`; }
+    contextMenu = null;
+  }
+
+  /** Move a group's children out to its parent and remove the empty group (Ctrl+Shift+G). */
+  function ungroupEntity(id: string) {
+    if (playState !== "stopped") return;
+    const children = scene.entities.filter((entity) => entity.parent === id).map((entity) => entity.id);
+    const { ops, error } = ungroupOps(scene, id);
+    if (error) { message = error; return; }
+    if (apply(ops)) { selectEntities(children); message = "Ungrouped"; }
+    contextMenu = null;
+  }
+
+  function typingInField(event: KeyboardEvent): boolean {
+    const target = event.target;
+    return target instanceof HTMLElement && (target.isContentEditable || ["INPUT", "TEXTAREA", "SELECT"].includes(target.tagName));
+  }
+
+  /** Editor shortcuts, and keyboard input for scripts ("when space is pressed") during Play. */
+  function windowKeyDown(event: KeyboardEvent) {
+    if (typingInField(event)) return;
+    if (playState === "playing") {
+      if (!event.ctrlKey && !event.metaKey && !event.altKey) {
+        if (["ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight", " "].includes(event.key)) event.preventDefault();
+        if (!event.repeat) simulation?.pressKey(keyName(event.key));
+      }
+      return;
+    }
+    if (playState !== "stopped") return;
+    const ctrl = event.ctrlKey || event.metaKey;
+    const key = event.key.toLowerCase();
+    if (ctrl && key === "z" && !event.shiftKey) { event.preventDefault(); undo(); }
+    else if (ctrl && (key === "y" || (key === "z" && event.shiftKey))) { event.preventDefault(); redo(); }
+    else if (ctrl && key === "g" && event.shiftKey) { event.preventDefault(); if (selectedId) ungroupEntity(selectedId); }
+    else if (ctrl && key === "g") { event.preventDefault(); groupSelection(); }
+    else if (ctrl && key === "d" && selectedId) { event.preventDefault(); duplicateEntity(selectedId); }
+    else if ((event.key === "Delete" || event.key === "Backspace") && selectedIds.length) {
+      event.preventDefault();
+      for (const id of [...selectedIds]) if (scene.entities.some((entity) => entity.id === id)) deleteEntity(id);
+    } else if (event.key === "F2" && selectedEntity) { event.preventDefault(); renameTarget = { id: selectedEntity.id, name: selectedEntity.name }; }
+  }
+
+  function windowKeyUp(event: KeyboardEvent) {
+    if (playState !== "stopped") simulation?.releaseKey(keyName(event.key));
+  }
+
+  /** Viewport clicks select objects, and during Play also fire "when clicked". */
+  function viewportSelect(id: string | null) {
+    if (playState === "playing" && id) simulation?.click(id);
+    selectEntity(id);
   }
 
   function undo() {
@@ -500,7 +576,7 @@
 
   // --- Scripts ------------------------------------------------------------------
 
-  let entityNames = $derived(new Set(scene.entities.flatMap((entity) => [entity.id.toLowerCase(), ...entity.name.toLowerCase().split(/s+/)])));
+  let entityNames = $derived(new Set(scene.entities.flatMap((entity) => [entity.id.toLowerCase(), ...entity.name.toLowerCase().split(/\s+/)])));
 
   function storedSource(id: string): string {
     const source = scene.entities.find((entity) => entity.id === id)?.components.Script?.source;
@@ -702,7 +778,7 @@ on start:
     const scriptMessages = simulation.takeScriptMessages();
     if (scriptMessages.length) {
       simulationWarnings = [...simulationWarnings, ...scriptMessages].slice(-30);
-      for (const entry of scriptMessages) log(/^[^:s]*:d+:d+ /.test(entry) ? "error" : "print", entry);
+      for (const entry of scriptMessages) log(/^[^:\s]*:\d+:\d+ /.test(entry) ? "error" : "print", entry);
     }
     animationFrame = requestAnimationFrame(physicsFrame);
   }
@@ -786,7 +862,7 @@ on start:
 </script>
 
 <svelte:head><title>SimuStyle — Scene Editor</title></svelte:head>
-<svelte:window onpointermove={movePanelDrag} onpointerup={endPanelDrag} />
+<svelte:window onpointermove={movePanelDrag} onpointerup={endPanelDrag} onkeydown={windowKeyDown} onkeyup={windowKeyUp} />
 
 <main class="editor" class:simulation-playing={playState === "playing"} class:simulation-paused={playState === "paused"}>
   <header class="toolbar">
@@ -813,6 +889,8 @@ on start:
           <button role="menuitem" onclick={() => createPrimitive("capsule")}><Circle size={15} /> Capsule</button>
           <button role="menuitem" onclick={() => createPrimitive("cone")}><Cone size={15} /> Cone</button>
           <button role="menuitem" onclick={() => createPrimitive("plane")}><Square size={15} /> Plane</button>
+          <div class="menu-separator"></div>
+          <button role="menuitem" onclick={() => { selectEntity(null); groupSelection(); primitiveMenuOpen = false; }}><FolderPlus size={15} /> Empty group</button>
         </div>
       {/if}
     </div>
@@ -836,7 +914,6 @@ on start:
   </header>
 
   <div class="editor-body">
-    <Hierarchy scene={scene} {selectedIds} onSelect={selectEntity} onCreate={createBox} onDelete={deleteEntity} onReparent={reparentEntity} onOpenScript={openScript} onContextMenu={openEntityMenu} onContextMenuEmpty={(x, y) => openEntityMenu(null, x, y, null, "hierarchy")} />
     <section class="viewport-column">
       {#if openScripts.length}
         <div class="stage-tabs" role="tablist" aria-label="Open documents">
@@ -851,7 +928,7 @@ on start:
         </div>
       {/if}
       <div class="stage" bind:this={stageHost}>
-        <Viewport scene={viewportScene} {selectedId} {selectedIds} {mode} {frameToken} {focusToken} {gridVisible} onSelect={selectEntity} onSelectMany={selectEntities} onTransform={updateTransform} onModeChange={(nextMode) => mode = nextMode} onContextMenu={(id, x, y, position) => openEntityMenu(id, x, y, position, id ? "object" : "viewport")} />
+        <Viewport scene={viewportScene} {selectedId} {selectedIds} {mode} {frameToken} {focusToken} {gridVisible} onSelect={viewportSelect} onSelectMany={selectEntities} onTransform={updateTransform} onModeChange={(nextMode) => mode = nextMode} onContextMenu={(id, x, y, position) => openEntityMenu(id, x, y, position, id ? "object" : "viewport")} />
         {#if activeTab !== "scene" && openScripts.includes(activeTab)}
           {@const id = activeTab}
           {#key id}
@@ -867,6 +944,18 @@ on start:
           {/key}
         {/if}
         <div class="panel-workspace" aria-label="Editor panels">
+          {#if panelOpen.hierarchy}
+            <section class="panel-window" class:floating-panel={panelLayouts.hierarchy.dock === "floating"} style={panelWindowStyle("hierarchy")} use:rememberPanelSize={"hierarchy"}>
+              <header class="panel-window-title"><button class="panel-drag-handle" type="button" aria-label="Drag Hierarchy panel to move or snap" onpointerdown={(event) => startPanelDrag(event, "hierarchy")}><strong>Hierarchy</strong><span>Drag to move or snap</span></button><button class="panel-close" type="button" aria-label="Close Hierarchy" onclick={() => panelOpen.hierarchy = false}><X size={13} /></button></header>
+              <div class="panel-window-body sidebar-panel-body"><Hierarchy scene={scene} {selectedIds} onSelect={selectEntity} onSelectMany={selectEntities} onGroup={groupSelection} onRename={(id, name) => apply([{ op: "update", id, components: {}, name }])} onDelete={deleteEntity} onReparent={reparentEntity} onOpenScript={openScript} onContextMenu={openEntityMenu} onContextMenuEmpty={(x, y) => openEntityMenu(null, x, y, null, "hierarchy")} /></div>
+            </section>
+          {/if}
+          {#if panelOpen.inspector}
+            <section class="panel-window" class:floating-panel={panelLayouts.inspector.dock === "floating"} style={panelWindowStyle("inspector")} use:rememberPanelSize={"inspector"}>
+              <header class="panel-window-title"><button class="panel-drag-handle" type="button" aria-label="Drag Inspector panel to move or snap" onpointerdown={(event) => startPanelDrag(event, "inspector")}><strong>Inspector</strong><span>Drag to move or snap</span></button><button class="panel-close" type="button" aria-label="Close Inspector" onclick={() => panelOpen.inspector = false}><X size={13} /></button></header>
+              <div class="panel-window-body sidebar-panel-body"><Inspector {scene} entity={selectedEntity} onUpdate={updateComponent} onRemove={(component) => selectedId && apply([{ op: "update", id: selectedId, components: { [component]: null } }])} onAdd={addComponent} onKeyframe={addKeyframe} onOpenScript={() => selectedId && openScript(selectedId)} /></div>
+            </section>
+          {/if}
           {#if panelOpen.console}
             <section class="panel-window" class:floating-panel={panelLayouts.console.dock === "floating"} style={panelWindowStyle("console")} use:rememberPanelSize={"console"}>
               <header class="panel-window-title"><button class="panel-drag-handle" type="button" aria-label="Drag Console panel to move or snap" onpointerdown={(event) => startPanelDrag(event, "console")}><strong>Console</strong><span>Drag to move or snap</span></button><button class="panel-close" type="button" aria-label="Close Console" onclick={() => panelOpen.console = false}><X size={13} /></button></header>
@@ -902,12 +991,13 @@ on start:
         </div>
       </div>
       <div class="bottom-tabs" role="toolbar" aria-label="Show or hide editor panels">
+        <button class:selected={panelOpen.hierarchy} aria-pressed={panelOpen.hierarchy} onclick={() => panelOpen.hierarchy = !panelOpen.hierarchy}>Hierarchy</button>
+        <button class:selected={panelOpen.inspector} aria-pressed={panelOpen.inspector} onclick={() => panelOpen.inspector = !panelOpen.inspector}>Inspector</button>
         <button class:selected={panelOpen.console} aria-pressed={panelOpen.console} onclick={() => panelOpen.console = !panelOpen.console}>Console</button>
         <button class:selected={panelOpen.ai} aria-pressed={panelOpen.ai} onclick={() => panelOpen.ai = !panelOpen.ai}>AI</button>
         <button class:selected={panelOpen.timeline} aria-pressed={panelOpen.timeline} onclick={() => panelOpen.timeline = !panelOpen.timeline}>Timeline</button>
       </div>
     </section>
-    <Inspector {scene} entity={selectedEntity} onUpdate={updateComponent} onRemove={(component) => selectedId && apply([{ op: "update", id: selectedId, components: { [component]: null } }])} onAdd={addComponent} onKeyframe={addKeyframe} onOpenScript={() => selectedId && openScript(selectedId)} />
   </div>
   <footer class="statusbar"><span><i></i> SCENE CORE</span><span>{scene.entities.length} {scene.entities.length === 1 ? "ENTITY" : "ENTITIES"}</span><span>Y-UP · METERS</span></footer>
   {#if settingsOpen}
@@ -926,6 +1016,9 @@ on start:
       {#if contextMenu.id}
         <div class="context-separator"></div>
         <button role="menuitem" onclick={() => duplicateEntity(contextMenu!.id!)} disabled={playState !== "stopped"}>Duplicate</button>
+        <button role="menuitem" onclick={groupSelection} disabled={playState !== "stopped"}>Group{selectedIds.length > 1 ? ` ${selectedIds.length} objects` : ""} <kbd>Ctrl+G</kbd></button>
+        {#if scene.entities.some((entity) => entity.parent === contextMenu!.id)}<button role="menuitem" onclick={() => ungroupEntity(contextMenu!.id!)} disabled={playState !== "stopped"}>Ungroup <kbd>Ctrl+Shift+G</kbd></button>{/if}
+        {#if scene.entities.find((entity) => entity.id === contextMenu!.id)?.parent}<button role="menuitem" onclick={() => { reparentEntity(contextMenu!.id!, null); contextMenu = null; }} disabled={playState !== "stopped"}>Move out to top level</button>{/if}
         <button role="menuitem" onclick={() => { const entity = scene.entities.find((candidate) => candidate.id === contextMenu!.id); if (entity) renameTarget = { id: entity.id, name: entity.name }; contextMenu = null; }} disabled={playState !== "stopped"}>Rename</button>
         <div class="context-separator"></div>
         <button class="context-delete" role="menuitem" onclick={() => { if (deleteEntity(contextMenu!.id!)) contextMenu = null; }} disabled={playState !== "stopped"}>Delete</button>
@@ -961,6 +1054,7 @@ on start:
   .panel-window-body{display:flex;min-width:0;min-height:0;flex:1;flex-direction:column;overflow:hidden}
   .panel-window-body :global(.ai-panel){flex:1}
   .panel-window-body :global(.timeline){min-height:0;flex:1;border-top:0}
+  .sidebar-panel-body :global(.hierarchy),.sidebar-panel-body :global(.inspector){width:100%;min-width:0;min-height:0;flex:1;flex-basis:auto;border-right:0}
   .console-body .console-line{flex:none;padding:6px 10px}
   .console-body .console-log{flex:1;min-height:30px}
   .console-body .command-bar{flex:none}
@@ -993,6 +1087,8 @@ on start:
   .entity-context-menu button{display:block;width:100%;height:30px;padding:0 10px;border:0;border-radius:4px;background:transparent;color:#e6e3f1;text-align:left;font-size:11px;cursor:pointer}
   .entity-context-menu button:hover:not(:disabled){background:#302d40}
   .entity-context-menu button:disabled{opacity:.4;cursor:default}
+  .entity-context-menu kbd{float:right;color:#7d7a8a;font:9px 'DM Mono',monospace}
+  .menu-separator{height:1px;margin:4px 3px;background:#ffffff18}
   .entity-context-menu .context-delete{color:#ff9ba2}
   .context-separator{height:1px;margin:4px 3px;background:#ffffff18}
   .rename-overlay{position:fixed;inset:0;z-index:40;display:grid;place-items:center;padding:20px;background:#09090dc9;backdrop-filter:blur(4px)}
