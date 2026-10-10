@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { onMount } from "svelte";
+  import { onMount, untrack } from "svelte";
   import * as THREE from "three";
   import { OrbitControls } from "three/addons/controls/OrbitControls.js";
   import { TransformControls } from "three/addons/controls/TransformControls.js";
@@ -399,10 +399,11 @@
         grid.visible = gridVisible;
       });
       $effect(() => {
-        if (frameToken > 0) focusSelected();
+        // untrack: focus only when the token changes, not on every selection change.
+        if (frameToken > 0) untrack(focusSelected);
       });
       $effect(() => {
-        if (focusToken > 0) focusSelected();
+        if (focusToken > 0) untrack(focusSelected);
       });
       return () => {};
     });
