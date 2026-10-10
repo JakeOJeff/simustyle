@@ -85,14 +85,7 @@
     world.add(keyLight);
     const grid = new THREE.GridHelper(40, 40, 0x7e8493, 0x414652);
     world.add(grid);
-    const ground = new THREE.Mesh(
-      new THREE.PlaneGeometry(200, 200),
-      new THREE.MeshStandardMaterial({ color: 0x242832, roughness: 0.92, metalness: 0 })
-    );
-    ground.rotation.x = -Math.PI / 2;
-    ground.position.y = -0.015;
-    ground.receiveShadow = true;
-    world.add(ground);
+    const groundPlane = new THREE.Plane(new THREE.Vector3(0, 1, 0), 0);
 
     const gizmo = new TransformControls(camera, renderer.domElement);
     if (mode !== "select") gizmo.setMode(mode);
@@ -166,7 +159,7 @@
       const entity = hit && [...entityObjects.entries()].find(([, object]) => object === hit)?.[0];
       event.preventDefault();
       if (entity) onSelect(entity);
-      const groundHit = raycaster.intersectObject(ground, false)[0]?.point;
+      const groundHit = raycaster.ray.intersectPlane(groundPlane, new THREE.Vector3());
       onContextMenu(entity ?? null, event.clientX, event.clientY, groundHit ? [groundHit.x, 0, groundHit.z] : null);
     }
     function updateMarquee(event: PointerEvent) {
@@ -432,8 +425,6 @@
         }
       }
       for (const helper of selectionHelpers.values()) helper.geometry.dispose();
-      ground.geometry.dispose();
-      (ground.material as THREE.Material).dispose();
       renderer.dispose();
       renderer.domElement.remove();
     };

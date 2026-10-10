@@ -84,6 +84,7 @@
   let activeTab: string = $state("scene");
   let scriptDrafts: Record<string, string> = $state({});
   let commandText = $state("");
+  let commandInput: HTMLInputElement | undefined = $state();
   let commandHistory: string[] = [];
   let commandHistoryIndex = -1;
   let consoleLog: { kind: "info" | "error" | "print"; text: string }[] = $state([]);
@@ -576,6 +577,12 @@
   /** Editor shortcuts, and keyboard input for scripts ("when space is pressed") during Play. */
   function windowKeyDown(event: KeyboardEvent) {
     if (typingInField(event)) return;
+    if (event.key === "/" && !event.ctrlKey && !event.metaKey && !event.altKey) {
+      event.preventDefault();
+      panelOpen.console = true;
+      requestAnimationFrame(() => commandInput?.focus());
+      return;
+    }
     if (playState === "playing") {
       if (!event.ctrlKey && !event.metaKey && !event.altKey) {
         if (["ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight", " "].includes(event.key)) event.preventDefault();
@@ -811,7 +818,12 @@ when clicked
   }
 
   function commandKey(event: KeyboardEvent) {
-    if (event.key === "ArrowUp" && commandHistory.length) {
+    if (event.key === "Tab") {
+      event.preventDefault();
+      const mostRecent = scene.entities.at(-1);
+      if (mostRecent) selectEntity(mostRecent.id);
+      else message = "There are no objects to select.";
+    } else if (event.key === "ArrowUp" && commandHistory.length) {
       event.preventDefault();
       commandHistoryIndex = Math.min(commandHistory.length - 1, commandHistoryIndex + 1);
       commandText = commandHistory[commandHistoryIndex]!;
@@ -1153,7 +1165,7 @@ when clicked
                 </div>
                 <form class="command-bar" onsubmit={(event) => { event.preventDefault(); runCommandBar(); }}>
                   <span aria-hidden="true">›</span>
-                  <input aria-label="Run a script command" placeholder="move the red ball above the box" bind:value={commandText} onkeydown={commandKey} spellcheck="false" autocomplete="off" />
+                  <input bind:this={commandInput} aria-label="Run a script command" placeholder="move the red ball above the box" bind:value={commandText} onkeydown={commandKey} spellcheck="false" autocomplete="off" />
                   <button type="submit" disabled={!commandText.trim() || playState !== "stopped"}>Run</button>
                 </form>
               </div>

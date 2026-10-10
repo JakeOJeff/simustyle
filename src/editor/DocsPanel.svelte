@@ -37,7 +37,7 @@
     <section id="docs-scene-editing">
       <h2>Create and edit objects</h2>
       <p><b>Add</b> creates a Cube, Sphere, Cylinder, Capsule, Cone, Plane, or Empty group. New primitives are spaced around the origin. Click an object in the view or its row in Hierarchy to select it. Hold <kbd>Ctrl</kbd> and drag in the viewport to box-select intersecting objects; Ctrl-click or Shift-click Hierarchy rows to extend a selection.</p>
-      <p>Choose Select, Move, Rotate, or Scale in the toolbar. Move, Rotate, and Scale show a gizmo in the viewport. The World/Local button changes the gizmo axes. The magnet toggles snapping (0.5 m movement, 15° rotation, 0.1 scale); the grid button toggles the floor grid. Press <kbd>F</kbd> to frame the selection.</p>
+      <p>Choose Select, Move, Rotate, or Scale in the toolbar. Move, Rotate, and Scale show a gizmo in the viewport. The World/Local button changes the gizmo axes. The magnet toggles snapping (0.5 m movement, 15° rotation, 0.1 scale); the grid button toggles the floor grid. The viewport has no solid ground plane. Press <kbd>F</kbd> to frame the selection.</p>
       <p>Right-click an object for Cut, Copy, Paste, Duplicate, Rename, Delete, Group, and Ungroup actions. Right-click empty viewport or Hierarchy space to paste. Viewport paste uses the ground point under the pointer; Hierarchy paste creates a root object. Copying, duplicating, or deleting a group includes its descendants.</p>
     </section>
 
@@ -104,6 +104,8 @@ when space is pressed
         <div><dt>F</dt><dd>Frame selected object</dd></div>
         <div><dt>Ctrl+drag</dt><dd>Box-select in viewport</dd></div>
         <div><dt>Ctrl+Enter</dt><dd>Send AI prompt</dd></div>
+        <div><dt>/</dt><dd>Focus Console command bar</dd></div>
+        <div><dt>Tab in Console</dt><dd>Select most recently added scene object</dd></div>
         <div><dt>Tab / Shift+Tab</dt><dd>Indent / outdent script lines</dd></div>
         <div><dt>Ctrl+/</dt><dd>Toggle script comments</dd></div>
         <div><dt>Up / Down</dt><dd>Recall Console commands</dd></div>

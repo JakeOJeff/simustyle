@@ -32,7 +32,7 @@ Hold **Ctrl** and drag in the viewport to draw a selection box. Every object who
 
 ### Transform objects
 
-Choose Select, Move, Rotate, or Scale from the top bar. Move, Rotate, and Scale display a viewport gizmo. Drag a gizmo handle to edit the object; use the Inspector for exact position, rotation, and scale values. The World/Local control changes the gizmo axes. The magnet button toggles snapping: 0.5 m for movement, 15° for rotation, and 0.1 for scale. The grid button toggles the floor grid.
+Choose Select, Move, Rotate, or Scale from the top bar. Move, Rotate, and Scale display a viewport gizmo. Drag a gizmo handle to edit the object; use the Inspector for exact position, rotation, and scale values. The World/Local control changes the gizmo axes. The magnet button toggles snapping: 0.5 m for movement, 15° for rotation, and 0.1 for scale. The grid button toggles the floor grid; the viewport has no solid ground plane.
 
 Use **Frame selected** from View or press **F** to bring the current selection into view. Undo and redo are available from the top bar and Edit menu.
 
@@ -113,6 +113,8 @@ Choose **Export** in the top bar:
 | Ctrl+drag in viewport | Box-select intersecting objects |
 | Ctrl+click or Shift+click in Hierarchy | Extend selection |
 | Ctrl+Enter in AI prompt | Send the AI request |
+| / | Focus the Console command bar |
+| Tab in Console | Select the most recently added scene object |
 | Tab / Shift+Tab in Script | Indent / outdent lines |
 | Ctrl+/ in Script | Toggle line comments |
 | Up / Down in Console | Recall command history |

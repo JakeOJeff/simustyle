@@ -4,6 +4,27 @@ Record meaningful project changes during the event, newest first.
 
 ## Event build log
 
+### 2026-10-11T04:29:00+05:30 — Select the newest scene object from Console
+
+- Changed: Tab in the Console command input now selects the last entity in scene order (new entities are appended there), and prevents focus from tabbing away. Documented the shortcut in README, user guide, and in-app Docs. Files: `src/App.svelte`, `README.md`, `docs/USER_GUIDE.md`, `src/editor/DocsPanel.svelte`, and `AI_USAGE.md`.
+- Why: Let the user quickly select the most recently added object while working in Console.
+- Validation: `npm run typecheck`, `npx svelte-check --tsconfig ./tsconfig.json` (0 errors/0 warnings), `npm run build`, and `git diff --check` passed. Tests were not run. The production build retains its large-chunk warning.
+- Limitations: Selection uses the scene's entity insertion order as the creation order.
+
+### 2026-10-11T04:25:00+05:30 — Remove the solid viewport ground
+
+- Changed: Removed the large grey ground mesh while keeping the floor grid. Empty-space context menus now find the y=0 placement point with a ray/plane intersection, so viewport paste retains its ground placement. Updated README and both user guides. Files: `src/editor/Viewport.svelte`, `README.md`, `docs/USER_GUIDE.md`, `src/editor/DocsPanel.svelte`, and `AI_USAGE.md`.
+- Why: Participant asked to remove the grey floor rectangle while keeping the grid.
+- Validation: `npm run typecheck`, `npx svelte-check --tsconfig ./tsconfig.json` (0 errors/0 warnings), `npm run build`, and `git diff --check` passed. Tests were not run. The production build retains its large-chunk warning.
+- Limitations: Scenes with an explicitly added plane object still render that plane.
+
+### 2026-10-11T04:23:00+05:30 — Add the Console focus shortcut
+
+- Changed: Pressing `/` outside text fields opens the Console panel and focuses its command input. Documented the shortcut in README, user guide, and in-app Docs. Files: `src/App.svelte`, `src/editor/DocsPanel.svelte`, `README.md`, `docs/USER_GUIDE.md`, and `AI_USAGE.md`.
+- Why: Let the user start typing a Console command from the keyboard.
+- Validation: `npm run typecheck`, `npx svelte-check --tsconfig ./tsconfig.json` (0 errors/0 warnings), `npm run build`, and `git diff --check` passed. Tests were not run. The production build retains its large-chunk warning.
+- Limitations: The shortcut intentionally does not intercept `/` while an input, textarea, select, or contenteditable field is active.
+
 ### 2026-10-11T04:05:00+05:30 — Rewrite complete scripts with AI Parse
 
 - Changed: Reworked **✦ Parse** to send the full script and scene context to AI, validate the complete replacement with the parser/type checker/word recognizer, and show the explanation and rewritten script for review before applying. Removed the previous single-phrase recolor special case. Improved the local AI connection error and updated README, user guide, and in-app Docs. Files: `src/ai/scriptRewrite.ts`, `src/ai/client.ts`, `src/editor/ScriptEditor.svelte`, `src/editor/DocsPanel.svelte`, `src/App.svelte`, `src/lang/`, `README.md`, and `docs/USER_GUIDE.md`.
