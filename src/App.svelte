@@ -54,6 +54,8 @@
   let draggingPanel: { panel: EditorPanel; offsetX: number; offsetY: number; stageLeft: number; stageTop: number; stageWidth: number; stageHeight: number } | null = $state(null);
   let snapTarget: PanelDock | null = $state(null);
   let stageHost: HTMLDivElement;
+  let stageWidth = $state(0);
+  let stageHeight = $state(0);
   let panelWorkspaceReady = $state(false);
   let focusedPanel: EditorPanel = $state("console");
   let frameToken = $state(0);
@@ -90,13 +92,42 @@
     if (layout.dock === "floating") return `left:${layout.x}px;top:${layout.y}px;width:${layout.width}px;height:${layout.height}px;z-index:${zIndex}`;
     const peers = (Object.keys(panelLayouts) as EditorPanel[]).filter((candidate) => panelOpen[candidate] && panelLayouts[candidate].dock === layout.dock);
     const index = peers.indexOf(panel);
+    const left = panelDockInset("left");
+    const right = panelDockInset("right");
+    const top = panelDockInset("top");
+    const bottom = panelDockInset("bottom");
     if (layout.dock === "left" || layout.dock === "right") {
-      const height = 100 / peers.length;
-      const width = panel === "hierarchy" ? "min(26%, 300px)" : panel === "inspector" ? "min(28%, 330px)" : "min(38%, 440px)";
-      return `${layout.dock}:0;top:${index * height}%;width:${width};height:${height}%;z-index:${zIndex}`;
+      const height = Math.max(0, stageHeight - top - bottom) / peers.length;
+      const width = Math.min(stageWidth * 0.38, 440);
+      return `${layout.dock}:0;top:${top + index * height}px;width:${width}px;height:${height}px;z-index:${zIndex}`;
     }
-    const width = 100 / peers.length;
-    return `${layout.dock}:0;left:${index * width}%;width:${width}%;height:min(42%, 340px);z-index:${zIndex}`;
+    const width = Math.max(0, stageWidth - left - right) / peers.length;
+    const height = Math.min(stageHeight * 0.42, 340);
+    return `${layout.dock}:0;left:${left + index * width}px;width:${width}px;height:${height}px;z-index:${zIndex}`;
+  }
+
+  function panelDockInset(side: PanelDock): number {
+    if (!(Object.keys(panelLayouts) as EditorPanel[]).some((panel) => panelOpen[panel] && panelLayouts[panel].dock === side)) return 0;
+    return side === "left" || side === "right" ? Math.min(stageWidth * 0.38, 440) : Math.min(stageHeight * 0.42, 340);
+  }
+
+  function stageContentStyle(): string {
+    return `padding:${panelDockInset("top")}px ${panelDockInset("right")}px ${panelDockInset("bottom")}px ${panelDockInset("left")}px`;
+  }
+
+  function sceneContentStyle(): string {
+    return `inset:${panelDockInset("top")}px ${panelDockInset("right")}px ${panelDockInset("bottom")}px ${panelDockInset("left")}px`;
+  }
+
+  function observeStageSize(node: HTMLElement) {
+    const update = () => {
+      stageWidth = node.clientWidth;
+      stageHeight = node.clientHeight;
+    };
+    const observer = new ResizeObserver(update);
+    observer.observe(node);
+    update();
+    return { destroy: () => observer.disconnect() };
   }
 
   function restorePanelWorkspace() {
@@ -932,23 +963,25 @@ when clicked
           {/each}
         </div>
       {/if}
-      <div class="stage" bind:this={stageHost}>
+      <div class="stage" bind:this={stageHost} style={stageContentStyle()} use:observeStageSize>
         <Viewport scene={viewportScene} {selectedId} {selectedIds} {mode} {frameToken} {focusToken} {gridVisible} onSelect={viewportSelect} onSelectMany={selectEntities} onTransform={updateTransform} onModeChange={(nextMode) => mode = nextMode} onContextMenu={(id, x, y, position) => openEntityMenu(id, x, y, position, id ? "object" : "viewport")} />
         {#if activeTab !== "scene" && openScripts.includes(activeTab)}
           {@const id = activeTab}
-          {#key id}
-            <ScriptEditor
-              title={`${scene.entities.find((entity) => entity.id === id)?.name ?? id} — script`}
-              owner={scene.entities.find((entity) => entity.id === id)?.name ?? id}
-              ownerHasChildren={scene.entities.some((entity) => entity.parent === id)}
-              source={scriptDrafts[id] ?? storedSource(id)}
-              dirty={scriptDrafts[id] !== undefined}
-              readOnly={playState !== "stopped"}
-              {entityNames}
-              onChange={(source) => scriptDrafts = { ...scriptDrafts, [id]: source }}
-              onCommit={() => commitScript(id)}
-            />
-          {/key}
+          <div class="scene-content-window" style={sceneContentStyle()}>
+            {#key id}
+              <ScriptEditor
+                title={`${scene.entities.find((entity) => entity.id === id)?.name ?? id} — script`}
+                owner={scene.entities.find((entity) => entity.id === id)?.name ?? id}
+                ownerHasChildren={scene.entities.some((entity) => entity.parent === id)}
+                source={scriptDrafts[id] ?? storedSource(id)}
+                dirty={scriptDrafts[id] !== undefined}
+                readOnly={playState !== "stopped"}
+                {entityNames}
+                onChange={(source) => scriptDrafts = { ...scriptDrafts, [id]: source }}
+                onCommit={() => commitScript(id)}
+              />
+            {/key}
+          </div>
         {/if}
         <div class="panel-workspace" aria-label="Editor panels">
           {#if panelOpen.hierarchy}
@@ -1046,7 +1079,8 @@ when clicked
 </main>
 
 <style>
-  .stage{position:relative;flex:1;min-height:0;display:flex}
+  .stage{position:relative;box-sizing:border-box;flex:1;min-height:0;display:flex}
+  .scene-content-window{position:absolute;z-index:3;min-width:0;min-height:0}
   .panel-workspace{position:absolute;inset:0;z-index:5;overflow:hidden;pointer-events:none}
   .panel-window{position:absolute;display:flex;min-width:220px;min-height:140px;flex-direction:column;overflow:hidden;pointer-events:auto;border:1px solid #454450;border-radius:7px;background:#191a21;box-shadow:0 8px 28px #0008}
   .panel-window.floating-panel{resize:both;overflow:hidden;min-width:220px;min-height:140px}
