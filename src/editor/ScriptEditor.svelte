@@ -5,6 +5,9 @@
 
   interface Props {
     title: string;
+    /** Name of the object this script belongs to ("me" in the script). */
+    owner?: string;
+    ownerHasChildren?: boolean;
     source: string;
     dirty: boolean;
     readOnly: boolean;
@@ -13,51 +16,73 @@
     onCommit: () => void;
   }
 
-  let { title, source, dirty, readOnly, entityNames, onChange, onCommit }: Props = $props();
+  let { title, owner = "", ownerHasChildren = false, source, dirty, readOnly, entityNames, onChange, onCommit }: Props = $props();
   let textarea: HTMLTextAreaElement;
   let highlight: HTMLPreElement;
   let gutter: HTMLDivElement;
   let referenceOpen = $state(true);
 
   const examples: { group: string; items: { code: string; hint: string }[] }[] = [
-    { group: "When", items: [
-      { code: "on start:\n  say \"hello\"", hint: "runs once when Play starts" },
-      { code: "every 2s:\n  move self up 1", hint: "repeats on a timer" },
-      { code: "every frame:\n  turn self by 90 * dt", hint: "runs every frame" },
-      { code: "on collide(other):\n  paint other red", hint: "when this object touches something" }
+    { group: "1 · When", items: [
+      { code: "when game starts\n  say \"hello\"", hint: "once, when Play starts" },
+      { code: "when clicked\n  spin fast", hint: "when this object (or one inside it) is clicked" },
+      { code: "when space is pressed\n  move up 2 over 0.3 seconds", hint: "or: when I press left · when the a key is pressed" },
+      { code: "when I touch the floor\n  paint it red", hint: "it = the object touched; leave the object out for anything" },
+      { code: "every 2 seconds\n  turn left", hint: "repeats on a timer" },
+      { code: "forever\n  if key right is pressed\n    move right 0.1", hint: "every frame: smooth controls" },
+      { code: "when I receive \"win\"\n  say \"You win!\"", hint: "runs when any script does: broadcast \"win\"" }
     ] },
-    { group: "Move", items: [
-      { code: "move ball to 0 2 0", hint: "to x y z" },
-      { code: "move ball above the box", hint: "above · below · beside · left of · right of · in front of · behind" },
-      { code: "move ball up 2 over 1s", hint: "up · down · left · right · forward · back, glide with over" },
-      { code: "glide ball to 3 1 0 in 2s", hint: "smooth move" },
-      { code: "turn ball left 90", hint: "or: turn ball by 0 45 0" },
-      { code: "scale ball by 2", hint: "or: scale ball to 0.5 over 1s" }
+    { group: "2 · Do", items: [
+      { code: "move up 2", hint: "up · down · left · right · forward · back" },
+      { code: "move to 0 2 0", hint: "x y z · or: move by 1 0 0" },
+      { code: "move above the box over 1 second", hint: "above · below · beside · left of · in front of · behind" },
+      { code: "turn left 45", hint: "or: turn around · turn right" },
+      { code: "grow by 2", hint: "shrink by 2 · scale to 0.5" },
+      { code: "paint red", hint: "a color word or #rrggbb" },
+      { code: "spin slowly", hint: "bounce · float · pulse · shake · wobble · sway · orbit · flash · tumble" },
+      { code: "hide", hint: "and: show · destroy · stop" },
+      { code: "create a red ball at 0 3 0", hint: "or: create a box above me called \"Crate\"" },
+      { code: "say \"Score:\" score", hint: "prints to the Console" },
+      { code: "push up 5", hint: "needs Physics (a dynamic RigidBody)" }
     ] },
-    { group: "Change", items: [
-      { code: "paint the cube red", hint: "color name or #rrggbb" },
-      { code: "hide ball", hint: "and: show ball" },
-      { code: "destroy the one above the box", hint: "remove an object" },
-      { code: "push ball up 5", hint: "needs a RigidBody" },
-      { code: "say \"score\", 10", hint: "prints to the console" }
+    { group: "3 · Who", items: [
+      { code: "paint the nearest red ball blue", hint: "the [nearest/biggest/highest…] [color] ball/box/cone/light/group/name" },
+      { code: "paint my children green", hint: "objects inside this one · also: my parent" },
+      { code: "move all cubes up 1", hint: "all … acts on every match" },
+      { code: "destroy it", hint: "it = the object touched or clicked" }
     ] },
-    { group: "Animate", items: [
-      { code: "animate self like a bouncing ball", hint: "bounce" },
-      { code: "animate the box as spinning slowly", hint: "spin · float · pulse · shake · wobble" },
-      { code: "animate the light like a flashing siren", hint: "sway · orbit · flash · grow · shrink · tumble" },
-      { code: "stop animating self", hint: "returns it to its start pose" }
-    ] },
-    { group: "Find objects", items: [
-      { code: "let target = the nearest red ball", hint: "nearest · biggest · smallest · highest · lowest" },
-      { code: "destroy the cone beside the box", hint: "describe by color, shape, name, and place" }
-    ] },
-    { group: "Logic", items: [
-      { code: "param speed: float 0..10 = 3", hint: "becomes an inspector slider" },
-      { code: "let count = 0", hint: "variable" },
-      { code: "if count > 3:\n  say \"done\"\nelse:\n  count += 1", hint: "branches" },
-      { code: "-- a note to yourself", hint: "comment" }
+    { group: "4 · Remember & decide", items: [
+      { code: "set score to 0", hint: "a variable every event can use" },
+      { code: "change score by 1", hint: "or: increase speed by 2 · decrease lives" },
+      { code: "if score is at least 3\n  broadcast \"win\"\notherwise\n  say score", hint: "is · is not · is more than · is less than · is at most" },
+      { code: "wait 1 second", hint: "pause before the next line" },
+      { code: "repeat 3 times\n  move up 1\n  wait 0.2 seconds", hint: "or: repeat until my y is more than 5" },
+      { code: "if distance to the player is less than 2\n  paint red", hint: "my x · my y · my size · x of the ball · random 1 to 10" },
+      { code: "setting speed = 3 from 0 to 10", hint: "becomes a slider in the Inspector" },
+      { code: "-- a note to yourself", hint: "ignored when the script runs" }
     ] }
   ];
+
+  const templates: { name: string; code: string }[] = [
+    { name: "Spin when clicked", code: "when clicked\n  spin fast\n  wait 2 seconds\n  stop\n" },
+    { name: "Move with arrow keys", code: "setting speed = 0.1 from 0 to 1\n\nforever\n  if key left is pressed\n    move left speed\n  if key right is pressed\n    move right speed\n  if key up is pressed\n    move forward speed\n  if key down is pressed\n    move back speed\n\nwhen space is pressed\n  move up 1.5 over 0.25 seconds\n  move down 1.5 over 0.25 seconds\n" },
+    { name: "Collect coins", code: "-- Put this on the player. Name coin objects \"Coin\".\nwhen game starts\n  set score to 0\n\nwhen I touch a coin\n  destroy it\n  change score by 1\n  say \"Score:\" score\n  if score is 3\n    broadcast \"win\"\n\nwhen I receive \"win\"\n  say \"You win!\"\n  bounce\n" },
+    { name: "Rain of balls", code: "every 1 seconds\n  create a blue ball at (random -3 to 3) 6 (random -3 to 3)\n" },
+    { name: "Patrol back and forth", code: "when game starts\n  forever\n    move right 3 over 1.5 seconds\n    wait 1.5 seconds\n    move left 3 over 1.5 seconds\n    wait 1.5 seconds\n" },
+    { name: "Group: light up children", code: "-- Put this on a group.\nwhen clicked\n  paint my children yellow\n  wait 1 second\n  paint my children white\n" }
+  ];
+  let templateChoice = $state("");
+
+  function useTemplate(name: string) {
+    const template = templates.find((candidate) => candidate.name === name);
+    templateChoice = "";
+    if (!template || readOnly) return;
+    const body = source.split("\n").filter((line) => !line.trim().startsWith("--")).join("").trim();
+    // An empty (or comment-only) script is replaced; otherwise the template is added at the end.
+    const next = body ? `${source.trimEnd()}\n\n${template.code}` : template.code;
+    onChange(next);
+    queueMicrotask(() => { textarea.value = next; textarea.focus(); });
+  }
 
   let lines = $derived(source.split("\n"));
   let diagnostics = $derived.by((): ScriptDiagnostic[] => {
@@ -152,8 +177,15 @@
     <span class="script-title"><b>{title}</b><small>{readOnly ? "read-only while playing" : dirty ? "● unsaved — Ctrl+S to apply" : "saved"}</small></span>
     <span class="status" class:bad={diagnostics.length > 0}>{diagnostics.length ? `${diagnostics.length} problem${diagnostics.length === 1 ? "" : "s"}` : "✓ no problems"}</span>
     <button class="apply" disabled={readOnly || !dirty} onclick={onCommit}>Apply</button>
-    <button class="ghost" aria-pressed={referenceOpen} onclick={() => referenceOpen = !referenceOpen}>Reference</button>
+    <select class="templates" aria-label="Start from a template" bind:value={templateChoice} onchange={() => useTemplate(templateChoice)} disabled={readOnly}>
+      <option value="">Start from…</option>
+      {#each templates as template}<option value={template.name}>{template.name}</option>{/each}
+    </select>
+    <button class="ghost" aria-pressed={referenceOpen} onclick={() => referenceOpen = !referenceOpen}>Help</button>
   </header>
+  {#if owner}
+    <div class="owner-bar">This script belongs to <b>{owner}</b>. In it, <code>me</code> means {owner}{#if ownerHasChildren}, and <code>my children</code> means the objects inside it{/if}.</div>
+  {/if}
   <div class="script-body">
     <div class="code-area">
       <div class="gutter" bind:this={gutter} aria-hidden="true">
@@ -168,7 +200,7 @@
           autocapitalize="off"
           autocomplete="off"
           readonly={readOnly}
-          placeholder={"-- Write commands, then press Play.\non start:\n  animate self like a bouncing ball"}
+          placeholder={"-- Write sentences, then press Play.\nwhen game starts\n  bounce\n\nwhen clicked\n  paint red"}
           oninput={(event) => onChange(event.currentTarget.value)}
           onkeydown={keydown}
           onscroll={syncScroll}
@@ -178,7 +210,15 @@
     </div>
     {#if referenceOpen}
       <aside class="reference" aria-label="Script reference">
-        <p class="reference-intro">Click an example to insert it at the cursor.</p>
+        <div class="learn">
+          <strong>Scripts in one minute</strong>
+          <ol>
+            <li>Start with a <b>when</b> line: <code>when clicked</code></li>
+            <li>Indent the things to do under it, one per line: <code>spin fast</code></li>
+            <li>Each line is a sentence: <i>verb</i> · <i>who</i> (optional, means <code>me</code>) · <i>how</i>: <code>move the box up 2 over 1 second</code></li>
+          </ol>
+          <p>Press <b>Play</b> to run it. Click any example below to insert it.</p>
+        </div>
         {#each examples as section}
           <h3>{section.group}</h3>
           {#each section.items as item}
@@ -221,6 +261,9 @@
   .tok-keyword{color:#c792ea;font-weight:500}.tok-command{color:#7fd1ff;font-weight:600}.tok-phrase{color:#8fd1b0}
   .tok-builtin{color:#82aaff}.tok-entity{color:#ffd479;text-decoration:underline dotted #ffd47966}.tok-property{color:#b4c6e7}.tok-operator{color:#9a98a6}
   .reference{width:280px;flex:0 0 280px;overflow:auto;padding:10px 12px 16px;border-left:1px solid #ffffff0d;background:#17181f}
+  .owner-bar{padding:6px 14px;border-bottom:1px solid #ffffff0d;background:#1b2530;color:#a9c4d6;font-size:10.5px}.owner-bar b{color:#e6f4fc;font-weight:600}.owner-bar code{color:#7fd1ff;font:10px 'DM Mono',monospace}
+  .templates{height:26px;max-width:150px;padding:0 6px;border:1px solid #ffffff14;border-radius:5px;background:#111217;color:#cfcbe0;font-size:10px}
+  .learn{margin:2px 0 6px;padding:10px;border:1px solid #a99aff33;border-radius:7px;background:#1d1a2b}.learn strong{color:#d6ccff;font-size:11px}.learn ol{margin:6px 0 4px;padding-left:18px;color:#c3bfd2;font-size:10.5px;line-height:1.55}.learn p{margin:4px 0 0;color:#8e8b9c;font-size:10px}.learn code{color:#7fd1ff;font:10px 'DM Mono',monospace}.learn b{color:#e6e3f1}
   .reference-intro{margin:2px 0 6px;color:#858391;font-size:10px}
   .reference h3{margin:14px 0 6px;color:#9a8fe0;font:9px 'DM Mono',monospace;letter-spacing:.12em;text-transform:uppercase}
   .example{display:grid;gap:3px;width:100%;margin:0 0 5px;padding:7px 8px;border:1px solid #ffffff0c;border-radius:6px;background:#111217;text-align:left;cursor:pointer}

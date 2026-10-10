@@ -586,14 +586,18 @@
 
   function scriptTemplate(name: string, sceneScript: boolean): string {
     return sceneScript
-      ? `-- Scene script: control any object by its name or a description.
--- Press Play to run it. Click examples on the right to insert them.
-on start:
+      ? `-- Scene script: rules for the whole scene. Name objects to control them,
+-- for example "paint the cube red" or "move all balls up 1".
+when game starts
   say "Scene started"
 `
-      : `-- Script for ${name}. Press Play to run it.
-on start:
-  animate self like a gentle float
+      : `-- This script belongs to ${name}. "me" means ${name}.
+-- Each event line starts a list of sentences. Press Play to try it.
+when game starts
+  float gently
+
+when clicked
+  spin fast
 `;
   }
 
@@ -602,7 +606,7 @@ on start:
     const entity = scene.entities.find((candidate) => candidate.id === id);
     if (!entity) return;
     if (!entity.components.Script) {
-      const components: Record<string, Record<string, unknown>> = { Script: { source: scriptTemplate(entity.name, !entity.components.Mesh) } };
+      const components: Record<string, Record<string, unknown>> = { Script: { source: scriptTemplate(entity.name, !entity.components.Mesh && !scene.entities.some((child) => child.parent === id)) } };
       if (!entity.components.Transform) components.Transform = {};
       if (!apply([{ op: "update", id, components }])) return;
       message = `Added a script to ${entity.name}`;
@@ -935,6 +939,8 @@ on start:
           {#key id}
             <ScriptEditor
               title={`${scene.entities.find((entity) => entity.id === id)?.name ?? id} — script`}
+              owner={scene.entities.find((entity) => entity.id === id)?.name ?? id}
+              ownerHasChildren={scene.entities.some((entity) => entity.parent === id)}
               source={scriptDrafts[id] ?? storedSource(id)}
               dirty={scriptDrafts[id] !== undefined}
               readOnly={playState !== "stopped"}
@@ -954,7 +960,7 @@ on start:
           {#if panelOpen.inspector}
             <section class="panel-window" class:floating-panel={panelLayouts.inspector.dock === "floating"} style={panelWindowStyle("inspector")} use:rememberPanelSize={"inspector"}>
               <header class="panel-window-title"><button class="panel-drag-handle" type="button" aria-label="Drag Inspector panel to move or snap" onpointerdown={(event) => startPanelDrag(event, "inspector")}><strong>Inspector</strong><span>Drag to move or snap</span></button><button class="panel-close" type="button" aria-label="Close Inspector" onclick={() => panelOpen.inspector = false}><X size={13} /></button></header>
-              <div class="panel-window-body sidebar-panel-body"><Inspector {scene} entity={selectedEntity} onUpdate={updateComponent} onRemove={(component) => selectedId && apply([{ op: "update", id: selectedId, components: { [component]: null } }])} onAdd={addComponent} onKeyframe={addKeyframe} onOpenScript={() => selectedId && openScript(selectedId)} /></div>
+              <div class="panel-window-body sidebar-panel-body"><Inspector {scene} entity={selectedEntity} onUpdate={updateComponent} onRemove={(component) => selectedId && apply([{ op: "update", id: selectedId, components: { [component]: null } }])} onAdd={addComponent} onKeyframe={addKeyframe} onOpenScript={() => selectedId && openScript(selectedId)} onRename={(name) => selectedId && apply([{ op: "update", id: selectedId, components: {}, name }])} onReparent={(parent) => selectedId && reparentEntity(selectedId, parent)} /></div>
             </section>
           {/if}
           {#if panelOpen.console}

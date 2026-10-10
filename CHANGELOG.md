@@ -4,6 +4,13 @@ Record meaningful project changes during the event, newest first.
 
 ## Event build log
 
+### 2026-10-11T02:12:00+05:30 — Explain where scripts live in the Inspector and script editor
+
+- Changed: The Inspector names can now be edited, an **Inside** menu sets the parent (keeping world position), and components use plain titles with hints (Shape, Look, Physics, Position/rotation & size); field labels read as words ("Emissive intensity"). The Script card says which object the script runs on and what `me` (and `my children`) mean, lists its event lines as chips, and calls parameters **Settings**; objects without a script show a **+ Add a script** card. The script editor shows a bar saying which object owns the script, a **Start from…** menu with six ready-made scripts, and a **Help** panel with a "scripts in one minute" guide and examples rewritten for the sentence syntax. New scripts start with a sentence-syntax template, and groups get the object template rather than the scene-script one. Fixed the parser treating a number followed by a bracket as a function call (`at (random -3 to 3) 6 (random -3 to 3)` failed), and an unknown name now suggests `set <name> to 0`. A new test compiles every editor example and template. Files: `src/editor/Inspector.svelte`, `src/editor/ScriptEditor.svelte`, `src/App.svelte`, `src/lang/parser.ts`, `src/lang/checker.ts`, `tests/lang/sentences.test.ts`, `README.md`, `AI_USAGE.md`, and `CHANGELOG.md`.
+- Why: It was unclear where scripts go and what they act on, and the editor's examples still taught the older programming-style syntax.
+- Validation: `svelte-check` passed with 0 errors and 0 warnings; Vitest passed 85 tests, including the new examples-and-templates compile test (it found the bracket bug). A headless Chrome run against the Vite dev server added a cube, used **+ Add a script** (owner bar read "This script belongs to Box 1…"), appended `when space is pressed` / `paint red` with no problems reported, saved with Ctrl+S, pressed Play, clicked the cube in the viewport (its Y rotation began changing from the template's `when clicked` / `spin fast`), and pressed Space (its color became red).
+- Limitations: With the new floating Hierarchy, Inspector, and Console windows docked over the stage, those windows cover much of the script editor; closing or moving them reveals it.
+
 ### 2026-10-11T01:44:00+05:30 — Make Hierarchy and Inspector movable windows
 
 - Changed: Moved Hierarchy and Inspector into the shared panel workspace with independent show/hide controls, floating and edge-docked layouts, and saved positions/sizes. Floating panel windows, including Hierarchy and Inspector, can be resized from the lower-right corner. Updated `src/App.svelte` and `README.md`.

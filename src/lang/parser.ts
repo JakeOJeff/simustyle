@@ -737,7 +737,8 @@ class Parser {
         const dot = this.advance();
         const property = this.expectIdentifier("Expected a property name after '.'");
         expr = { kind: "member", object: expr, property: property.value, line: dot.line, column: dot.column };
-      } else if (this.peek().value === "(") {
+      } else if (this.peek().value === "(" && (expr.kind === "identifier" || expr.kind === "member")) {
+        // Only names can be called: in "to 1 (y + 1) 0" the bracket starts the next coordinate.
         const open = this.advance();
         const args: ScriptExpression[] = [];
         if (this.peek().value !== ")") {

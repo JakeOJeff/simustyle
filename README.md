@@ -26,7 +26,7 @@ Open the local URL printed by Vite. Hierarchy, Inspector, Console, AI, and Timel
 Any object can hold other objects. A child moves, turns, and scales with its parent, and its Transform in the Inspector is relative to that parent.
 
 - **Group objects:** select several (Ctrl+click or Shift+click in the Scene panel, or Ctrl+drag a box in the viewport) and press **Ctrl+G**, use the folder button at the top of the Scene panel, or right-click → **Group**. The new group sits at the center of its objects. **Add → Empty group** makes an empty one.
-- **Make a child:** drag a row onto another object in the Scene panel. Drop on a row's top or bottom edge to place it next to that object instead, or on empty space to move it to the top level. Objects keep their place in the world when their parent changes.
+- **Make a child:** drag a row onto another object in the Scene panel, or pick a parent in the Inspector's **Inside** menu. Drop on a row's top or bottom edge to place it next to that object instead, or on empty space to move it to the top level. Objects keep their place in the world when their parent changes.
 - **Ungroup:** select a group and press **Ctrl+Shift+G** (or right-click → **Ungroup**). Its children move up a level and the empty group is removed. Right-click → **Move out to top level** pulls one child out.
 - **Scene panel:** click the arrow to collapse a group, double-click (or F2) to rename, use the file icon on a row to add or open that object's script, and type in the search box (shown once the scene has a few objects) to find an object. Groups are invisible in the viewport; select one in the Scene panel to move it with the gizmo.
 - **Shortcuts:** Ctrl+Z / Ctrl+Y undo and redo, Ctrl+D duplicates, Delete removes the selection (and everything inside it), F2 renames.
@@ -36,7 +36,7 @@ Any object can hold other objects. A child moves, turns, and scales with its par
 
 Scripts are short plain-English sentences. Learn it in a minute:
 
-1. **A script lives on an object.** Select an object and click **Script** (toolbar, Inspector, or the script icon in the Hierarchy). In that script, `me`, `I`, and `my` mean that object. A script on a group can move the group and talk to `my children`. With nothing selected, **Script** makes a *Scene Script* object for scene-wide rules.
+1. **A script lives on an object.** Select an object and click **Script** in the toolbar, **+ Add a script** in the Inspector, or the file icon on its row in the Scene panel. The editor shows which object the script belongs to. In that script, `me`, `I`, and `my` mean that object. A script on a group can move the group and talk to `my children`. With nothing selected, **Script** makes a *Scene Script* object for scene-wide rules.
 2. **Start with an event line** such as `when game starts`, `forever`, `every 2 seconds`, `when clicked`, `when space is pressed`, `when I touch the floor`, or `when I receive "win"`.
 3. **Indent one sentence per line under it:** a verb, then (optionally) who, then how. Leave out who and it means `me`.
 
@@ -84,9 +84,9 @@ when I receive "win"
 
 **Values:** numbers, `"text"`, colors, `true`/`false`, variables, `my x`/`y`/`z`/`size`/`color`/`name`, `x of the ball`, `distance to the player`, `random 1 to 10`, `key space is pressed`, and `time`. Compare with `is`, `is not`, `is more than`, `is less than`, `is at least`, `is at most`, and combine with `and`, `or`, `not`, and `+ - * /`. Colons at the end of event and `if` lines are optional.
 
-**Settings:** `setting speed = 3 from 0 to 10` becomes a slider in the Inspector (true/false becomes a switch, a color a color picker).
+**Settings:** `setting speed = 3 from 0 to 10` becomes a slider in the Inspector (true/false becomes a checkbox, a color a color picker). The Inspector's Script card lists the script's event lines and any problems.
 
-**Editor:** syntax highlighting, line numbers, inline problems (click one to jump to it), Tab/Shift+Tab indent, Enter auto-indent, Ctrl+/ comments, and a reference panel whose examples insert at the cursor. Edits apply on Ctrl+S, **Apply**, leaving the editor, Save, or Play.
+**Editor:** a **Start from…** menu with ready-made scripts (spin when clicked, arrow-key movement, collecting coins, falling balls, patrolling, lighting up a group), a **Help** panel with a one-minute guide and clickable examples, syntax highlighting, line numbers, inline problems (click one to jump to it), Tab/Shift+Tab indent, Enter auto-indent, Ctrl+/ comments. Edits apply on Ctrl+S, **Apply**, leaving the editor, Save, or Play.
 
 **Try sentences instantly:** type one in the Console command bar (for example `move the red ball above the box`) and press Enter. It changes the scene now as one undoable edit; waits and glides finish instantly. ↑/↓ recall history.
 

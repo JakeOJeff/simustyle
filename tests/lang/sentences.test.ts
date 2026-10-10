@@ -65,6 +65,15 @@ describe("plain-sentence scripts", () => {
     expect(problems(example)).toEqual([]);
   });
 
+  it("compiles the script editor's examples and templates", () => {
+    const editor = readFileSync(new URL("../../src/editor/ScriptEditor.svelte", import.meta.url), "utf8");
+    const snippets = [...editor.matchAll(/code: "((?:[^"\\]|\\.)*)"/g)].map((match) => JSON.parse(`"${match[1]}"`) as string);
+    expect(snippets.length).toBeGreaterThan(30);
+    // Examples are fragments, so a variable such as `score` may be set elsewhere in a real script.
+    const failures = snippets.flatMap((code) => problems(code).filter((message) => !message.startsWith("Unknown name")).map((message) => `${code} => ${message}`));
+    expect(failures).toEqual([]);
+  });
+
   it("understands several ways to name a key", () => {
     for (const [header, key] of [["when I press left", "left"], ["when the a key is pressed", "a"], ["when key up is pressed", "up"], ["when enter is pressed", "enter"]] as const) {
       expect(parseScript(`${header}\n  say "hi"`).handlers[0]?.key).toBe(key);

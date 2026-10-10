@@ -131,7 +131,7 @@ export function typecheckScript(program: ScriptProgram): ScriptDiagnostic[] {
         if (expression.name === "time" || expression.name === "dt") return "number";
         const variable = variables.get(expression.name) ?? params.get(expression.name);
         if (variable) return variable;
-        report(expression, `Unknown name '${expression.name}'.`);
+        report(expression, `Unknown name '${expression.name}'. To use it as a variable, create it first: set ${expression.name} to 0`);
         return "unknown";
       }
       case "member": {
