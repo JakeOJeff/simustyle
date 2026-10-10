@@ -76,7 +76,7 @@ when space is pressed
   move up 2 over 0.5 seconds
 ```
 
-The editor provides syntax highlighting, line numbers, starter examples, and inline errors. Tab and Shift+Tab indent, Enter keeps indentation, and Ctrl+/ toggles comments. Choose **Apply** or press Ctrl+S to apply script edits. The editor also applies edits when you leave it, save, or start Play. Use **✦ Parse** to ask the configured AI to rewrite unrecognized phrases into valid script syntax; review and confirm suggestions before applying them. See the [full scripting reference](../README.md#scripting) for events, commands, conditions, variables, and values.
+The editor provides syntax highlighting, line numbers, starter examples, and inline errors. Tab and Shift+Tab indent, Enter keeps indentation, and Ctrl+/ toggles comments. Choose **Apply** or press Ctrl+S to apply script edits. The editor also applies edits when you leave it, save, or start Play. Use **✦ Parse** to ask the configured AI to interpret the complete script in context and rewrite it as valid script syntax; review the full replacement and its explanation before applying it. The rewrite is checked with the parser and type checker first. See the [full scripting reference](../README.md#scripting) for events, commands, conditions, variables, and values.
 
 ## AI scene assistant
 

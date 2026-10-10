@@ -5,7 +5,7 @@ export type RelationName = "above" | "below" | "beside" | "left" | "right" | "fr
 export type Superlative = "biggest" | "smallest" | "nearest" | "farthest" | "highest" | "lowest";
 export type Direction = "up" | "down" | "left" | "right" | "forward" | "back";
 
-export const COMMAND_WORDS = ["move", "glide", "go", "destroy", "delete", "remove", "animate", "stop", "turn", "rotate", "scale", "resize", "grow", "shrink", "paint", "color", "colour", "make", "push", "hide", "show", "say", "print", "create", "spawn"] as const;
+export const COMMAND_WORDS = ["move", "glide", "go", "destroy", "delete", "remove", "animate", "stop", "turn", "rotate", "scale", "resize", "grow", "shrink", "paint", "color", "colour", "push", "hide", "show", "say", "print", "create", "spawn"] as const;
 
 /** Statement words that read like sentences: "set score to 0", "wait 1 second", "repeat 3 times". */
 export const SENTENCE_WORDS = ["set", "change", "increase", "decrease", "add", "subtract", "wait", "repeat", "forever", "broadcast", "announce", "send", "tell"] as const;

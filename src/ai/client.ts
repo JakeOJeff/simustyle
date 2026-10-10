@@ -38,11 +38,16 @@ export async function requestJson(
   if (isDesktopRuntime()) {
     payload = await desktopChat(request);
   } else {
-    const response = await fetch("/api/ai/chat", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(request)
-    });
+    let response: Response;
+    try {
+      response = await fetch("/api/ai/chat", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(request)
+      });
+    } catch {
+      throw new Error("Could not reach the local AI endpoint. Check that the development server is running.");
+    }
     payload = await response.json().catch(() => null);
     if (!response.ok) {
       const message = isRecord(payload) && typeof payload.error === "string"

@@ -4,6 +4,13 @@ Record meaningful project changes during the event, newest first.
 
 ## Event build log
 
+### 2026-10-11T04:05:00+05:30 — Rewrite complete scripts with AI Parse
+
+- Changed: Reworked **✦ Parse** to send the full script and scene context to AI, validate the complete replacement with the parser/type checker/word recognizer, and show the explanation and rewritten script for review before applying. Removed the previous single-phrase recolor special case. Improved the local AI connection error and updated README, user guide, and in-app Docs. Files: `src/ai/scriptRewrite.ts`, `src/ai/client.ts`, `src/editor/ScriptEditor.svelte`, `src/editor/DocsPanel.svelte`, `src/App.svelte`, `src/lang/`, `README.md`, and `docs/USER_GUIDE.md`.
+- Why: Make Parse interpret loosely written scripts generally instead of hard-coding individual phrasings.
+- Validation: `npm run typecheck`, `npx svelte-check --tsconfig ./tsconfig.json` (0 errors/0 warnings), `npm run build`, and `git diff --check` passed. Tests were not run. The production build retains its existing large-chunk warning.
+- Limitations: AI rewrite still requires valid AI configuration and connectivity. Model interpretation cannot guarantee an ambiguous request's intent; the full result is shown for review before use.
+
 ### 2026-10-11T03:48:00+05:30 — Accept conversational recolor requests
 
 - Changed: Added `make <object> <color>` as a paint command, with a short polite lead-in such as `can u like`; taught fuzzy-word detection that parser-supported click event wording and the request lead-in are understood. Documented the syntax in `README.md`. Files: `src/lang/parser.ts`, `src/lang/vocabulary.ts`, `src/lang/fuzzy.ts`, `README.md`, and `AI_USAGE.md`.

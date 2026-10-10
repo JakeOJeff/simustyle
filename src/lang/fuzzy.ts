@@ -14,9 +14,7 @@ export interface UnclearWord {
 const knownWords = new Set<string>([
   ...COMMAND_WORDS, ...SENTENCE_WORDS, ...PROPERTY_WORDS, ...KEY_WORDS, ...ANY_NOUNS, ...FILLER_WORDS, ...ANIMATION_MODIFIERS,
   ...Object.keys(SHAPE_NOUNS), ...Object.values(ANIMATION_STYLES).flat(),
-  "very", "super", "really", "if", "else", "otherwise", "do", "be", "s", "es",
-  // Conversational words and event synonyms accepted by the parser.
-  "can", "could", "would", "you", "u", "please", "just", "click", "tap", "tapped", "this"
+  "very", "super", "really", "if", "else", "otherwise", "do", "be", "s", "es"
 ]);
 
 function isKnownNoun(word: string): boolean {

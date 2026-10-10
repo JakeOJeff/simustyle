@@ -1121,7 +1121,6 @@ when clicked
                 {entityNames}
                 entities={parseEntities}
                 ownerId={id}
-                onPreviewEntity={(entityId) => selectEntity(entityId ?? id)}
                 onChange={(source) => scriptDrafts = { ...scriptDrafts, [id]: source }}
                 onCommit={() => commitScript(id)}
               />

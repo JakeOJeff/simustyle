@@ -3,7 +3,8 @@
   import { parseScript } from "../lang/parser";
   import { typecheckScript, type ScriptDiagnostic } from "../lang/checker";
   import { findUnclearWords } from "../lang/fuzzy";
-  import { applyChoices, locateFix, runScriptParse, type ParseEntity, type ParseFix } from "../ai/scriptParse";
+  import { runScriptRewrite } from "../ai/scriptRewrite";
+  import type { ParseEntity } from "../ai/scriptParse";
 
   interface Props {
     title: string;
@@ -17,31 +18,27 @@
     /** Scene objects the AI Parse can point at. */
     entities?: ParseEntity[];
     ownerId?: string;
-    /** Highlight the object a parse option refers to (null restores the owner). */
-    onPreviewEntity?: (id: string | null) => void;
     onChange: (source: string) => void;
     onCommit: () => void;
   }
 
-  let { title, owner = "", ownerHasChildren = false, source, dirty, readOnly, entityNames, entities = [], ownerId, onPreviewEntity, onChange, onCommit }: Props = $props();
+  let { title, owner = "", ownerHasChildren = false, source, dirty, readOnly, entityNames, entities = [], ownerId, onChange, onCommit }: Props = $props();
   let textarea: HTMLTextAreaElement;
   let highlight: HTMLPreElement;
   let gutter: HTMLDivElement;
   let measure: HTMLSpanElement;
   let referenceOpen = $state(true);
 
-  // --- AI Parse: dotted boxes on unclear words, then confirm or pick an option ---
+  // --- AI Parse: rewrite the complete script, then review before applying ---
   const lineHeight = 20;
   const padTop = 12;
   const padLeft = 14;
   let charWidth = $state(7.2);
   let scrollTop = $state(0);
   let scrollLeft = $state(0);
-  let fixes: ParseFix[] = $state([]);
-  let choices: number[] = $state([]);
-  let openFix: number | null = $state(null);
   let parsing = $state(false);
   let parseMessage = $state("");
+  let rewriteDraft = $state<{ original: string; source: string; meaning: string } | null>(null);
 
   $effect(() => {
     const read = () => { if (measure) charWidth = measure.getBoundingClientRect().width / 20 || charWidth; };
@@ -50,73 +47,40 @@
   });
 
   let entityById = $derived(new Map(entities.map((entity) => [entity.id, entity])));
-  // Fixes whose text the user has since edited away drop out on their own.
-  let liveFixes = $derived(fixes.map((fix, index) => ({ fix, index, start: locateFix(source, fix) })).filter((item) => item.start >= 0));
-
   function boxStyle(line: number, column: number, length: number): string {
     return `top:${padTop + (line - 1) * lineHeight}px;left:${padLeft + (column - 1) * charWidth - 2}px;width:${length * charWidth + 4}px;height:${lineHeight}px`;
   }
 
   async function parse() {
-    if (parsing || readOnly || pendingWords.length === 0) return;
+    if (parsing || readOnly || !source.trim()) return;
     parsing = true;
     parseMessage = "";
-    closeFix();
+    rewriteDraft = null;
     try {
-      const result = await runScriptParse({ source, owner: ownerId ? entityById.get(ownerId) ?? null : null, entities, unclear: pendingWords });
-      fixes = result.fixes;
-      choices = result.fixes.map(() => 0);
-      if (result.fixes.length) openFixAt(0);
-      else parseMessage = result.errors.length ? `Couldn't parse that: ${result.errors[0]}` : "Nothing to change.";
+      const original = source;
+      const result = await runScriptRewrite({ source: original, owner: ownerId ? entityById.get(ownerId) ?? null : null, entities });
+      if (result.source.trim() === original.trim()) parseMessage = "The AI found no syntax changes to make.";
+      else rewriteDraft = { original, source: result.source, meaning: result.meaning };
     } catch (error) {
-      parseMessage = error instanceof Error ? error.message : String(error);
+      parseMessage = `AI rewrite failed: ${error instanceof Error ? error.message : String(error)}`;
     } finally {
       parsing = false;
     }
   }
 
-  function openFixAt(index: number) {
-    openFix = index;
-    onPreviewEntity?.(fixes[index]?.options[choices[index] ?? 0]?.entityId ?? null);
+  function applyRewrite() {
+    if (!rewriteDraft || readOnly) return;
+    if (source !== rewriteDraft.original) {
+      rewriteDraft = null;
+      parseMessage = "The script changed while the rewrite was open. Run Parse again to review a current rewrite.";
+      return;
+    }
+    onChange(rewriteDraft.source);
+    rewriteDraft = null;
   }
 
-  function closeFix() {
-    if (openFix !== null) onPreviewEntity?.(null);
-    openFix = null;
-  }
-
-  function pick(index: number, option: number) {
-    choices[index] = option;
-    onPreviewEntity?.(fixes[index]?.options[option]?.entityId ?? null);
-  }
-
-  function removeFix(index: number) {
-    fixes = fixes.filter((_, candidate) => candidate !== index);
-    choices = choices.filter((_, candidate) => candidate !== index);
-  }
-
-  /** Apply one fix, then move on to the next one so the user can confirm them in order. */
-  function confirmFix(index: number) {
-    const fix = fixes[index];
-    if (!fix || readOnly) return;
-    onChange(applyChoices(source, [{ fix, option: fix.options[choices[index] ?? 0]! }]));
-    removeFix(index);
-    closeFix();
-    if (fixes.length) openFixAt(Math.min(index, fixes.length - 1));
-  }
-
-  function skipFix(index: number) {
-    removeFix(index);
-    closeFix();
-    if (fixes.length) openFixAt(Math.min(index, fixes.length - 1));
-  }
-
-  function confirmAll() {
-    if (readOnly) return;
-    onChange(applyChoices(source, fixes.map((fix, index) => ({ fix, option: fix.options[choices[index] ?? 0]! }))));
-    fixes = [];
-    choices = [];
-    closeFix();
+  function dismissRewrite() {
+    rewriteDraft = null;
   }
 
   const examples: { group: string; items: { code: string; hint: string }[] }[] = [
@@ -192,8 +156,7 @@
   });
   let errorLines = $derived(new Set(diagnostics.map((issue) => issue.line)));
   let unclear = $derived(findUnclearWords(source, entityNames, errorLines));
-  // Unparsed boxes: unclear words not already inside a suggested fix.
-  let pendingWords = $derived(unclear.filter((word) => !liveFixes.some(({ fix, start }) => fix.line === word.line && word.column - 1 >= start && word.column - 1 < start + fix.original.length)));
+  let pendingWords = $derived(unclear);
 
   function syncScroll() {
     highlight.scrollTop = textarea.scrollTop;
@@ -278,11 +241,8 @@
   <header class="script-toolbar">
     <span class="script-title"><b>{title}</b><small>{readOnly ? "read-only while playing" : dirty ? "● unsaved — Ctrl+S to apply" : "saved"}</small></span>
     <span class="status" class:bad={diagnostics.length > 0}>{diagnostics.length ? `${diagnostics.length} problem${diagnostics.length === 1 ? "" : "s"}` : "✓ no problems"}</span>
-    {#if liveFixes.length}
-      <button class="parse" disabled={readOnly} onclick={confirmAll} title="Use the highlighted choice for every box">Confirm all ({liveFixes.length})</button>
-    {/if}
-    <button class="parse" disabled={readOnly || parsing || pendingWords.length === 0} onclick={parse} title="Let AI turn the dotted words into script syntax">
-      {parsing ? "Parsing…" : `✦ Parse${pendingWords.length ? ` (${pendingWords.length})` : ""}`}
+    <button class="parse" disabled={readOnly || parsing || !source.trim()} onclick={parse} title="Ask AI to interpret and rewrite the complete script into valid syntax">
+      {parsing ? "Parsing…" : "✦ Parse"}
     </button>
     <button class="apply" disabled={readOnly || !dirty} onclick={onCommit}>Apply</button>
     <select class="templates" aria-label="Start from a template" bind:value={templateChoice} onchange={() => useTemplate(templateChoice)} disabled={readOnly}>
@@ -307,7 +267,7 @@
           spellcheck="false"
           autocapitalize="off"
           autocomplete="off"
-          readonly={readOnly}
+          readonly={readOnly || parsing}
           placeholder={"-- Write sentences, then press Play.\nwhen game starts\n  bounce\n\nwhen clicked\n  paint red"}
           oninput={(event) => onChange(event.currentTarget.value)}
           onkeydown={keydown}
@@ -318,34 +278,6 @@
         <div class="fuzzy-clip"><div class="fuzzy-layer" style="transform:translate({-scrollLeft}px,{-scrollTop}px)">
           {#each pendingWords as word (`${word.line}:${word.column}`)}
             <span class="fuzzy-box" style={boxStyle(word.line, word.column, word.text.length)} title="Not script syntax yet — press Parse"></span>
-          {/each}
-          {#each liveFixes as { fix, index, start } (index)}
-            {@const option = fix.options[choices[index] ?? 0]}
-            <button class="fuzzy-box parsed" class:open={openFix === index} style={boxStyle(fix.line, start + 1, fix.original.length)} onclick={() => openFix === index ? closeFix() : openFixAt(index)} aria-label="Parsed: {fix.original} → {option?.text}">
-              <span class="fuzzy-chip">→ {option?.text}{fix.options.length > 1 ? ` · ${fix.options.length} options` : ""}</span>
-            </button>
-            {#if openFix === index}
-              <div class="fuzzy-pop" role="dialog" aria-label="Confirm parse" style="top:{padTop + fix.line * lineHeight + 6}px;left:{Math.max(4, padLeft + start * charWidth - 2)}px">
-                <p class="fuzzy-meaning">{fix.meaning || "Is this what you meant?"}</p>
-                {#each fix.options as candidate, optionIndex}
-                  {@const target = candidate.entityId ? entityById.get(candidate.entityId) : undefined}
-                  <button class="fuzzy-option" class:chosen={(choices[index] ?? 0) === optionIndex} onclick={() => pick(index, optionIndex)}>
-                    <code><s>{fix.original}</s> → {candidate.text}</code>
-                    {#if candidate.label}<small>{candidate.label}</small>{/if}
-                    {#if target}
-                      <small class="fuzzy-target">
-                        {#if target.color}<i style="background:{target.color}"></i>{/if}
-                        {target.name}{target.shape ? ` · ${target.shape}` : ""}{target.position ? ` · at ${target.position.map((value) => +value.toFixed(1)).join(" ")}` : ""}
-                      </small>
-                    {/if}
-                  </button>
-                {/each}
-                <div class="fuzzy-actions">
-                  <button class="apply" disabled={readOnly} onclick={() => confirmFix(index)}>Yes, use this</button>
-                  <button class="ghost" onclick={() => skipFix(index)}>Skip</button>
-                </div>
-              </div>
-            {/if}
           {/each}
         </div></div>
       </div>
@@ -375,6 +307,20 @@
   </div>
   {#if parseMessage}
     <div class="parse-message" role="status">{parseMessage} <button onclick={() => parseMessage = ""} aria-label="Dismiss">×</button></div>
+  {/if}
+  {#if rewriteDraft}
+    <div class="rewrite-backdrop" role="presentation">
+      <div class="rewrite-dialog" role="dialog" aria-modal="true" aria-labelledby="rewrite-title">
+        <header><strong id="rewrite-title">Review AI rewrite</strong><button class="ghost" onclick={dismissRewrite} aria-label="Close">×</button></header>
+        <p>{rewriteDraft.meaning || "The AI interpreted the complete script as follows."}</p>
+        <label for="rewrite-output">Rewritten script</label>
+        <pre id="rewrite-output">{rewriteDraft.source}</pre>
+        <footer>
+          <button class="ghost" onclick={dismissRewrite}>Keep editing</button>
+          <button class="apply" disabled={readOnly} onclick={applyRewrite}>Use rewrite</button>
+        </footer>
+      </div>
+    </div>
   {/if}
   {#if diagnostics.length}
     <ul class="problems" role="alert">
@@ -420,18 +366,13 @@
   .fuzzy-clip{position:absolute;inset:0;overflow:hidden;pointer-events:none;z-index:2}
   .fuzzy-layer{position:absolute;inset:0;pointer-events:none}
   .fuzzy-box{position:absolute;box-sizing:border-box;border:1.5px dashed #ffd479aa;border-radius:4px;background:#ffd47910;padding:0}
-  .fuzzy-box.parsed{pointer-events:auto;cursor:pointer;border-color:#8fd1b0;background:#8fd1b014}
-  .fuzzy-box.parsed:hover,.fuzzy-box.open{border-style:solid;background:#8fd1b026}
-  .fuzzy-chip{position:absolute;left:-1px;bottom:calc(100% + 1px);max-width:320px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;padding:0 5px;border-radius:3px;background:#1f3a2e;color:#bff0d6;font:9.5px/14px 'DM Mono',monospace}
-  .fuzzy-pop{position:absolute;z-index:3;width:300px;pointer-events:auto;padding:9px;border:1px solid #8fd1b055;border-radius:8px;background:#1b1d25;box-shadow:0 10px 30px #0008;display:grid;gap:5px}
-  .fuzzy-meaning{margin:0 0 2px;color:#d9d7e2;font-size:10.5px;line-height:1.4}
-  .fuzzy-option{display:grid;gap:2px;padding:6px 8px;border:1px solid #ffffff10;border-radius:6px;background:#111217;text-align:left;cursor:pointer;color:#d9d7e2}
-  .fuzzy-option.chosen{border-color:#8fd1b0;background:#16261f}
-  .fuzzy-option code{font:10.5px/16px 'DM Mono',monospace;white-space:pre-wrap;color:#bff0d6}.fuzzy-option s{color:#77757f}
-  .fuzzy-option small{color:#8e8b9c;font-size:9.5px}
-  .fuzzy-target{display:flex;align-items:center;gap:5px;color:#ffd479!important}.fuzzy-target i{width:9px;height:9px;border-radius:2px;border:1px solid #fff3}
-  .fuzzy-actions{display:flex;gap:6px;margin-top:2px}.fuzzy-actions button{height:24px;padding:0 10px;border-radius:5px;font-size:10px;cursor:pointer}
   .parse-message{display:flex;justify-content:space-between;gap:8px;padding:5px 12px;border-top:1px solid #ffd47933;background:#221d14;color:#ffe2a3;font-size:10.5px}.parse-message button{border:0;background:none;color:inherit;cursor:pointer}
+  .rewrite-backdrop{position:absolute;inset:0;z-index:20;display:grid;place-items:center;padding:20px;background:#090a0dcc}
+  .rewrite-dialog{display:flex;flex-direction:column;gap:10px;width:min(680px,100%);max-height:min(80%,720px);padding:14px;border:1px solid #a99aff55;border-radius:8px;background:#1a1b22;box-shadow:0 16px 50px #0009}
+  .rewrite-dialog header,.rewrite-dialog footer{display:flex;align-items:center;justify-content:space-between;gap:8px}
+  .rewrite-dialog header strong{color:#e7e1ff;font-size:12px}.rewrite-dialog p{margin:0;color:#bcb9c8;font-size:11px;line-height:1.5}
+  .rewrite-dialog label{color:#918e9e;font-size:10px}.rewrite-dialog pre{flex:1;min-height:100px;max-height:50vh;overflow:auto;margin:0;padding:12px;border:1px solid #ffffff12;border-radius:5px;background:#111217;color:#d9d7e2;font:11px/1.6 'DM Mono',ui-monospace,monospace;white-space:pre}
+  .rewrite-dialog footer{justify-content:flex-end}.rewrite-dialog footer button{height:28px;padding:0 11px;border-radius:5px;font-size:10px;cursor:pointer}
   .problems{max-height:96px;overflow:auto;margin:0;padding:6px 10px;list-style:none;border-top:1px solid #ff5a6a33;background:#1d1519}
   .problems button{border:0;background:none;color:#ffb3ba;text-align:left;font:10.5px/18px 'DM Mono',monospace;cursor:pointer;padding:0}
   .problems b{color:#ff8992;font-weight:500;margin-right:6px}

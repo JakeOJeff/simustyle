@@ -234,7 +234,6 @@ class Parser {
       this.advance();
       return { kind: "while", condition: this.literalTrue(start), body: this.parseBlock(start), line: start.line };
     }
-    if (this.skipPoliteMakePrefix()) return this.parseCommand();
     if (this.isCommandStart() || this.isAnimationVerb()) return this.parseCommand();
 
     const target = this.parseExpression();
@@ -246,17 +245,6 @@ class Parser {
     }
     this.requireLineEnd();
     return { kind: "expression", expression: target, line: start.line };
-  }
-
-  /** Accept a short conversational lead-in when the request ends at `make`. */
-  private skipPoliteMakePrefix(): boolean {
-    if (!(["can", "could", "would"].includes(this.peek().value) && this.peek().kind === "identifier")) return false;
-    let offset = 1;
-    if (["you", "u"].includes(this.peek(offset).value.toLowerCase())) offset += 1;
-    while (["please", "just", "like"].includes(this.peek(offset).value.toLowerCase())) offset += 1;
-    if (this.peek(offset).value !== "make" || this.peek(offset).kind !== "identifier") return false;
-    this.index += offset;
-    return true;
   }
 
   private parseIf(): ScriptStatement {
@@ -335,12 +323,6 @@ class Parser {
         return finish({ kind: "broadcast", message, line: start.line });
       }
       case "create": case "spawn": return command(this.parseCreate(start));
-      case "make": {
-        const target = this.parseTarget();
-        if (this.word("be") || this.word("to")) this.advance();
-        if (!this.atColor()) this.failAt(this.peek(), "Name a color, for example 'make the box red'");
-        return command({ name: "paint", target, color: this.parseColor() });
-      }
       case "say": case "print": {
         const args: ScriptExpression[] = [];
         while (!this.atLineEnd()) {
