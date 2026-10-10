@@ -3,12 +3,17 @@
   import Inspector from "./editor/Inspector.svelte";
   import Hierarchy from "./editor/Hierarchy.svelte";
   import Viewport from "./editor/Viewport.svelte";
+  import AIPanel, { type AIPanelMessage } from "./editor/AIPanel.svelte";
+  import { requestSceneEdit } from "./ai/client";
+  import { AI_RESPONSE_JSON_SCHEMA, buildSystemPrompt } from "./ai/prompt";
+  import { runSceneAgent } from "./ai/agent";
   import { applyOps } from "./scene/applyOps";
   import { deserializeScene, serializeScene } from "./scene/serialize";
   import { createEmptyScene, type Scene, type SceneOp } from "./scene/types";
   import type { PlayState, SimulationController } from "./runtime/physics";
 
   type ToolMode = "translate" | "rotate" | "scale";
+  type BottomTab = "console" | "ai" | "timeline";
 
   let scene: Scene = $state(createEmptyScene());
   let selectedId: string | null = $state(null);
@@ -19,6 +24,13 @@
   let playState: PlayState = $state("stopped");
   let playStarting = $state(false);
   let simulationWarnings = $state<string[]>([]);
+  let bottomTab: BottomTab = $state("console");
+  let frameToken = $state(0);
+  let aiPrompt = $state("");
+  let aiLoading = $state(false);
+  let aiMessages: AIPanelMessage[] = $state([]);
+  let aiUndoRecords: Record<string, SceneOp[]> = $state({});
+  let nextAIId = 1;
   let openInput: HTMLInputElement;
   let activeGesture: { id: string; initial: Scene; operation: SceneOp | null } | null = null;
   let simulation: SimulationController | null = null;
@@ -26,6 +38,59 @@
   let lastFrameTime = 0;
 
   let selectedEntity = $derived(scene.entities.find((entity) => entity.id === selectedId) ?? null);
+
+  function pushAIMessage(aiMessage: AIPanelMessage) { aiMessages = [...aiMessages, aiMessage]; }
+
+  async function submitAI(prompt: string) {
+    if (aiLoading || !prompt.trim()) return;
+    if (playState !== "stopped") { message = "Stop the simulation before asking the scene agent to edit."; return; }
+    pushAIMessage({ id: `ai_${nextAIId++}`, role: "user", content: prompt });
+    aiPrompt = "";
+    aiLoading = true;
+    bottomTab = "ai";
+    try {
+      const result = await runSceneAgent(scene, prompt, {
+        buildSystemPrompt,
+        responseSchema: AI_RESPONSE_JSON_SCHEMA.schema,
+        complete: ({ systemPrompt, userPrompt, correctionErrors, responseSchema }) =>
+          requestSceneEdit(systemPrompt, userPrompt, correctionErrors, responseSchema)
+      });
+      const id = `ai_${nextAIId++}`;
+      if (!result.ok || !result.scene || !result.inverseOps) {
+        pushAIMessage({ id, role: "assistant", content: result.errors.join(" · "), summary: `Could not apply the request after ${result.attempts} attempt${result.attempts === 1 ? "" : "s"}.` });
+        message = result.errors.join(" · ") || "AI changes could not be validated";
+        return;
+      }
+      scene = result.scene;
+      undoStack = [...undoStack, result.inverseOps];
+      redoStack = [];
+      aiUndoRecords = { ...aiUndoRecords, [id]: result.inverseOps };
+      const changed = result.ops.find((operation) => operation.op === "create" || operation.op === "update");
+      if (changed && (changed.op === "create" || changed.op === "update")) selectedId = changed.id;
+      frameToken += 1;
+      pushAIMessage({ id, role: "assistant", content: result.summary ?? "Scene updated.", summary: result.summary ?? "Scene updated.", operations: result.ops });
+      message = result.summary ?? "AI changes applied";
+    } catch (error) {
+      const reason = error instanceof Error ? error.message : String(error);
+      pushAIMessage({ id: `ai_${nextAIId++}`, role: "assistant", content: reason, summary: `AI request failed: ${reason}` });
+      message = reason;
+    } finally {
+      aiLoading = false;
+    }
+  }
+
+  function undoAIChange(messageId: string) {
+    const operations = aiUndoRecords[messageId];
+    if (!operations) return;
+    const result = applyOps(scene, operations);
+    if (result.errors.length) { message = `Could not undo AI change: ${result.errors.join(" · ")}`; return; }
+    scene = result.scene;
+    undoStack = undoStack.filter((batch) => JSON.stringify(batch) !== JSON.stringify(operations));
+    redoStack = [...redoStack, result.inverseOps];
+    const { [messageId]: _removed, ...remaining } = aiUndoRecords;
+    aiUndoRecords = remaining;
+    message = "Undid AI change";
+  }
 
   function apply(ops: SceneOp[]) {
     const result = applyOps(scene, ops);
@@ -292,10 +357,17 @@
   <div class="editor-body">
     <Hierarchy scene={scene} {selectedId} onSelect={(id) => selectedId = id} onCreate={createBox} onDelete={deleteEntity} onReparent={reparentEntity} />
     <section class="viewport-column">
-      <Viewport {scene} {selectedId} {mode} onSelect={(id) => selectedId = id} onTransform={updateTransform} onModeChange={(nextMode) => mode = nextMode} />
-      <div class="bottom-panel">
-        <div class="bottom-tabs"><button class="selected">Console</button><button disabled>AI <small>M5</small></button><button disabled>Timeline <small>M6</small></button></div>
+      <Viewport {scene} {selectedId} {mode} {frameToken} onSelect={(id) => selectedId = id} onTransform={updateTransform} onModeChange={(nextMode) => mode = nextMode} />
+      <div class="bottom-panel" class:ai-expanded={bottomTab === "ai"}>
+        <div class="bottom-tabs">
+          <button class:selected={bottomTab === "console"} onclick={() => bottomTab = "console"}>Console</button>
+          <button class:selected={bottomTab === "ai"} onclick={() => bottomTab = "ai"}>AI</button>
+          <button disabled>Timeline <small>M6</small></button>
+        </div>
         <div class="console-line"><span class="console-dot">●</span>{message}{#if simulationWarnings.length}<span> · {simulationWarnings.join(" · ")}</span>{/if}</div>
+        {#if bottomTab === "ai"}
+          <AIPanel messages={aiMessages} loading={aiLoading} prompt={aiPrompt} onPromptChange={(value) => aiPrompt = value} onSubmit={submitAI} onUndo={undoAIChange} />
+        {/if}
       </div>
     </section>
     <Inspector {scene} entity={selectedEntity} onUpdate={updateComponent} onRemove={(component) => selectedId && apply([{ op: "update", id: selectedId, components: { [component]: null } }])} onAdd={addComponent} />

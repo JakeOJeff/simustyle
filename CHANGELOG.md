@@ -4,6 +4,13 @@ Record meaningful project changes during the event, newest first.
 
 ## Event build log
 
+### 2026-10-10T23:41:00+05:30 — Build M5 AI scene agent
+
+- Changed: Added registry-driven component/script prompts and JSON Schema output, a Vite dev-server proxy that reads credentials server-side, browser transport, operation/script validation with up to three correction retries, an AI chat panel with expandable operation diffs and per-change undo, and viewport framing for the first changed entity. Added `.env.example` and prompt/transport/agent tests. Files: `src/ai/`, `src/editor/AIPanel.svelte`, `src/App.svelte`, `src/editor/Viewport.svelte`, `src/app.css`, `vite.config.ts`, `.env.example`, `tests/ai/`, `tests/ai-client.test.ts`, `README.md`, `SUBMISSION.md`, `DECISIONS.md`, `AI_USAGE.md`, and `CHANGELOG.md`.
+- Why: Complete the M5 natural-language scene editing flow while keeping generated changes on the validated, undoable operation path.
+- Validation: `npm run check` passed TypeScript, Svelte diagnostics (0 errors/0 warnings), all 36 Vitest tests, and Vite production build. A local proxy smoke request returned the expected HTTP 503 while AI credentials were unset.
+- Limitations: Live provider generation is unverified without credentials. The key proxy is Vite development middleware and will move to a Tauri Rust command at M8. Large three.js and Rapier chunks still trigger Vite's size warning.
+
 ### 2026-10-10T23:33:21+05:30 — Build M4 scripting language and runtime
 
 - Changed: Added indentation-aware lexer and parser, source-located type diagnostics using the component registry, AST-generated restricted JavaScript, script parameter controls, deterministic `random()`, `on start`, `every frame`, interval and collision handlers, scene field edits through `applyOps`, built-ins, print output, and rigidbody impulse/velocity actions. Added parser, checker, codegen, and runtime tests. Files: `src/lang/`, `src/runtime/scripts.ts`, `src/runtime/physics.ts`, `src/editor/Inspector.svelte`, `src/registry/`, `src/scene/validate.ts`, `tests/`, `README.md`, `SUBMISSION.md`, `DECISIONS.md`, and `AI_USAGE.md`.

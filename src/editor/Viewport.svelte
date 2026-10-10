@@ -21,9 +21,10 @@
     /** Request a Transform update; the host should apply it through applyOps. */
     onTransform: (id: string, transform: TransformPatch, phase: TransformPhase) => void;
     onModeChange: (mode: TransformMode) => void;
+    frameToken: number;
   }
 
-  let { scene, selectedId, mode, onSelect, onTransform, onModeChange }: Props = $props();
+  let { scene, selectedId, mode, onSelect, onTransform, onModeChange, frameToken }: Props = $props();
   let host: HTMLDivElement;
 
   function component(entity: Entity, name: string): Record<string, unknown> {
@@ -139,6 +140,18 @@
       const entity = hit && [...entityObjects.entries()].find(([, object]) => object === hit)?.[0];
       onSelect(entity ?? null);
     }
+    function focusSelected() {
+      const entity = currentEntity();
+      const object = entity && entityObjects.get(entity.id);
+      if (!object) return;
+      const box = new THREE.Box3().setFromObject(object);
+      const target = box.isEmpty() ? object.position.clone() : box.getCenter(new THREE.Vector3());
+      const size = box.isEmpty() ? 1 : box.getSize(new THREE.Vector3()).length();
+      const direction = camera.position.clone().sub(orbit.target).normalize();
+      orbit.target.copy(target);
+      camera.position.copy(target).add(direction.multiplyScalar(Math.max(2, size * 1.8)));
+      camera.updateProjectionMatrix();
+    }
     const pointerDown = (event: PointerEvent) => { downX = event.clientX; downY = event.clientY; };
     renderer.domElement.addEventListener("pointerdown", pointerDown);
     renderer.domElement.addEventListener("pointerup", pick);
@@ -148,19 +161,7 @@
       if (event.key.toLowerCase() === "w") onModeChange("translate");
       else if (event.key.toLowerCase() === "e") onModeChange("rotate");
       else if (event.key.toLowerCase() === "r") onModeChange("scale");
-      else if (event.key.toLowerCase() === "f") {
-        const entity = currentEntity();
-        const object = entity && entityObjects.get(entity.id);
-        if (object) {
-          const box = new THREE.Box3().setFromObject(object);
-          const target = box.isEmpty() ? object.position.clone() : box.getCenter(new THREE.Vector3());
-          const size = box.isEmpty() ? 1 : box.getSize(new THREE.Vector3()).length();
-          const direction = camera.position.clone().sub(orbit.target).normalize();
-          orbit.target.copy(target);
-          camera.position.copy(target).add(direction.multiplyScalar(Math.max(2, size * 1.8)));
-          camera.updateProjectionMatrix();
-        }
-      }
+      else if (event.key.toLowerCase() === "f") focusSelected();
     }
     window.addEventListener("keydown", onKey);
 
@@ -239,6 +240,9 @@
       });
       $effect(() => {
         gizmo.setMode(mode);
+      });
+      $effect(() => {
+        if (frameToken > 0) focusSelected();
       });
       return () => {};
     });
