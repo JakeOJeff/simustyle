@@ -17,7 +17,7 @@
 <script lang="ts">
   import type { Snippet } from "svelte";
   import type { PlayState } from "../runtime/physics";
-  import { Box, ChevronDown, Circle, Code, Cone, Cylinder, FolderPlus, Globe, Grid3X3, Magnet, MousePointer2, Move, Pause, Play, Plus, Redo2, RotateCw, Scaling, SkipForward, Square, Undo2 } from "@lucide/svelte";
+  import { BookOpen, Box, ChevronDown, Circle, Code, Cone, Cylinder, FolderPlus, Globe, Grid3X3, Magnet, MousePointer2, Move, Pause, Play, Plus, Redo2, RotateCw, Scaling, SkipForward, Square, Undo2 } from "@lucide/svelte";
 
   interface Props {
     sceneName: string;
@@ -165,6 +165,7 @@
       {/if}
     </div>
     <button class="tb-text" title="Open the selected object's script (or a scene script)" onclick={actions.openScript}><Code size={14} /> <span class="tb-label">Script</span></button>
+    <button class="tb-text" title="Open the SimuStyle user guide" aria-label="Open Docs" aria-pressed={panels.find((panel) => panel.name === "docs")?.open ?? false} onclick={() => actions.togglePanel("docs")}><BookOpen size={14} /> <span class="tb-label">Docs</span></button>
     <div class="tb-transport" role="group" aria-label="Simulation">
       <span class="tb-clock" aria-label="Play time">{clock}<small>f {frame}</small></span>
       <button class="tb-icon" title="Stop and restore the scene" aria-label="Stop" disabled={playState === "stopped"} onclick={actions.stop}><Square size={12} /></button>

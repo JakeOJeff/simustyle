@@ -15,7 +15,7 @@ Open the local URL printed by Vite. To run the desktop app during development, u
 
 ## Editor layout
 
-The top bar contains scene file actions, edit and view menus, transform tools, Add, Script, simulation controls, and Export. The editor windows are Hierarchy, Inspector, Console, AI, and Timeline. Use the tabs along the bottom to show or hide them.
+The top bar contains scene file actions, edit and view menus, transform tools, Add, Script, Docs, simulation controls, and Export. The editor windows are Hierarchy, Inspector, Console, AI, Timeline, and Docs. Use the Docs button in the top bar or the tabs along the bottom to open it; the other panel tabs show or hide their windows.
 
 - Drag a window title bar to move it. Drop it near an edge to snap it there; keep it away from edges to leave it floating.
 - Resize a floating window from any edge or corner. Resize a snapped window from its edge facing the center of the editor.

@@ -11,6 +11,13 @@ Record meaningful project changes during the event, newest first.
 - Validation: `svelte-check` (0 errors/0 warnings) and all 97 tests passed.
 - Limitations: Not clicked through in a browser. Applying an AI change still frames the changed object, as before.
 
+### 2026-10-11T03:39:00+05:30 — Add an in-app Docs window
+
+- Changed: Added a resizable, draggable Docs window with navigation and user instructions for the editor, scene editing, scripts, AI, animation, exporting, shortcuts, and troubleshooting. Added a Docs button in the top bar and View menu; included Docs in the panel tabs and saved workspace layout. Updated `src/App.svelte`, `src/editor/TopBar.svelte`, `src/editor/DocsPanel.svelte`, `README.md`, and `docs/USER_GUIDE.md`.
+- Why: Make the instructions available from inside the editor.
+- Validation: `npm run check` passed TypeScript, Svelte diagnostics (0 errors/0 warnings), all 97 tests, and the production build. The existing large-chunk warning remains.
+- Limitations: The docs window was not manually exercised in a browser. Its content is maintained in the in-app panel and Markdown guide, so updates to one need to be reflected in the other.
+
 ### 2026-10-11T03:34:00+05:30 — Add a complete user guide
 
 - Changed: Added `docs/USER_GUIDE.md` covering editor layout, object editing, hierarchy, Inspector, Console, scripts, AI, animation, simulation, exports, shortcuts, and troubleshooting. Linked it from the README.

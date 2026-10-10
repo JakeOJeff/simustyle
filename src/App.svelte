@@ -8,6 +8,7 @@
   import { AI_RESPONSE_JSON_SCHEMA, buildSystemPrompt } from "./ai/prompt";
   import { runSceneAgent } from "./ai/agent";
   import Timeline from "./editor/Timeline.svelte";
+  import DocsPanel from "./editor/DocsPanel.svelte";
   import PanelResizeHandles, { type ResizeEdge } from "./editor/PanelResizeHandles.svelte";
   import ExportMenu from "./editor/ExportMenu.svelte";
   import TopBar, { type TopBarActions, type ToolMode } from "./editor/TopBar.svelte";
@@ -29,7 +30,7 @@
   import { createEmptyScene, type Entity, type Scene, type SceneOp, type Vec3 } from "./scene/types";
   import type { PlayState, SimulationController } from "./runtime/physics";
 
-  type EditorPanel = "hierarchy" | "inspector" | "console" | "ai" | "timeline";
+  type EditorPanel = "hierarchy" | "inspector" | "console" | "ai" | "timeline" | "docs";
   type PanelDock = "left" | "right" | "top" | "bottom" | "floating";
   type PanelLayout = { dock: PanelDock; x: number; y: number; width: number; height: number; dockSize?: number };
 
@@ -50,13 +51,14 @@
   let playState: PlayState = $state("stopped");
   let playStarting = $state(false);
   let simulationWarnings = $state<string[]>([]);
-  let panelOpen = $state<Record<EditorPanel, boolean>>({ hierarchy: true, inspector: true, console: true, ai: false, timeline: false });
+  let panelOpen = $state<Record<EditorPanel, boolean>>({ hierarchy: true, inspector: true, console: true, ai: false, timeline: false, docs: false });
   let panelLayouts = $state<Record<EditorPanel, PanelLayout>>({
     hierarchy: { dock: "left", x: 12, y: 12, width: 260, height: 420 },
     inspector: { dock: "right", x: 16, y: 16, width: 300, height: 420 },
     console: { dock: "bottom", x: 12, y: 12, width: 500, height: 250 },
     ai: { dock: "right", x: 16, y: 16, width: 430, height: 340 },
-    timeline: { dock: "bottom", x: 16, y: 16, width: 680, height: 250 }
+    timeline: { dock: "bottom", x: 16, y: 16, width: 680, height: 250 },
+    docs: { dock: "floating", x: 220, y: 20, width: 620, height: 680 }
   });
   let draggingPanel: { panel: EditorPanel; offsetX: number; offsetY: number; stageLeft: number; stageTop: number; stageWidth: number; stageHeight: number } | null = $state(null);
   let resizingPanel: { panel: EditorPanel; edge: ResizeEdge; dock: PanelDock; startX: number; startY: number; left: number; top: number; width: number; height: number; stageWidth: number; stageHeight: number } | null = $state(null);
@@ -162,7 +164,7 @@
     try {
       const saved = JSON.parse(localStorage.getItem("simustyle.panelWorkspace") ?? "null") as { open?: Record<string, unknown>; layouts?: Record<string, Partial<PanelLayout>> } | null;
       if (saved) {
-        for (const panel of ["hierarchy", "inspector", "console", "ai", "timeline"] as const) {
+        for (const panel of ["hierarchy", "inspector", "console", "ai", "timeline", "docs"] as const) {
           if (typeof saved.open?.[panel] === "boolean") panelOpen[panel] = saved.open[panel] as boolean;
           const layout = saved.layouts?.[panel];
           if (!layout) continue;
@@ -1011,8 +1013,27 @@ when clicked
     message = "Stepped one frame";
   }
 
-  const panelNames: EditorPanel[] = ["hierarchy", "inspector", "console", "ai", "timeline"];
-  const panelLabels: Record<EditorPanel, string> = { hierarchy: "Hierarchy", inspector: "Inspector", console: "Console", ai: "AI", timeline: "Timeline" };
+  const panelNames: EditorPanel[] = ["hierarchy", "inspector", "console", "ai", "timeline", "docs"];
+  const panelLabels: Record<EditorPanel, string> = { hierarchy: "Hierarchy", inspector: "Inspector", console: "Console", ai: "AI", timeline: "Timeline", docs: "Docs" };
+
+  function togglePanel(name: string) {
+    if (!(name in panelOpen)) return;
+    const panel = name as EditorPanel;
+    panelOpen[panel] = !panelOpen[panel];
+    if (panelOpen[panel]) {
+      focusedPanel = panel;
+      const layout = panelLayouts[panel];
+      const width = panel === "docs" ? Math.min(layout.width, Math.max(220, stageWidth)) : layout.width;
+      const height = panel === "docs" ? Math.min(layout.height, Math.max(140, stageHeight)) : layout.height;
+      panelLayouts[panel] = {
+        ...layout,
+        x: Math.min(Math.max(0, layout.x), Math.max(0, stageWidth - width)),
+        y: Math.min(Math.max(0, layout.y), Math.max(0, stageHeight - height)),
+        width,
+        height
+      };
+    }
+  }
 
   const topBarActions: TopBarActions = {
     newScene, saveScene: () => void saveScene(), undo, redo,
@@ -1024,7 +1045,7 @@ when clicked
     remove: () => { for (const id of [...selectedIds]) if (scene.entities.some((entity) => entity.id === id)) deleteEntity(id); },
     rename: () => { if (selectedEntity) renameTarget = { id: selectedEntity.id, name: selectedEntity.name }; },
     group: groupSelection,
-    togglePanel: (name) => { if (name in panelOpen) panelOpen[name as EditorPanel] = !panelOpen[name as EditorPanel]; },
+    togglePanel,
     frameSelected: () => focusToken += 1,
     openSettings: () => settingsOpen = true,
     setTool: (tool) => mode = tool,
@@ -1154,6 +1175,13 @@ when clicked
               <PanelResizeHandles panelName="Timeline" dock={panelLayouts.timeline.dock} onResizeStart={(event, edge) => startPanelResize(event, "timeline", edge)} />
             </section>
           {/if}
+          {#if panelOpen.docs}
+            <section class="panel-window" class:floating-panel={panelLayouts.docs.dock === "floating"} style={panelWindowStyle("docs")} use:rememberPanelSize={"docs"}>
+              <header class="panel-window-title"><button class="panel-drag-handle" type="button" aria-label="Drag Docs panel to move or snap" onpointerdown={(event) => startPanelDrag(event, "docs")}><strong>Docs</strong><span>Drag to move or snap</span></button><button class="panel-close" type="button" aria-label="Close Docs" onclick={() => panelOpen.docs = false}><X size={13} /></button></header>
+              <div class="panel-window-body"><DocsPanel /></div>
+              <PanelResizeHandles panelName="Docs" dock={panelLayouts.docs.dock} onResizeStart={(event, edge) => startPanelResize(event, "docs", edge)} />
+            </section>
+          {/if}
           {#if draggingPanel && snapTarget}
             <div class="panel-snap-preview snap-{snapTarget}" aria-hidden="true"></div>
           {/if}
@@ -1165,6 +1193,7 @@ when clicked
         <button class:selected={panelOpen.console} aria-pressed={panelOpen.console} onclick={() => panelOpen.console = !panelOpen.console}>Console</button>
         <button class:selected={panelOpen.ai} aria-pressed={panelOpen.ai} onclick={() => panelOpen.ai = !panelOpen.ai}>AI</button>
         <button class:selected={panelOpen.timeline} aria-pressed={panelOpen.timeline} onclick={() => panelOpen.timeline = !panelOpen.timeline}>Timeline</button>
+        <button class:selected={panelOpen.docs} aria-pressed={panelOpen.docs} onclick={() => togglePanel("docs")}>Docs</button>
       </div>
     </section>
   </div>
