@@ -4,7 +4,7 @@ Record meaningful project changes during the event, newest first.
 
 ## Event build log
 
-### 2026-10-11T03:45:00+05:30 — Focus the camera only on F
+### 2026-10-11T03:40:00+05:30 — Focus the camera only on F
 
 - Changed: Clicking or selecting an object no longer moves the camera. The viewport's focus effects called `focusSelected()` inside a reactive effect, so reading the selection made them re-run on every selection or scene change; they are now `untrack`ed and only fire when F, View → Frame selected, or an AI apply requests it. Files: `src/editor/Viewport.svelte`.
 - Why: Participant asked for focus to happen only when F is pressed.
