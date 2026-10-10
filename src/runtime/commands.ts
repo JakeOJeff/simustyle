@@ -72,9 +72,11 @@ export function colorWords(hex: unknown): string[] {
   return ["pink", "purple"];
 }
 
-function nounMatches(entity: Entity, noun: string): boolean {
+function nounMatches(entity: Entity, noun: string, scene: Scene): boolean {
   if (ANY_NOUNS.has(noun)) return true;
-  const singular = noun.endsWith("s") && noun.length > 3 ? noun.slice(0, -1) : noun;
+  const singular = noun === "boxes" ? "box" : noun.endsWith("s") && noun.length > 3 ? noun.slice(0, -1) : noun;
+  // A group is an object without a mesh that holds other objects.
+  if (singular === "group" && !entity.components.Mesh && scene.entities.some((child) => child.parent === entity.id)) return true;
   const kind = SHAPE_NOUNS[singular];
   if (kind === "Light" || kind === "Camera") return kind in entity.components;
   if (kind && field(entity, "Mesh", "shape") === kind) return true;
@@ -110,19 +112,19 @@ export interface Resolver {
   resolve(target: unknown): Entity | undefined;
 }
 
-/** Pick the entity a description refers to; ties go to the one nearest the script's own object. */
-export function findDescribed(description: RuntimeDescription, resolver: Resolver): Entity | undefined {
+/** Every entity a description matches, best first; ties go to the one nearest the script's own object. */
+export function describedMatches(description: RuntimeDescription, resolver: Resolver): Entity[] {
   const { scene, selfId } = resolver;
   const self = scene.entities.find((entity) => entity.id === selfId);
   const origin = self ? positionOf(self) : [0, 0, 0] as Vector;
   const anchor = description.relation ? resolver.resolve(description.relation.target) : undefined;
-  if (description.relation && !anchor) return undefined;
+  if (description.relation && !anchor) return [];
   let matches = scene.entities.filter((entity) =>
-    nounMatches(entity, description.noun) &&
+    nounMatches(entity, description.noun, scene) &&
     description.colors.every((color) => colorWords(field(entity, "Material", "color")).includes(color)) &&
     (!anchor || (entity.id !== anchor.id && satisfiesRelation(entity, anchor, description.relation!.relation))));
   if (description.superlative === "nearest" || description.superlative === "farthest") matches = matches.filter((entity) => entity.id !== selfId);
-  if (!matches.length) return undefined;
+  if (!matches.length) return [];
   const reference = anchor ? positionOf(anchor) : origin;
   const volume = (entity: Entity) => halfExtents(entity).reduce((product, value) => product * value, 1);
   const score: Record<string, (entity: Entity) => number> = {
@@ -134,7 +136,7 @@ export function findDescribed(description: RuntimeDescription, resolver: Resolve
     nearest: (entity) => distance(positionOf(entity), reference)
   };
   const rank = score[description.superlative ?? "nearest"] ?? score.nearest!;
-  return [...matches].sort((first, second) => rank(first) - rank(second))[0];
+  return [...matches].sort((first, second) => rank(first) - rank(second));
 }
 
 /** Find an entity by id or display name, ignoring case, spaces, and underscores. */

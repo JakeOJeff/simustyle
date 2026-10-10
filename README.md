@@ -23,32 +23,63 @@ Open the local URL printed by Vite. The editor uses a docked hierarchy, viewport
 
 ## Scripting
 
-Scripts use a small, Scratch-like language with plain-English commands.
+Scripts are short plain-English sentences. Learn it in a minute:
 
-- **Open a script:** select an object and click **Script** in the toolbar, or click the `</>` badge in the Hierarchy, or **Open in script editor** in the Inspector. With nothing selected, **Script** creates a *Scene Script* object for scene-wide logic. Scripts open as tabs over the viewport; switch back with the **Scene** tab.
-- **Editor:** syntax highlighting, line numbers, inline problems (click one to jump to it), Tab/Shift+Tab indent, Enter auto-indent, Ctrl+/ comments, and a **Reference** panel whose examples insert at the cursor. Edits apply on Ctrl+S, **Apply**, leaving the editor, Save, or Play.
-- **Try commands instantly:** type a command in the Console tab's command bar (for example `move the red ball above the box`) and press Enter. It changes the scene now as one undoable edit; ↑/↓ recall history.
+1. **A script lives on an object.** Select an object and click **Script** (toolbar, Inspector, or the script icon in the Hierarchy). In that script, `me`, `I`, and `my` mean that object. A script on a group can move the group and talk to `my children`. With nothing selected, **Script** makes a *Scene Script* object for scene-wide rules.
+2. **Start with an event line** such as `when game starts`, `forever`, `every 2 seconds`, `when clicked`, `when space is pressed`, `when I touch the floor`, or `when I receive "win"`.
+3. **Indent one sentence per line under it:** a verb, then (optionally) who, then how. Leave out who and it means `me`.
 
 ```
 -- comments start with two dashes
-on start:
-  animate self like a bouncing ball
-  paint the nearest cube red
-every 2s:
-  move the cube right 1 over 0.5s
-on collide(other):
-  destroy other
+setting speed = 2 from 0 to 10
+
+when game starts
+  set score to 0
+  spin slowly
+
+when space is pressed
+  move up 2 over 0.5 seconds
+  wait 0.5 seconds
+  move down 2 over 0.5 seconds
+
+forever
+  if key right is pressed
+    move right 0.1
+
+when I touch a coin
+  destroy it
+  change score by 1
+  if score is at least 3
+    broadcast "win"
+
+when I receive "win"
+  say "You win!"
+  paint all balls yellow
 ```
 
-| Command | Examples |
+| Kind | Sentences |
 | --- | --- |
-| `move` / `glide` | `move ball to 0 2 0`, `move ball by 1 0 0`, `move ball up 2 over 1s`, `move the ball above the box` (also below, beside, left of, right of, in front of, behind), `glide ball to 3 1 0 in 2s` |
-| `turn` / `scale` | `turn ball left 90`, `turn ball by 0 45 0 over 1s`, `scale ball by 2`, `scale ball to 0.5` |
-| `paint` / `hide` / `show` | `paint the cube red`, `paint ball #33aaff`, `hide ball` |
-| `destroy` / `push` / `say` | `destroy the one above the box`, `push ball up 5` (needs a dynamic RigidBody), `say "score", 10` |
-| `animate` / `stop` | `animate self like a bouncing ball`, `animate the box as spinning slowly`; styles: bounce, spin, float, pulse, shake, wobble, sway, orbit, flash, grow, shrink, tumble; `stop animating self` |
+| Events | `when game starts` · `forever` · `every 2 seconds` · `when clicked` · `when space is pressed` (also `when I press left`, `when the a key is pressed`) · `when I touch [something]` · `when I receive "message"` |
+| Move | `move up 2`, `move to 0 2 0`, `move by 1 0 0`, `move above the box` (below, beside, left of, right of, in front of, behind), `go to 3 1 0`, add `over 1 second` to glide |
+| Turn and size | `turn left`, `turn right 45`, `turn around`, `scale by 2`, `grow by 2`, `shrink by 2`, `scale to 0.5` |
+| Look | `paint red`, `paint the cube #33aaff`, `hide`, `show`, `spin`, `bounce`, `float`, `pulse`, `shake`, `wobble`, `sway`, `orbit`, `flash`, `tumble` (add `slowly`, `fast`, `gently`, `wildly`), `animate the box like a bouncing ball`, `stop` |
+| Make and remove | `create a red ball at 0 3 0`, `create a box above me called "Crate"`, `destroy it`, `destroy all cones` |
+| Remember | `set score to 0`, `change score by 1`, `increase speed by 2`, `decrease lives`, `set my y to 3`, `set my color to green` |
+| Control | `wait 1 second`, `repeat 3 times`, `repeat until my y is more than 5`, `forever` (inside an event; needs a `wait`), `if … then` / `otherwise if` / `otherwise` |
+| Talk | `say "hi" score`, `broadcast "win"` |
+| Physics | `push up 5` (needs a dynamic RigidBody) |
 
-Objects can be named by id or name (`ball`, `"Box 1"`), by `self`, by a variable, or described: `the [nearest|biggest|smallest|highest|lowest] [color] <ball|box|cube|cylinder|cone|plane|light|name word|one> [above|below|beside|… <object>]`. Colors are matched by hue, so `#e5484d` counts as red. When several objects match, the one nearest the script's object wins. Descriptions also work as values: `let target = the nearest red ball`. Coordinates may be separated by spaces or commas; wrap arithmetic in parentheses (`move self to (x + 1) 0 0`). The original `param`, `let`, `if`/`else`, `while`, `every frame`, `every <n>s`, `on collide(other)`, `self.<component>.<field>`, and built-in functions are unchanged. Unknown animation words and malformed commands are compile errors; an object that cannot be found at run time is reported in the console with its line number.
+**Who:** `me`, `it` (the object just touched or clicked), a name (`ball`, `"Box 1"`), `my children`, `my parent`, `all red balls`, or a description: `the [nearest|biggest|smallest|highest|lowest] [color] <ball|box|cube|cylinder|cone|plane|light|group|name word|one> [above|below|beside|… <object>]`. Colors are matched by hue, so `#e5484d` counts as red. When several objects match a single-object command, the one nearest the script's object wins; `all …` acts on every match.
+
+**Values:** numbers, `"text"`, colors, `true`/`false`, variables, `my x`/`y`/`z`/`size`/`color`/`name`, `x of the ball`, `distance to the player`, `random 1 to 10`, `key space is pressed`, and `time`. Compare with `is`, `is not`, `is more than`, `is less than`, `is at least`, `is at most`, and combine with `and`, `or`, `not`, and `+ - * /`. Colons at the end of event and `if` lines are optional.
+
+**Settings:** `setting speed = 3 from 0 to 10` becomes a slider in the Inspector (true/false becomes a switch, a color a color picker).
+
+**Editor:** syntax highlighting, line numbers, inline problems (click one to jump to it), Tab/Shift+Tab indent, Enter auto-indent, Ctrl+/ comments, and a reference panel whose examples insert at the cursor. Edits apply on Ctrl+S, **Apply**, leaving the editor, Save, or Play.
+
+**Try sentences instantly:** type one in the Console command bar (for example `move the red ball above the box`) and press Enter. It changes the scene now as one undoable edit; waits and glides finish instantly. ↑/↓ recall history.
+
+The original syntax (`param`, `let`, `on start:`, `every frame:`, `on collide(other):`, `while`, `self.<component>.<field>`, `print(...)`, and the built-in functions) still works. Unknown words and malformed sentences are compile errors with a line number; an object that cannot be found at run time is reported in the console.
 
 ## Check and build
 

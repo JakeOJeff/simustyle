@@ -4,31 +4,27 @@ import { serializeScene } from "../scene/serialize";
 import type { Scene } from "../scene/types";
 
 /** The script syntax and runtime API available to the scene agent. */
-export const SCRIPT_AGENT_SPEC = `Scripts use the restricted, indentation-based language below. Put source in a Script component's source field.
+export const SCRIPT_AGENT_SPEC = `Scripts are plain sentences, one per line, grouped under event lines. Indent the lines that belong to an event. Colons are optional. Put source in a Script component's source field. A script belongs to the object it is on: "me"/"I"/"my" mean that object; "it" means the object just touched (or clicked).
 
-Declarations and handlers:
-- param <name>: <type> [<min>..<max>] = <literal> (types: float, int, bool, color, string)
-- let <name> = <expression>
-- on start:
-- every frame:
-- on collide(<name>):
-- every <positive-seconds>s:
-- if / else if / else, while (maximum 10,000 iterations per loop)
-- assignments: =, +=, -=, *=, /=
+Event lines (not indented):
+- when game starts · forever (every frame) · every <n> seconds · when clicked · when <key> is pressed (keys: space, enter, left, right, up, down, a-z, 0-9) · when I touch [<obj>] · when I receive "<message>"
 
-Expressions support numbers, strings, booleans, #RRGGBB or #RRGGBBAA colors, member access, function calls, + - * / %, comparisons, and, or, not.
+Statements (prefer these; most commands default to "me" when the object is left out):
+- move [<obj>] up|down|left|right|forward|back <n> | to <x> <y> <z> | by <dx> <dy> <dz> | above|below|beside|left of|right of|in front of|behind <obj>; add "over <n> seconds" to glide; go ... = move me
+- turn [<obj>] left|right [<degrees>] | turn around | turn [<obj>] by <x> <y> <z>; scale|grow|shrink [<obj>] to|by <n>
+- paint [<obj>] <colorname|#rrggbb>; hide/show/destroy [<obj>]; push [<obj>] up <n> (dynamic RigidBody only); say <values...>
+- spin|bounce|float|pulse|shake|wobble|sway|orbit|flash|tumble [<obj>] [slowly|fast|gently|wildly]; animate <obj> like <description>; stop [animating <obj>]
+- create a [color] ball|box|cylinder|cone|capsule|plane [at <x> <y> <z> | above <obj>] [called "<name>"]
+- set <var> to <value> · change <var> by <n> · increase/decrease <var> by <n> · set my x|y|z|size|color to <value>
+- wait <n> seconds · repeat <n> times · repeat until <condition> · forever (loop; needs a wait inside; loops stop after 10,000 iterations without a wait)
+- if <condition> [then] / otherwise if / otherwise
+- broadcast "<message>" (runs every "when I receive" handler)
+- setting <name> = <literal> [from <min> to <max>] (becomes an Inspector control)
 
-Built-ins: time, dt, random(a,b), sin, cos, abs, min, max, clamp, lerp, sqrt, print(...), spawn(prefabId,x,y,z), destroy(entity), find(name), self.
-Entity access: self.<component>.<field> (fields are checked against the component schemas), self.name, self.rigidbody.applyImpulse(x,y,z), self.rigidbody.setVelocity(x,y,z).
-
-Plain-English commands (one per line; prefer these for simple behavior):
-- move <obj> to <x> <y> <z> | move <obj> by <dx> <dy> <dz> | move <obj> up|down|left|right|forward|back <n> | move <obj> above|below|beside|left of|right of|in front of|behind <obj>
-- add "over <n>s" to move, turn, or scale to glide smoothly; glide <obj> ... is move with a default 1s glide
-- turn <obj> left|right <degrees> | turn <obj> by <x> <y> <z>; scale <obj> to|by <n>; paint <obj> <colorname|#rrggbb>; hide <obj>; show <obj>
-- destroy <obj>; push <obj> up <n> (dynamic RigidBody only); say <values...>
-- animate <obj> like <description> (styles: bounce, spin, float, pulse, shake, wobble, sway, orbit, flash, grow, shrink, tumble; speed words: slowly, fast); stop animating <obj>
-- <obj> is self, an entity id or name, a "quoted name", a variable, or a description: the [nearest|biggest|smallest|highest|lowest] [color] <ball|box|cube|cylinder|cone|plane|light|name word|one> [above|below|beside|... <obj>]
-- Coordinates are separated by spaces or commas; wrap arithmetic in parentheses: move self to (x + 1) 0 0. Comments start with --.
+Objects: me, it, a name or id, a "quoted name", a variable, my children, my parent, all <description>, or a description: the [nearest|biggest|smallest|highest|lowest] [color] <ball|box|cube|cylinder|cone|plane|light|group|name word|one> [above|below|beside|... <obj>].
+Values: numbers, "text", colors, true/false, variables, my x|y|z|size|color|name, x of <obj>, distance to <obj>, random 1 to 10, key <name> is pressed, time. Combine with + - * / and compare with: is, is not, is more than, is less than, is at least, is at most, and, or, not.
+Coordinates are separated by spaces or commas; wrap arithmetic in parentheses: move to (my x + 1) 0 0. Comments start with --.
+Older syntax (param, let, on start:, every frame:, on collide(other):, self.<component>.<field>, self.rigidbody.applyImpulse(x,y,z), self.rigidbody.setVelocity(x,y,z), print(...)) still works but prefer the sentences above.
 Scripts are compiled from this language to a restricted runtime API. Do not put JavaScript, HTML, or any unsupported syntax in source.`;
 
 function fieldDescription(field: FieldSchema): Record<string, unknown> {
@@ -91,7 +87,7 @@ Operations:
 3. For edits, change as little as possible. Never recreate entities that already exist; update them using their existing IDs.
 4. Use readable, unique IDs such as ball, block_0, block_1.
 5. Every visible object needs Transform, Mesh, and Material. Add a Light if the scene has none and the request needs a lit scene.
-6. When useful adjustable values or scripted behavior are requested, put 2–5 user-adjustable param declarations with sensible ranges in Script source. Script params can be exposed as inspector values.
+6. When useful adjustable values or scripted behavior are requested, put 2–5 user-adjustable setting lines with sensible ranges (setting speed = 3 from 0 to 10) in Script source. Script params can be exposed as inspector values.
 7. Keep the scene at or below 500 dynamic rigid bodies.
 8. If the request cannot be done exactly with these components, build the closest supported version and explain the approximation in summary.
 9. For validation or script errors, correct only the reported problems and return the full corrected response.

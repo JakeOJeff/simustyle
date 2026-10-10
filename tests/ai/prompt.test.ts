@@ -21,7 +21,8 @@ describe("AI scene prompt construction", () => {
     const prompt = buildSystemPrompt(createEmptyScene());
     expect(prompt).toContain(SCRIPT_AGENT_SPEC);
     expect(prompt).toContain("self.rigidbody.applyImpulse");
-    expect(prompt).toContain("while (maximum 10,000 iterations per loop)");
+    expect(prompt).toContain("10,000 iterations without a wait");
+    expect(prompt).toContain("when game starts");
     expect(prompt).toContain("Do not put JavaScript");
   });
 

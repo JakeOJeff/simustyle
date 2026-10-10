@@ -4,8 +4,9 @@ import type { Scene, Entity, Vec3 } from "../scene/types";
 import { AnimatorRuntime } from "../runtime/animator";
 import { ScriptRuntime, scriptOps } from "../runtime/scripts";
 import { applyOps } from "../scene/applyOps";
+import { keyName } from "../lang/vocabulary";
 
-type PlayController = { state: "playing" | "paused" | "stopped"; play(scene: Scene): Promise<string[]>; advance(scene: Scene, elapsed: number): Scene; stop(): Scene | null; setScriptParameter(entityId: string, name: string, value: unknown): boolean; readonly initialScene: Scene | null };
+type PlayController = { state: "playing" | "paused" | "stopped"; play(scene: Scene): Promise<string[]>; advance(scene: Scene, elapsed: number): Scene; stop(): Scene | null; setScriptParameter(entityId: string, name: string, value: unknown): boolean; pressKey(key: string): void; releaseKey(key: string): void; readonly initialScene: Scene | null };
 
 function record(entity: Entity, key: string): Record<string, unknown> {
   return entity.components[key] ?? {};
@@ -255,6 +256,9 @@ export async function startStandalone(sceneInput: Scene): Promise<void> {
 
   playButton.addEventListener("click", () => { void start().catch((error: unknown) => { status.textContent = error instanceof Error ? error.message : String(error); }); });
   stopButton.addEventListener("click", stop);
+  // Keyboard input for "when space is pressed" and "key left is pressed".
+  addEventListener("keydown", (event) => { if (!event.repeat) { controller?.pressKey(keyName(event.key)); scripts?.pressKey(keyName(event.key)); } });
+  addEventListener("keyup", (event) => { controller?.releaseKey(keyName(event.key)); scripts?.releaseKey(keyName(event.key)); });
   function resize(): void {
     const width = host.clientWidth || innerWidth;
     const height = host.clientHeight || innerHeight;

@@ -18,10 +18,21 @@ export interface ScriptProgram {
   handlers: ScriptHandler[];
 }
 
+/**
+ * "when game starts", "forever", "every 2 seconds", "when I touch the floor",
+ * "when clicked", "when space is pressed", "when I receive "win"".
+ */
 export interface ScriptHandler {
-  event: "start" | "frame" | "collide" | "interval";
+  event: "start" | "frame" | "collide" | "interval" | "click" | "key" | "message";
+  /** Name the touched object is stored under (always set for collide; "it" by default). */
   parameter?: string;
   intervalSeconds?: number;
+  /** key: lower-case key name such as "space", "left", "a". */
+  key?: string;
+  /** message: the broadcast text this handler listens for. */
+  message?: string;
+  /** collide: only run when the other object matches this target. */
+  filter?: ScriptTarget;
   body: ScriptStatement[];
   line: number;
 }
@@ -31,6 +42,9 @@ export type ScriptStatement =
   | { kind: "assign"; target: ScriptExpression; operator: "=" | "+=" | "-=" | "*=" | "/="; value: ScriptExpression; line: number }
   | { kind: "if"; branches: { condition: ScriptExpression; body: ScriptStatement[] }[]; otherwise: ScriptStatement[]; line: number }
   | { kind: "while"; condition: ScriptExpression; body: ScriptStatement[]; line: number }
+  | { kind: "repeat"; count: ScriptExpression; body: ScriptStatement[]; line: number }
+  | { kind: "wait"; seconds: ScriptExpression; line: number }
+  | { kind: "broadcast"; message: ScriptExpression; line: number }
   | { kind: "expression"; expression: ScriptExpression; line: number }
   | { kind: "command"; command: ScriptCommand; line: number; column: number };
 
@@ -41,13 +55,17 @@ export interface EntityDescription {
   noun: string;
   superlative?: Superlative;
   relation?: { relation: RelationName; target: ScriptTarget };
+  /** "all the red balls", "every cube": the command acts on every match. */
+  all?: boolean;
 }
 
 /** Who a command acts on. A bare name is a variable when one is declared, otherwise an entity name or id. */
 export type ScriptTarget =
   | { kind: "self"; line: number; column: number }
+  | { kind: "it"; line: number; column: number }
   | { kind: "name"; name: string; quoted: boolean; line: number; column: number }
   | { kind: "describe"; description: EntityDescription; line: number; column: number }
+  | { kind: "family"; relation: "children" | "parent"; of: ScriptTarget; line: number; column: number }
   | { kind: "expression"; expression: ScriptExpression; line: number; column: number };
 
 export type ScriptVector = [ScriptExpression, ScriptExpression, ScriptExpression];
@@ -68,6 +86,7 @@ export type ScriptCommand =
   | { name: "paint"; target: ScriptTarget; color: ScriptExpression }
   | { name: "push"; target: ScriptTarget; vector: ScriptVector }
   | { name: "hide" | "show"; target: ScriptTarget }
+  | { name: "create"; shape: string; color?: ScriptExpression; place?: MoveDestination; called?: ScriptExpression }
   | { name: "say"; args: ScriptExpression[] };
 
 export type ScriptExpression =
@@ -80,4 +99,8 @@ export type ScriptExpression =
   | { kind: "call"; callee: ScriptExpression; args: ScriptExpression[]; line: number; column: number }
   | { kind: "binary"; operator: string; left: ScriptExpression; right: ScriptExpression; line: number; column: number }
   | { kind: "unary"; operator: string; argument: ScriptExpression; line: number; column: number }
-  | { kind: "describe"; description: EntityDescription; line: number; column: number };
+  | { kind: "describe"; description: EntityDescription; line: number; column: number }
+  /** "my y", "x of the ball", "distance to the player". */
+  | { kind: "property"; target: ScriptTarget; property: string; line: number; column: number }
+  | { kind: "keyDown"; key: string; line: number; column: number }
+  | { kind: "it"; line: number; column: number };

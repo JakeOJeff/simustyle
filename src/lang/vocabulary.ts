@@ -5,7 +5,25 @@ export type RelationName = "above" | "below" | "beside" | "left" | "right" | "fr
 export type Superlative = "biggest" | "smallest" | "nearest" | "farthest" | "highest" | "lowest";
 export type Direction = "up" | "down" | "left" | "right" | "forward" | "back";
 
-export const COMMAND_WORDS = ["move", "glide", "destroy", "animate", "stop", "turn", "scale", "resize", "paint", "color", "push", "hide", "show", "say"] as const;
+export const COMMAND_WORDS = ["move", "glide", "go", "destroy", "delete", "remove", "animate", "stop", "turn", "rotate", "scale", "resize", "grow", "shrink", "paint", "color", "colour", "push", "hide", "show", "say", "print", "create", "spawn"] as const;
+
+/** Statement words that read like sentences: "set score to 0", "wait 1 second", "repeat 3 times". */
+export const SENTENCE_WORDS = ["set", "change", "increase", "decrease", "add", "subtract", "wait", "repeat", "forever", "broadcast", "announce", "send", "tell"] as const;
+
+/** Words that start a header line: "when game starts", "every 2 seconds", "forever". */
+export const EVENT_WORDS = ["when", "every", "forever", "on"] as const;
+
+/** Readable properties: "my y", "x of the ball", "distance to the player". */
+export const PROPERTY_WORDS = ["x", "y", "z", "color", "colour", "size", "name", "distance"] as const;
+
+/** Browser KeyboardEvent.key values mapped to the words scripts use ("when space is pressed"). */
+export function keyName(eventKey: string): string {
+  const named: Record<string, string> = { " ": "space", arrowleft: "left", arrowright: "right", arrowup: "up", arrowdown: "down", escape: "escape", enter: "enter", shift: "shift", tab: "tab", backspace: "backspace" };
+  const lower = eventKey.toLowerCase();
+  return named[lower] ?? lower;
+}
+
+export const KEY_WORDS = new Set(["space", "enter", "left", "right", "up", "down", "shift", "escape", "tab", "backspace", ..."abcdefghijklmnopqrstuvwxyz".split(""), ..."0123456789".split("")]);
 
 /** Named colors used both for `paint X red` and for matching "the red ball". */
 export const COLOR_NAMES: Record<string, string> = {
@@ -61,10 +79,10 @@ export const ANIMATION_STYLES: Record<AnimationStyle, string[]> = {
   tumble: ["tumble", "tumbling", "flip", "flipping", "somersault", "cartwheel", "roll", "rolling", "dice", "asteroid"]
 };
 
-const FAST_WORDS = new Set(["fast", "faster", "quick", "quickly", "rapid", "rapidly", "speedy", "crazy", "frantic", "frantically", "hyper"]);
-const SLOW_WORDS = new Set(["slow", "slowly", "gently", "gentle", "lazy", "lazily", "calm", "calmly", "sleepy", "relaxed"]);
-const BIG_WORDS = new Set(["big", "high", "wild", "wildly", "huge", "lots", "violently", "hard", "strong", "strongly"]);
-const SMALL_WORDS = new Set(["little", "slightly", "subtle", "subtly", "tiny", "softly", "small", "bit"]);
+export const FAST_WORDS = new Set(["fast", "faster", "quick", "quickly", "rapid", "rapidly", "speedy", "crazy", "frantic", "frantically", "hyper"]);
+export const SLOW_WORDS = new Set(["slow", "slowly", "gently", "gentle", "lazy", "lazily", "calm", "calmly", "sleepy", "relaxed"]);
+export const BIG_WORDS = new Set(["big", "high", "wild", "wildly", "huge", "lots", "violently", "hard", "strong", "strongly"]);
+export const SMALL_WORDS = new Set(["little", "slightly", "subtle", "subtly", "tiny", "softly", "small", "bit"]);
 
 export interface AnimationSpec {
   style: AnimationStyle;
@@ -98,3 +116,9 @@ export function matchAnimation(words: string[]): AnimationSpec | null {
 }
 
 export const ANIMATION_STYLE_LIST = Object.keys(ANIMATION_STYLES).join(", ");
+
+/** Animation styles that also work as a one-word command: "spin", "bounce slowly", "float the cloud gently". */
+export const ANIMATION_VERBS = new Set(["bounce", "spin", "float", "pulse", "shake", "wobble", "sway", "orbit", "flash", "tumble", "hover", "jump", "blink", "glow", "wiggle", "vibrate"]);
+
+/** Words that describe how an animation looks rather than what it acts on. */
+export const ANIMATION_MODIFIERS = new Set([...FAST_WORDS, ...SLOW_WORDS, ...BIG_WORDS, ...SMALL_WORDS, "very", "super", "really", "forever", "around", "like", "as", "a", "an"]);

@@ -1,7 +1,7 @@
 import { componentSchemas } from "../registry";
 import type { FieldSchema } from "../registry/types";
 import { ANIMATION_STYLE_LIST, matchAnimation } from "./vocabulary";
-import type { ScriptExpression, ScriptProgram, ScriptStatement, ScriptTypeName } from "./ast";
+import type { ScriptExpression, ScriptProgram, ScriptStatement, ScriptTarget, ScriptTypeName } from "./ast";
 
 export interface ScriptDiagnostic {
   line: number;
@@ -36,6 +36,50 @@ function flatten(expression: ScriptExpression): string[] | null {
   if (expression.kind !== "member") return null;
   const parent = flatten(expression.object);
   return parent ? [...parent, expression.property] : null;
+}
+
+/** Rough type of a value from its shape, used for variables created with "set". */
+function guessType(expression: ScriptExpression): ValueType {
+  switch (expression.kind) {
+    case "number": return "number";
+    case "string": return "string";
+    case "boolean": case "keyDown": return "boolean";
+    case "color": return "color";
+    case "describe": case "it": return "entity";
+    case "unary": return expression.operator === "not" ? "boolean" : "number";
+    case "binary":
+      if (["and", "or", "==", "!=", "<", "<=", ">", ">="].includes(expression.operator)) return "boolean";
+      return guessType(expression.left) === "string" || guessType(expression.right) === "string" ? "string" : "number";
+    case "property": return expression.property === "color" || expression.property === "colour" ? "color" : expression.property === "name" ? "string" : "number";
+    case "call": {
+      const name = expression.callee.kind === "identifier" ? expression.callee.name : "";
+      return ["spawn", "find"].includes(name) ? "entity" : ["print", "destroy"].includes(name) ? "unknown" : "number";
+    }
+    default: return "unknown";
+  }
+}
+
+/**
+ * Variables a script creates with "set x to ...", "change x by ...", or "x = ...".
+ * They belong to the whole script, so every event can read them. Numbers start at 0.
+ */
+export function scriptGlobals(program: ScriptProgram): Map<string, "number" | "string" | "boolean" | "other"> {
+  const declared = new Set(program.params.map((param) => param.name));
+  const found = new Map<string, "number" | "string" | "boolean" | "other">();
+  const visit = (statements: ScriptStatement[]) => {
+    for (const statement of statements) {
+      if (statement.kind === "let") declared.add(statement.name);
+      else if (statement.kind === "assign" && statement.target.kind === "identifier" && !found.has(statement.target.name)) {
+        const type = statement.operator === "=" ? guessType(statement.value) : "number";
+        found.set(statement.target.name, type === "number" || type === "string" || type === "boolean" ? type : "other");
+      } else if (statement.kind === "if") { statement.branches.forEach((branch) => visit(branch.body)); visit(statement.otherwise); }
+      else if (statement.kind === "while" || statement.kind === "repeat") visit(statement.body);
+    }
+  };
+  visit(program.statements);
+  for (const handler of program.handlers) visit(handler.body);
+  for (const name of declared) found.delete(name);
+  return found;
 }
 
 function componentSchema(name: string) {
@@ -76,7 +120,12 @@ export function typecheckScript(program: ScriptProgram): ScriptDiagnostic[] {
       case "string": return "string";
       case "boolean": return "boolean";
       case "color": return "color";
-      case "describe": return "entity";
+      case "describe": case "it": return "entity";
+      case "keyDown": return "boolean";
+      case "property": {
+        checkTarget(expression.target, variables, eventNames);
+        return guessType(expression);
+      }
       case "identifier": {
         if (expression.name === "self" || eventNames.has(expression.name)) return "entity";
         if (expression.name === "time" || expression.name === "dt") return "number";
@@ -157,16 +206,22 @@ export function typecheckScript(program: ScriptProgram): ScriptDiagnostic[] {
           return "boolean";
         }
         if (["==", "!=", "<", "<=", ">", ">="].includes(expression.operator)) {
-          if (left !== "unknown" && right !== "unknown" && left !== right && !(left === "null" && right === "entity") && !(left === "entity" && right === "null")) {
+          if (left !== "unknown" && right !== "unknown" && left !== right && !(left === "null" && right === "entity") && !(left === "entity" && right === "null") && !(left === "string" && right === "entity") && !(left === "entity" && right === "string")) {
             report(expression, `Cannot compare ${left} and ${right}.`);
           }
           return "boolean";
         }
-        if (expression.operator === "+" && left === "string" && right === "string") return "string";
+        if (expression.operator === "+" && (left === "string" || right === "string")) return "string";
         if ((left !== "number" && left !== "unknown") || (right !== "number" && right !== "unknown")) report(expression, `${expression.operator} expects numbers.`);
         return "number";
       }
     }
+  }
+
+  function checkTarget(target: ScriptTarget, variables: Map<string, ValueType>, eventNames: Set<string>): void {
+    if (target.kind === "expression") expressionType(target.expression, variables, eventNames);
+    else if (target.kind === "family") checkTarget(target.of, variables, eventNames);
+    else if (target.kind === "describe" && target.description.relation) checkTarget(target.description.relation.target, variables, eventNames);
   }
 
   function checkStatements(statements: ScriptStatement[], variables: Map<string, ValueType>, eventNames: Set<string>): void {
@@ -179,6 +234,13 @@ export function typecheckScript(program: ScriptProgram): ScriptDiagnostic[] {
         const target = expressionType(statement.target, variables, eventNames);
         const value = expressionType(statement.value, variables, eventNames);
         const path = flatten(statement.target);
+        if (statement.target.kind === "property") {
+          if (statement.target.property === "name") report(statement.target, "An object's name cannot be changed by a script.");
+          else if (statement.target.property === "distance") report(statement.target, "Distance is measured, so it cannot be set. Move the object instead.");
+          else if (statement.operator !== "=" && target !== "number") report(statement.target, "change only works on numbers.");
+          else if (value !== "unknown" && value !== target) report(statement.value, `${statement.target.property} must be set to a ${target}.`);
+          continue;
+        }
         if (statement.target.kind === "identifier" && !variables.has(statement.target.name)) {
           report(statement.target, `Cannot assign to undeclared name '${statement.target.name}'.`);
         } else if (path?.[0] === "self" && path[1] === "name") {
@@ -201,27 +263,37 @@ export function typecheckScript(program: ScriptProgram): ScriptDiagnostic[] {
         const condition = expressionType(statement.condition, variables, eventNames);
         if (condition !== "boolean" && condition !== "unknown") report(statement.condition, "while condition must be a boolean.");
         checkStatements(statement.body, new Map(variables), eventNames);
+      } else if (statement.kind === "repeat") {
+        const count = expressionType(statement.count, variables, eventNames);
+        if (count !== "number" && count !== "unknown") report(statement.count, "repeat needs a number of times.");
+        checkStatements(statement.body, new Map(variables), eventNames);
+      } else if (statement.kind === "wait") {
+        const seconds = expressionType(statement.seconds, variables, eventNames);
+        if (seconds !== "number" && seconds !== "unknown") report(statement.seconds, "wait needs a number of seconds.");
+      } else if (statement.kind === "broadcast") {
+        expressionType(statement.message, variables, eventNames);
       } else if (statement.kind === "expression") {
         expressionType(statement.expression, variables, eventNames);
       } else if (statement.kind === "command") {
         const command = statement.command;
-        const checkTarget = (target: import("./ast").ScriptTarget) => {
-          if (target.kind === "expression") expressionType(target.expression, variables, eventNames);
-          else if (target.kind === "describe" && target.description.relation) checkTarget(target.description.relation.target);
-        };
         const requireType = (expression: ScriptExpression, expected: ValueType, label: string) => {
           const actual = expressionType(expression, variables, eventNames);
           if (actual !== expected && actual !== "unknown") report(expression, `${label} must be ${expected}.`);
         };
         if (command.name === "say") {
           for (const argument of command.args) expressionType(argument, variables, eventNames);
+        } else if (command.name === "create") {
+          if (command.color) requireType(command.color, "color", "The color");
+          if (command.place?.kind === "point") command.place.value.forEach((value) => requireType(value, "number", "Coordinates"));
+          else if (command.place?.kind === "relative") checkTarget(command.place.target, variables, eventNames);
+          if (command.called) expressionType(command.called, variables, eventNames);
         } else {
-          checkTarget(command.target);
+          checkTarget(command.target, variables, eventNames);
           switch (command.name) {
             case "move":
               if (command.destination.kind === "point" || command.destination.kind === "offset") command.destination.value.forEach((value) => requireType(value, "number", "Coordinates"));
               else if (command.destination.kind === "direction") requireType(command.destination.amount, "number", "Distance");
-              else checkTarget(command.destination.target);
+              else checkTarget(command.destination.target, variables, eventNames);
               if (command.duration) requireType(command.duration, "number", "Duration");
               break;
             case "turn": command.amount.forEach((value) => requireType(value, "number", "Turn amount")); if (command.duration) requireType(command.duration, "number", "Duration"); break;
@@ -242,11 +314,13 @@ export function typecheckScript(program: ScriptProgram): ScriptDiagnostic[] {
   }
 
   const globalVariables = new Map<string, ValueType>();
+  for (const [name, type] of scriptGlobals(program)) globalVariables.set(name, type === "other" ? "unknown" : type);
   checkStatements(program.statements, globalVariables, new Set());
   const events = new Set(program.handlers.filter((handler) => handler.parameter).map((handler) => handler.parameter!));
   for (const handler of program.handlers) {
     const variables = new Map(globalVariables);
     if (handler.parameter) variables.set(handler.parameter, "entity");
+    if (handler.filter) checkTarget(handler.filter, variables, new Set());
     checkStatements(handler.body, variables, new Set([...events, ...(handler.parameter ? [handler.parameter] : [])]));
   }
   return diagnostics;

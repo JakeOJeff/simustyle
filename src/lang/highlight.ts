@@ -1,6 +1,6 @@
 // Syntax highlighting for the script editor. Unlike the lexer this never throws:
 // half-typed code still colors sensibly while the user is mid-edit.
-import { COLOR_NAMES, COMMAND_WORDS, DIRECTION_ALIASES, SUPERLATIVES } from "./vocabulary";
+import { ANIMATION_VERBS, COLOR_NAMES, COMMAND_WORDS, DIRECTION_ALIASES, SENTENCE_WORDS, SUPERLATIVES } from "./vocabulary";
 
 export type TokenClass = "comment" | "string" | "number" | "color" | "keyword" | "command" | "phrase" | "builtin" | "entity" | "property" | "operator" | "plain";
 
@@ -11,10 +11,11 @@ export interface HighlightSpan {
   swatch?: string;
 }
 
-const keywords = new Set(["param", "let", "on", "every", "if", "else", "while", "and", "or", "not", "true", "false", "start", "frame", "collide"]);
-const commands = new Set<string>(COMMAND_WORDS);
-const phrases = new Set(["the", "to", "by", "over", "in", "for", "as", "like", "above", "below", "under", "underneath", "beneath", "beside", "next", "near", "behind", "front", "of", "top", "with", "times", "degrees", "s", "seconds", "animating", "one", ...Object.keys(DIRECTION_ALIASES), ...Object.keys(SUPERLATIVES)]);
-const builtins = new Set(["self", "me", "time", "dt", "random", "sin", "cos", "abs", "min", "max", "clamp", "lerp", "sqrt", "print", "spawn", "destroy", "find"]);
+// Event and decision words: the skeleton of a script.
+const keywords = new Set(["param", "setting", "let", "on", "every", "when", "forever", "if", "then", "else", "otherwise", "while", "repeat", "times", "until", "and", "or", "not", "is", "isn't", "equals", "true", "false", "yes", "no", "start", "starts", "started", "frame", "collide", "clicked", "pressed", "press", "touch", "touches", "receive", "hear", "game", "seconds", "second"]);
+const commands = new Set<string>([...COMMAND_WORDS, ...SENTENCE_WORDS, ...ANIMATION_VERBS]);
+const phrases = new Set(["the", "to", "by", "over", "in", "for", "as", "like", "above", "below", "under", "underneath", "beneath", "beside", "next", "near", "behind", "front", "of", "top", "with", "times", "degrees", "s", "animating", "one", "at", "from", "called", "named", "than", "more", "less", "least", "most", "all", "every", "each", "children", "parent", "key", "distance", "random", "a", "an", ...Object.keys(DIRECTION_ALIASES), ...Object.keys(SUPERLATIVES)]);
+const builtins = new Set(["self", "me", "myself", "my", "i", "it", "everyone", "time", "dt", "random", "sin", "cos", "abs", "min", "max", "clamp", "lerp", "sqrt", "print", "spawn", "destroy", "find"]);
 
 /** Split one line into colored spans. `entityNames` holds lower-cased scene names and ids. */
 export function highlightLine(line: string, entityNames: Set<string> = new Set()): HighlightSpan[] {

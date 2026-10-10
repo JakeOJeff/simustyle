@@ -330,6 +330,10 @@ export class SimulationController {
   }
 
   takeScriptMessages(): string[] { return this.scriptMessages.splice(0); }
+  /** Keyboard and click input for "when space is pressed", "key left is pressed", and "when clicked". */
+  pressKey(key: string): void { if (this.state === "playing") this.scripts?.pressKey(key); }
+  releaseKey(key: string): void { this.scripts?.releaseKey(key); }
+  click(id: string): void { if (this.state === "playing") this.scripts?.click(id); }
   setScriptParameter(entityId: string, name: string, value: unknown): boolean {
     return this.scripts?.setParameter(entityId, name, value) ?? false;
   }
