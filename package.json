@@ -1,13 +1,30 @@
 {
-  "name": "simustyle-scene-agent",
-  "version": "0.1.0",
+  "name": "simustyle",
+  "version": "0.2.0",
   "private": true,
-  "description": "Turn plain-language scene requests into validated simulation JSON operations.",
   "type": "module",
+  "description": "An AI-native 3D scene, simulation, and animation editor.",
   "scripts": {
-    "start": "node src/server.js",
-    "parse": "node src/cli.js",
-    "check": "node --check src/cli.js && node --check src/openai.js && node --check src/prompts.js && node --check src/server.js && node --check src/validate.js"
+    "dev": "vite --host 127.0.0.1",
+    "build": "vite build",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "typecheck": "tsc --noEmit",
+    "check": "npm run typecheck && svelte-check --tsconfig ./tsconfig.json && npm run test && npm run build"
   },
-  "engines": { "node": ">=20" }
+  "engines": {
+    "node": ">=20.19"
+  },
+  "dependencies": {
+    "@dimforge/rapier3d-compat": "^0.21.0",
+    "svelte": "^5.57.2",
+    "three": "^0.186.1"
+  },
+  "devDependencies": {
+    "@sveltejs/vite-plugin-svelte": "^7.3.1",
+    "svelte-check": "^4.7.6",
+    "typescript": "^6.0.3",
+    "vite": "^8.3.4",
+    "vitest": "^5.0.3"
+  }
 }

@@ -2,12 +2,12 @@
 
 ## Project
 
-- **Project name:** SimuStyle Scene Agent
-- **Short description:** Converts plain-language scene requests into validated JSON operations that a 3D simulation editor can apply.
+- **Project name:** SimuStyle
+- **Short description:** An AI-native 3D scene, simulation, and animation editor, being built milestone by milestone from a schema-validated scene core.
 - **Code repository URL:** https://github.com/JakeOJeff/simustyle
-- **Final submitted implementation commit SHA:** `65050f60c658edd395ece6f50f9513f4b644d002` (current implementation checkpoint; update if implementation changes before submission).
-- **Working demo URL or local demo steps:** Run `npm start`, then send a request to `POST http://localhost:3000/api/parse`; see [README.md](README.md) for the request example. Or run `npm run parse -- "A colorful tower of blocks that a wrecking ball swings into"`.
-- **Demo access requirements:** Node.js 20+ and an OpenAI API key set as `OPENAI_API_KEY`. Do not include the key in the repository.
+- **Final submitted implementation commit SHA:** Pending final implementation commit.
+- **Working demo URL or local demo steps:** Run `npm install` and `npm run dev`; open the Vite URL and use “Add a box to the scene” to exercise the M1 browser starter.
+- **Demo access requirements:** Node.js 20.19+ and npm. M1 does not need an API key.
 
 ## Participants
 
@@ -19,14 +19,14 @@ Participate solo or in a team of up to 4. Fill in actual participant details bef
 
 ## Run and demonstrate
 
-- **Prerequisites and versions:** Node.js 20+; no npm dependencies.
-- **Install command:** None required.
-- **Required environment variable names:** `OPENAI_API_KEY`; optional `OPENAI_MODEL`, `OPENAI_BASE_URL`, and `PORT`.
-- **Start command:** `npm start` (HTTP API) or `npm run parse -- "<scene request>"` (CLI).
-- **Demo walkthrough:** Start the server; check `GET /health`; post a plain-language scene request to `/api/parse`; inspect the returned summary and validated `create`/`update`/`delete` operations.
-- **Checks performed and results:** `npm run check`, validator smoke checks, and local HTTP health/invalid-input smoke checks passed. Live API generation was not checked because no API key is configured in the workspace.
-- **Known limitations or incomplete features:** A live API request needs a configured key and has not been verified in this workspace. This project returns operations but does not compile scripts, render a scene, or apply edits to a simulation.
-- **Libraries, APIs, and public datasets used:** Node.js built-in modules; OpenAI Responses API ([API reference](https://developers.openai.com/api/reference/resources/responses/methods/create), [Structured Outputs guide](https://developers.openai.com/api/docs/guides/structured-outputs?api-mode=responses)). No public datasets.
+- **Prerequisites and versions:** Node.js 20.19+ and npm.
+- **Install command:** `npm install`.
+- **Required environment variable names:** None for the M1 demo. AI settings will be added in M5/M8.
+- **Start command:** `npm run dev`.
+- **Demo walkthrough:** Add a box and inspect the serialized scene JSON; validation and default omission are covered by the test suite.
+- **Checks performed and results:** `npm run check` passed, including TypeScript, Svelte diagnostics, seven Vitest tests, and Vite production build.
+- **Known limitations or incomplete features:** This is the M1 checkpoint. The 3D viewport, hierarchy, inspector, simulation, script compiler, AI agent, timeline, export, and Tauri package are not implemented yet.
+- **Libraries, APIs, and public datasets used:** Svelte 5, Vite, TypeScript, Vitest, three.js, and Rapier are installed for the required app stack; M1 does not yet use the 3D or physics packages. No public datasets.
 - **AI usage record:** [AI_USAGE.md](AI_USAGE.md)
 - **Development change log:** [CHANGELOG.md](CHANGELOG.md)
 
