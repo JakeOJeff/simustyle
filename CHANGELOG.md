@@ -4,6 +4,13 @@ Record meaningful project changes during the event, newest first.
 
 ## Event build log
 
+### 2026-10-11T00:50:00+05:30 — Keep camera still during gizmo drags
+
+- Changed: Orbit controls are disabled while TransformControls is dragging and re-enabled when the gizmo drag ends. The listener is removed during viewport cleanup. Documented this interaction in README. Files: `src/editor/Viewport.svelte`, `README.md`, `AI_USAGE.md`, and `CHANGELOG.md`.
+- Why: Prevent dragging a selected object from also changing the camera orbit.
+- Validation: `npm run check` passed TypeScript, Svelte diagnostics (0 errors/0 warnings), all 67 Vitest tests, and Vite production build. No interactive browser check was performed.
+- Limitations: The change covers object transformations through the viewport gizmo; direct dragging on the mesh body does not move the object.
+
 ### 2026-10-11T00:36:00+05:30 — Reconcile AI and submission verification notes
 
 - Changed: Updated AI usage, M8 verification notes, and submission limitations to reflect the successful browser check, unavailable Cargo toolchain, untested live AI connection, missing visual review, and local WIP commit `76f4a72`. Files: `AI_USAGE.md`, `SUBMISSION.md`, and `CHANGELOG.md`.

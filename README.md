@@ -53,6 +53,8 @@ On Windows, run `npm run tauri:build` to create the NSIS setup executable under 
 
 ## Scene core
 
+When dragging a selected object with the viewport transform gizmo, camera orbit is paused for the duration of that drag and restored when it ends.
+
 The component registry lives in `src/registry/`. `applyOps(scene, ops)` validates and applies a complete batch atomically, returning inverse operations for undo. `SceneHistory` keeps undo and redo batches. `serializeScene` omits default component and settings values; `deserializeScene` restores defaults and validates loaded data.
 
 Components in M1: Transform, Mesh, Material, RigidBody, Joint, Light, Camera, Script, and Animator. Script source is lexed, parsed, type-checked against the component registry, and compiled from AST nodes to a restricted runtime API. `random()` uses deterministic seeded state, and script scene changes go through `applyOps`. Animator timeline tracks are managed separately from raw inspector fields.

@@ -113,10 +113,14 @@
     }
 
     const onObjectChange = () => emitTransform("change");
+    const onDraggingChanged = (event: { value: unknown }) => {
+      // TransformControls and OrbitControls share the canvas; only one should own a drag.
+      const dragging = event.value === true;
+      orbit.enabled = !dragging;
+      emitTransform(dragging ? "start" : "end");
+    };
     gizmo.addEventListener("objectChange", onObjectChange);
-    gizmo.addEventListener("dragging-changed", (event) => {
-      emitTransform(event.value ? "start" : "end");
-    });
+    gizmo.addEventListener("dragging-changed", onDraggingChanged);
 
     function resize() {
       const width = Math.max(1, host.clientWidth);
@@ -264,6 +268,7 @@
       renderer.domElement.removeEventListener("pointerup", pick);
       window.removeEventListener("keydown", onKey);
       gizmo.removeEventListener("objectChange", onObjectChange);
+      gizmo.removeEventListener("dragging-changed", onDraggingChanged);
       gizmo.dispose();
       orbit.dispose();
       for (const object of entityObjects.values()) {
