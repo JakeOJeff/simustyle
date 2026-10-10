@@ -9,3 +9,13 @@
 .statusbar{height:25px;min-height:25px;background:#191a21;border-top-color:var(--line);letter-spacing:.08em}.statusbar span:first-child{color:#b7b3c5}.statusbar i{box-shadow:0 0 8px #9b8cff}
 .hierarchy{background:#1b1c23!important;border-right-color:var(--line)!important}.hierarchy .panel-header{min-height:62px;border-bottom-color:var(--line)}.hierarchy .panel-header h2{font-size:11px;letter-spacing:.035em}.hierarchy .entity-count{font:9px 'DM Mono',monospace;color:#858391}.hierarchy .entity-list{padding:9px 7px;gap:3px}.hierarchy .select-button{min-height:31px;border-radius:5px}.hierarchy .select-button.selected{background:#39344f;box-shadow:inset 2px 0 #a99aff}.hierarchy .entity-name{font-size:10px}.hierarchy .add-button{border-radius:6px;background:#262631}.hierarchy .delete-button{width:25px}
 .viewport{background:#202124!important}
+
+/* Keep scrolling controls visible but quiet across the editor's dark panels. */
+:root{scrollbar-color:#45434f #17181f;scrollbar-width:thin}
+*::-webkit-scrollbar{width:10px;height:10px}
+*::-webkit-scrollbar-track{background:#17181f}
+*::-webkit-scrollbar-thumb{min-height:28px;border:2px solid #17181f;background:#45434f;background-clip:padding-box}
+*::-webkit-scrollbar-thumb:hover{background:#8272e8;background-clip:padding-box}
+*::-webkit-scrollbar-thumb:active{background:#a99aff;background-clip:padding-box}
+*::-webkit-scrollbar-corner{background:#17181f}
+*::-webkit-scrollbar-button{display:none}

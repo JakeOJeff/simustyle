@@ -4,6 +4,13 @@ Record meaningful project changes during the event, newest first.
 
 ## Event build log
 
+### 2026-10-11T02:45:00+05:30 — Restyle editor scrollbars
+
+- Changed: Added thin dark scroll tracks with a brighter violet hover and active thumb, including Firefox scrollbar colors and WebKit scrollbar styling. Files: `src/app.css`.
+- Why: Make scrolling controls fit the editor theme and easier to spot when interacting.
+- Validation: `npm run check` passed TypeScript, Svelte diagnostics (0 errors/0 warnings), all 89 tests, and the production build. The existing large-chunk warning remains.
+- Limitations: Browser-specific scrollbar rendering can vary by operating system.
+
 ### 2026-10-11T02:45:00+05:30 — Redesign the top bar
 
 - Changed: Replaced the toolbar with a new top bar component matching the participant's mockup: scene name with Saved/Unsaved state and a New/Open/Save menu; File, Edit (undo/redo, cut/copy/paste, duplicate, rename, delete, group), and View (panel toggles, grid, frame selected, AI settings) menus; undo/redo; a Select/Move/Rotate/Scale tool group (new Select tool, Q, hides the gizmo); a World/Local gizmo-space toggle; a snap toggle (0.5 m, 15°, 0.1 scale); the grid toggle; Add and Script; a Play clock (time and 60 fps frame) with Stop, Step one frame, and Play/Pause/Resume; and an Export button. Added Ctrl+S to save. Removed the old toolbar styles. Files: `src/editor/TopBar.svelte` (new), `src/App.svelte`, `src/editor/Viewport.svelte`, `src/editor/ExportMenu.svelte`, `src/app.css`, `README.md`.
