@@ -1,10 +1,12 @@
 <script lang="ts">
+  import { onDestroy } from "svelte";
   import Inspector from "./editor/Inspector.svelte";
   import Hierarchy from "./editor/Hierarchy.svelte";
   import Viewport from "./editor/Viewport.svelte";
   import { applyOps } from "./scene/applyOps";
   import { deserializeScene, serializeScene } from "./scene/serialize";
   import { createEmptyScene, type Scene, type SceneOp } from "./scene/types";
+  import type { PlayState, SimulationController } from "./runtime/physics";
 
   type ToolMode = "translate" | "rotate" | "scale";
 
@@ -14,8 +16,14 @@
   let undoStack: SceneOp[][] = $state([]);
   let redoStack: SceneOp[][] = $state([]);
   let message = $state("Ready");
+  let playState: PlayState = $state("stopped");
+  let playStarting = $state(false);
+  let simulationWarnings = $state<string[]>([]);
   let openInput: HTMLInputElement;
   let activeGesture: { id: string; initial: Scene; operation: SceneOp | null } | null = null;
+  let simulation: SimulationController | null = null;
+  let animationFrame = 0;
+  let lastFrameTime = 0;
 
   let selectedEntity = $derived(scene.entities.find((entity) => entity.id === selectedId) ?? null);
 
@@ -26,7 +34,7 @@
       return false;
     }
     scene = result.scene;
-    if (result.inverseOps.length) {
+    if (playState === "stopped" && result.inverseOps.length) {
       undoStack = [...undoStack, result.inverseOps];
       redoStack = [];
     }
@@ -94,7 +102,7 @@
     if (!gesture?.operation) return;
     const result = applyOps(gesture.initial, [gesture.operation]);
     if (result.errors.length) { message = result.errors.join(" · "); return; }
-    if (result.inverseOps.length) {
+    if (playState === "stopped" && result.inverseOps.length) {
       undoStack = [...undoStack, result.inverseOps];
       redoStack = [];
     }
@@ -142,6 +150,7 @@
   }
 
   function newScene() {
+    stopSimulation();
     activeGesture = null;
     scene = createEmptyScene();
     selectedId = null;
@@ -166,7 +175,9 @@
     const file = input.files?.[0];
     if (!file) return;
     try {
-      scene = deserializeScene(await file.text());
+      const loadedScene = deserializeScene(await file.text());
+      stopSimulation();
+      scene = loadedScene;
       activeGesture = null;
       selectedId = null;
       undoStack = [];
@@ -178,11 +189,75 @@
       input.value = "";
     }
   }
+
+  function physicsFrame(time: number) {
+    if (playState !== "playing" || !simulation) return;
+    const elapsed = Math.max(0, (time - lastFrameTime) / 1000);
+    lastFrameTime = time;
+    scene = simulation.advance(scene, elapsed);
+    animationFrame = requestAnimationFrame(physicsFrame);
+  }
+
+  async function startSimulation() {
+    if (playStarting || playState !== "stopped") return;
+    playStarting = true;
+    activeGesture = null;
+    try {
+      const { SimulationController: Controller } = await import("./runtime/physics");
+      simulation ??= new Controller();
+      const warnings = await simulation.play(scene);
+      simulationWarnings = warnings;
+      if (simulation.state !== "playing") {
+        message = warnings.join("; ") || "Could not start simulation";
+        return;
+      }
+      playState = "playing";
+      message = warnings.join("; ") || "Simulation playing";
+      lastFrameTime = performance.now();
+      animationFrame = requestAnimationFrame(physicsFrame);
+    } catch (error) {
+      message = error instanceof Error ? `Could not start simulation: ${error.message}` : "Could not start simulation";
+    } finally {
+      playStarting = false;
+    }
+  }
+
+  function pauseSimulation() {
+    simulation?.pause();
+    if (!simulation) return;
+    playState = simulation.state;
+    cancelAnimationFrame(animationFrame);
+    message = "Simulation paused";
+  }
+
+  function resumeSimulation() {
+    simulation?.resume();
+    if (!simulation) return;
+    playState = simulation.state;
+    lastFrameTime = performance.now();
+    animationFrame = requestAnimationFrame(physicsFrame);
+    message = "Simulation playing";
+  }
+
+  function stopSimulation() {
+    cancelAnimationFrame(animationFrame);
+    const snapshot = simulation?.stop() ?? null;
+    if (snapshot) scene = snapshot;
+    playState = "stopped";
+    playStarting = false;
+    simulationWarnings = [];
+    message = "Simulation stopped; scene restored";
+  }
+
+  onDestroy(() => {
+    cancelAnimationFrame(animationFrame);
+    simulation?.stop();
+  });
 </script>
 
 <svelte:head><title>SimuStyle — Scene Editor</title></svelte:head>
 
-<main class="editor">
+<main class="editor" class:simulation-playing={playState === "playing"} class:simulation-paused={playState === "paused"}>
   <header class="toolbar">
     <div class="brand"><span class="brand-mark">S</span><span>SimuStyle</span></div>
     <div class="toolbar-group file-actions">
@@ -192,8 +267,8 @@
       <input bind:this={openInput} class="file-input" type="file" accept=".json,.scene.json,application/json" onchange={loadScene} />
     </div>
     <div class="toolbar-group history-actions">
-      <button title="Undo" disabled={undoStack.length === 0} onclick={undo}>↶ <span>Undo</span></button>
-      <button title="Redo" disabled={redoStack.length === 0} onclick={redo}>↷ <span>Redo</span></button>
+      <button title="Undo" disabled={undoStack.length === 0 || playState !== "stopped"} onclick={undo}>↶ <span>Undo</span></button>
+      <button title="Redo" disabled={redoStack.length === 0 || playState !== "stopped"} onclick={redo}>↷ <span>Redo</span></button>
     </div>
     <div class="toolbar-spacer"></div>
     <div class="toolbar-group tools" aria-label="Transform tool">
@@ -201,7 +276,14 @@
       <button class:active={mode === "rotate"} title="Rotate (E)" onclick={() => mode = "rotate"}>⟳</button>
       <button class:active={mode === "scale"} title="Scale (R)" onclick={() => mode = "scale"}>⤢</button>
     </div>
-    <button class="play-button" disabled title="Simulation is coming in M3">▶ <span>Play</span></button>
+    {#if playState === "stopped"}
+      <button class="play-button" disabled={playStarting} onclick={startSimulation}>▶ <span>{playStarting ? "Starting…" : "Play"}</span></button>
+    {:else}
+      <div class="simulation-controls">
+        <button class="play-button" onclick={playState === "playing" ? pauseSimulation : resumeSimulation}>{playState === "playing" ? "Ⅱ Pause" : "▶ Resume"}</button>
+        <button class="stop-button" onclick={stopSimulation}>■ Stop</button>
+      </div>
+    {/if}
   </header>
 
   <div class="editor-body">
@@ -210,7 +292,7 @@
       <Viewport {scene} {selectedId} {mode} onSelect={(id) => selectedId = id} onTransform={updateTransform} onModeChange={(nextMode) => mode = nextMode} />
       <div class="bottom-panel">
         <div class="bottom-tabs"><button class="selected">Console</button><button disabled>AI <small>M5</small></button><button disabled>Timeline <small>M6</small></button></div>
-        <div class="console-line"><span class="console-dot">●</span>{message}</div>
+        <div class="console-line"><span class="console-dot">●</span>{message}{#if simulationWarnings.length}<span> · {simulationWarnings.join(" · ")}</span>{/if}</div>
       </div>
     </section>
     <Inspector {scene} entity={selectedEntity} onUpdate={updateComponent} onRemove={(component) => selectedId && apply([{ op: "update", id: selectedId, components: { [component]: null } }])} onAdd={addComponent} />
