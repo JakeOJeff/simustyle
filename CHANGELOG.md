@@ -4,6 +4,13 @@ Record meaningful project changes during the event, newest first.
 
 ## Event build log
 
+### 2026-10-11T01:44:00+05:30 — Make Hierarchy and Inspector movable windows
+
+- Changed: Moved Hierarchy and Inspector into the shared panel workspace with independent show/hide controls, floating and edge-docked layouts, and saved positions/sizes. Floating panel windows, including Hierarchy and Inspector, can be resized from the lower-right corner. Updated `src/App.svelte` and `README.md`.
+- Why: Let the scene tree and property editor be arranged alongside Console, AI, and Timeline instead of occupying fixed sidebars.
+- Validation: `npm run check` passed TypeScript, Svelte diagnostics (0 errors/0 warnings), all 84 tests, and the production build. Build retains the existing large JavaScript chunk warning.
+- Limitations: Docked panels use automatic sizing; manual resizing applies while a panel is floating. Interactive browser review has not been performed.
+
 ### 2026-10-11T01:52:00+05:30 — Add groups, parenting, and a clearer Scene panel
 
 - Changed: Added parent/child helpers that keep an object's world position when it changes parent, wrap objects in a group placed at their center, and ungroup back to the parent level (`src/scene/hierarchy.ts`). The Hierarchy is now a **Scene** panel with shape/group/light/script icons, collapsible groups with guide lines, Ctrl/Shift multi-select, double-click or F2 inline rename, drag into/next to/out of objects with drop highlighting, a per-row script button that adds or opens that object's script, a search box for larger scenes, and a tips footer. **Ctrl+G** groups the selection (or adds an empty group), **Ctrl+Shift+G** ungroups, and the context menu gains Group, Ungroup, and Move out to top level; right-clicking inside a multi-selection keeps it. Added **Add → Empty group** and editor shortcuts (Ctrl+Z/Ctrl+Y, Ctrl+D, Delete, F2). The viewport now renders mesh-less objects as invisible groups, so children follow their parent's Transform and a selected group gets the gizmo; box selection skips groups. During Play, viewport clicks and key presses go to scripts (`when clicked`, `when space is pressed`, `key left is pressed`). Fixed two regular expressions that had lost their backslashes, so multi-word object names highlight in the script editor and script errors are colored as errors in the console. Files: `src/scene/hierarchy.ts`, `src/editor/Hierarchy.svelte`, `src/editor/Viewport.svelte`, `src/App.svelte`, `tests/scene/hierarchy.test.ts`, `README.md`, `AI_USAGE.md`, and `CHANGELOG.md`.

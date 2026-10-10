@@ -92,7 +92,8 @@
     const index = peers.indexOf(panel);
     if (layout.dock === "left" || layout.dock === "right") {
       const height = 100 / peers.length;
-      return `${layout.dock}:0;top:${index * height}%;width:min(38%, 440px);height:${height}%;z-index:${zIndex}`;
+      const width = panel === "hierarchy" ? "min(26%, 300px)" : panel === "inspector" ? "min(28%, 330px)" : "min(38%, 440px)";
+      return `${layout.dock}:0;top:${index * height}%;width:${width};height:${height}%;z-index:${zIndex}`;
     }
     const width = 100 / peers.length;
     return `${layout.dock}:0;left:${index * width}%;width:${width}%;height:min(42%, 340px);z-index:${zIndex}`;
@@ -1042,7 +1043,7 @@ on start:
   .stage{position:relative;flex:1;min-height:0;display:flex}
   .panel-workspace{position:absolute;inset:0;z-index:5;overflow:hidden;pointer-events:none}
   .panel-window{position:absolute;display:flex;min-width:220px;min-height:140px;flex-direction:column;overflow:hidden;pointer-events:auto;border:1px solid #454450;border-radius:7px;background:#191a21;box-shadow:0 8px 28px #0008}
-  .panel-window.floating-panel{resize:both;overflow:auto}
+  .panel-window.floating-panel{resize:both;overflow:hidden;min-width:220px;min-height:140px}
   .panel-window-title{display:flex;flex:0 0 32px;align-items:center;gap:10px;padding:0 8px 0 12px;border-bottom:1px solid #ffffff12;background:#22232d;color:#dedce8;cursor:grab;user-select:none}
   .panel-window-title:active{cursor:grabbing}
   .panel-window-title strong{font-size:10px;font-weight:600}
@@ -1054,7 +1055,7 @@ on start:
   .panel-window-body{display:flex;min-width:0;min-height:0;flex:1;flex-direction:column;overflow:hidden}
   .panel-window-body :global(.ai-panel){flex:1}
   .panel-window-body :global(.timeline){min-height:0;flex:1;border-top:0}
-  .sidebar-panel-body :global(.hierarchy),.sidebar-panel-body :global(.inspector){width:100%;min-width:0;min-height:0;flex:1;flex-basis:auto;border-right:0}
+  .sidebar-panel-body :global(.hierarchy),.sidebar-panel-body :global(.inspector){width:100%;min-width:0;min-height:0;flex:1;flex-basis:auto;border-right:0;border-left:0}
   .console-body .console-line{flex:none;padding:6px 10px}
   .console-body .console-log{flex:1;min-height:30px}
   .console-body .command-bar{flex:none}
