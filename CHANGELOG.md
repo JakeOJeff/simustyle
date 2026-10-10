@@ -4,6 +4,13 @@ Record meaningful project changes during the event, newest first.
 
 ## Event build log
 
+### 2026-10-11T01:23:00+05:30 — Make delete actions explicit and reliable
+
+- Changed: Kept Hierarchy row delete controls visible, made deletion reject missing entities or active Play with a status message, and keep the context menu open if deletion fails. Files: `src/App.svelte`, `src/editor/Hierarchy.svelte`, and event records.
+- Why: Make the delete action visible and ensure failed deletion attempts explain why the object remains.
+- Validation: All 72 Vitest tests passed and `npm run build` passed with the existing large-chunk warning. `svelte-check` reported 12 errors in concurrent scripting changes (`src/runtime/scripts.ts` and `tests/lang/codegen.test.ts`), with no warnings in the changed editor components. In-app browser interaction could not be verified in this environment.
+- Limitations: Type checking is currently blocked by the concurrent scripting changes.
+
 ### 2026-10-11T01:17:00+05:30 — Add marquee selection and empty-space paste
 
 - Changed: Ctrl-drag in the viewport now selects intersecting objects and highlights the full selection in the viewport and Hierarchy. Right-clicking empty viewport space opens the Paste menu at the pointer's ground position; right-clicking empty Hierarchy space opens a root-level Paste menu. Files: `src/App.svelte`, `src/editor/Viewport.svelte`, `src/editor/Hierarchy.svelte`, `README.md`, and `CHANGELOG.md`.

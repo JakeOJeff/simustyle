@@ -6,7 +6,7 @@
     selectedIds: string[];
     onSelect: (id: string) => void;
     onCreate: () => void;
-    onDelete: (id: string) => void;
+    onDelete: (id: string) => boolean;
     onReparent: (id: string, parent: string | null) => void;
     onOpenScript: (id: string) => void;
     onContextMenu: (id: string, x: number, y: number) => void;
@@ -259,13 +259,11 @@
     flex: none;
     border-radius: 5px;
     font-size: 16px;
-    opacity: 0;
+    opacity: 0.7;
   }
 
   .entity-row:hover .delete-button,
-  .delete-button:focus-visible {
-    opacity: 1;
-  }
+  .delete-button:focus-visible { opacity: 1; }
 
   .delete-button:hover {
     color: #ff858d;

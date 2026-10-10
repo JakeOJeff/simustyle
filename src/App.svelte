@@ -207,9 +207,13 @@
   }
 
   function deleteEntity(id: string): boolean {
+    if (playState !== "stopped") { message = "Stop the simulation before deleting entities."; return false; }
+    if (!scene.entities.some((entity) => entity.id === id)) { message = "That entity no longer exists."; return false; }
     const ids = descendantsInDeleteOrder(id);
     if (apply(ids.map((entityId) => ({ op: "delete" as const, id: entityId })))) {
-      if (ids.some((entityId) => selectedIds.includes(entityId))) selectEntities(selectedIds.filter((entityId) => !ids.includes(entityId)));
+      if (ids.includes(selectedId ?? "") || ids.some((entityId) => selectedIds.includes(entityId))) {
+        selectEntities(selectedIds.filter((entityId) => !ids.includes(entityId)));
+      }
       return true;
     }
     return false;
@@ -794,7 +798,7 @@ on start:
         <button role="menuitem" onclick={() => duplicateEntity(contextMenu!.id!)} disabled={playState !== "stopped"}>Duplicate</button>
         <button role="menuitem" onclick={() => { const entity = scene.entities.find((candidate) => candidate.id === contextMenu!.id); if (entity) renameTarget = { id: entity.id, name: entity.name }; contextMenu = null; }} disabled={playState !== "stopped"}>Rename</button>
         <div class="context-separator"></div>
-        <button class="context-delete" role="menuitem" onclick={() => { deleteEntity(contextMenu!.id!); contextMenu = null; }} disabled={playState !== "stopped"}>Delete</button>
+        <button class="context-delete" role="menuitem" onclick={() => { if (deleteEntity(contextMenu!.id!)) contextMenu = null; }} disabled={playState !== "stopped"}>Delete</button>
       {/if}
     </div>
   {/if}
