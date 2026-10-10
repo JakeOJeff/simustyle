@@ -4,6 +4,13 @@ Record meaningful project changes during the event, newest first.
 
 ## Event build log
 
+### 2026-10-11T01:28:00+05:30 — Make Console, AI, and Timeline movable panels
+
+- Changed: Console, AI, and Timeline now open as independent windows. Drag a title bar to float a panel or snap it to the viewport's left, right, top, or bottom edge; floating panels can be resized. Panel visibility and layout persist in local storage. Updated `src/App.svelte`, `README.md`, and event records.
+- Why: Let users customize the editor workspace instead of keeping the three tools fixed in one tabbed strip.
+- Validation: TypeScript passed; `svelte-check` reported 0 errors and 0 warnings; `npm run build` passed with the existing large-chunk warning. Vitest ran 83 tests: 82 passed and one AI prompt expectation failed because concurrent prompt changes no longer include `self.rigidbody.applyImpulse`. In-app browser drag and resize behavior has not been manually checked.
+- Limitations: Docked panels sharing an edge divide that dock area evenly. The current test suite has one failure in the concurrent AI prompt changes.
+
 ### 2026-10-11T01:23:00+05:30 — Make delete actions explicit and reliable
 
 - Changed: Kept Hierarchy row delete controls visible, made deletion reject missing entities or active Play with a status message, and keep the context menu open if deletion fails. Files: `src/App.svelte`, `src/editor/Hierarchy.svelte`, and event records.

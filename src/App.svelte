@@ -24,7 +24,9 @@
   import type { PlayState, SimulationController } from "./runtime/physics";
 
   type ToolMode = "translate" | "rotate" | "scale";
-  type BottomTab = "console" | "ai" | "timeline";
+  type EditorPanel = "console" | "ai" | "timeline";
+  type PanelDock = "left" | "right" | "top" | "bottom" | "floating";
+  type PanelLayout = { dock: PanelDock; x: number; y: number; width: number; height: number };
 
   let scene: Scene = $state.raw(createEmptyScene());
   let selectedId: string | null = $state(null);
@@ -39,7 +41,17 @@
   let playState: PlayState = $state("stopped");
   let playStarting = $state(false);
   let simulationWarnings = $state<string[]>([]);
-  let bottomTab = $state<BottomTab>("console");
+  let panelOpen = $state<Record<EditorPanel, boolean>>({ console: true, ai: false, timeline: false });
+  let panelLayouts = $state<Record<EditorPanel, PanelLayout>>({
+    console: { dock: "bottom", x: 12, y: 12, width: 500, height: 250 },
+    ai: { dock: "right", x: 16, y: 16, width: 430, height: 340 },
+    timeline: { dock: "bottom", x: 16, y: 16, width: 680, height: 250 }
+  });
+  let draggingPanel: { panel: EditorPanel; offsetX: number; offsetY: number; stageLeft: number; stageTop: number; stageWidth: number; stageHeight: number } | null = $state(null);
+  let snapTarget: PanelDock | null = $state(null);
+  let stageHost: HTMLDivElement;
+  let panelWorkspaceReady = $state(false);
+  let focusedPanel: EditorPanel = $state("console");
   let frameToken = $state(0);
   let aiPrompt = $state("");
   let aiLoading = $state(false);
@@ -68,6 +80,102 @@
   let animationFrame = 0;
   let lastFrameTime = 0;
 
+  function panelWindowStyle(panel: EditorPanel): string {
+    const layout = panelLayouts[panel];
+    const zIndex = focusedPanel === panel ? 9 : 8;
+    if (layout.dock === "floating") return `left:${layout.x}px;top:${layout.y}px;width:${layout.width}px;height:${layout.height}px;z-index:${zIndex}`;
+    const peers = (Object.keys(panelLayouts) as EditorPanel[]).filter((candidate) => panelOpen[candidate] && panelLayouts[candidate].dock === layout.dock);
+    const index = peers.indexOf(panel);
+    if (layout.dock === "left" || layout.dock === "right") {
+      const height = 100 / peers.length;
+      return `${layout.dock}:0;top:${index * height}%;width:min(38%, 440px);height:${height}%;z-index:${zIndex}`;
+    }
+    const width = 100 / peers.length;
+    return `${layout.dock}:0;left:${index * width}%;width:${width}%;height:min(42%, 340px);z-index:${zIndex}`;
+  }
+
+  function restorePanelWorkspace() {
+    try {
+      const saved = JSON.parse(localStorage.getItem("simustyle.panelWorkspace") ?? "null") as { open?: Record<string, unknown>; layouts?: Record<string, Partial<PanelLayout>> } | null;
+      if (saved) {
+        for (const panel of ["console", "ai", "timeline"] as const) {
+          if (typeof saved.open?.[panel] === "boolean") panelOpen[panel] = saved.open[panel] as boolean;
+          const layout = saved.layouts?.[panel];
+          if (!layout) continue;
+          if (["left", "right", "top", "bottom", "floating"].includes(layout.dock ?? "")) {
+            panelLayouts[panel] = {
+              dock: layout.dock as PanelDock,
+              x: Number.isFinite(layout.x) ? layout.x! : 16,
+              y: Number.isFinite(layout.y) ? layout.y! : 16,
+              width: Number.isFinite(layout.width) ? Math.max(260, layout.width!) : 480,
+              height: Number.isFinite(layout.height) ? Math.max(150, layout.height!) : 280
+            };
+          }
+        }
+      }
+    } catch {
+      localStorage.removeItem("simustyle.panelWorkspace");
+    }
+    panelWorkspaceReady = true;
+  }
+
+  function rememberPanelSize(node: HTMLElement, panel: EditorPanel) {
+    const observer = new ResizeObserver(() => {
+      const layout = panelLayouts[panel];
+      if (layout.dock !== "floating") return;
+      const width = node.offsetWidth;
+      const height = node.offsetHeight;
+      if (Math.abs(width - layout.width) < 2 && Math.abs(height - layout.height) < 2) return;
+      panelLayouts[panel] = { ...layout, width, height };
+    });
+    observer.observe(node);
+    return { destroy: () => observer.disconnect() };
+  }
+
+  function startPanelDrag(event: PointerEvent, panel: EditorPanel) {
+    if (event.button !== 0 || (event.target as HTMLElement).closest(".panel-close")) return;
+    const windowRect = (event.currentTarget as HTMLElement).closest(".panel-window")?.getBoundingClientRect();
+    const stageRect = stageHost?.getBoundingClientRect();
+    if (!windowRect || !stageRect) return;
+    event.preventDefault();
+    draggingPanel = {
+      panel,
+      offsetX: event.clientX - windowRect.left,
+      offsetY: event.clientY - windowRect.top,
+      stageLeft: stageRect.left,
+      stageTop: stageRect.top,
+      stageWidth: stageRect.width,
+      stageHeight: stageRect.height
+    };
+    focusedPanel = panel;
+    panelLayouts[panel] = { ...panelLayouts[panel], dock: "floating", x: windowRect.left - stageRect.left, y: windowRect.top - stageRect.top };
+  }
+
+  function movePanelDrag(event: PointerEvent) {
+    if (!draggingPanel) return;
+    const drag = draggingPanel;
+    const x = event.clientX - drag.stageLeft - drag.offsetX;
+    const y = event.clientY - drag.stageTop - drag.offsetY;
+    const edge = 24;
+    snapTarget = event.clientX <= drag.stageLeft + edge ? "left"
+      : event.clientX >= drag.stageLeft + drag.stageWidth - edge ? "right"
+        : event.clientY <= drag.stageTop + edge ? "top"
+          : event.clientY >= drag.stageTop + drag.stageHeight - edge ? "bottom" : null;
+    panelLayouts[drag.panel] = {
+      ...panelLayouts[drag.panel],
+      dock: "floating",
+      x: Math.max(0, Math.min(x, drag.stageWidth - 220)),
+      y: Math.max(0, Math.min(y, drag.stageHeight - 100))
+    };
+  }
+
+  function endPanelDrag() {
+    if (!draggingPanel) return;
+    if (snapTarget) panelLayouts[draggingPanel.panel] = { ...panelLayouts[draggingPanel.panel], dock: snapTarget };
+    draggingPanel = null;
+    snapTarget = null;
+  }
+
   function selectEntity(id: string | null) {
     selectedId = id;
     selectedIds = id ? [id] : [];
@@ -79,6 +187,7 @@
   }
 
   onMount(() => {
+    restorePanelWorkspace();
     if (isDesktopRuntime()) {
       void getDesktopAiSettings().then((settings) => aiSettings = settings).catch((error) => {
         message = error instanceof Error ? error.message : "Could not load AI settings";
@@ -86,8 +195,12 @@
     }
   });
 
+  $effect(() => {
+    if (panelWorkspaceReady) localStorage.setItem("simustyle.panelWorkspace", JSON.stringify({ open: panelOpen, layouts: panelLayouts }));
+  });
+
   let selectedEntity = $derived(scene.entities.find((entity) => entity.id === selectedId) ?? null);
-  let viewportScene = $derived(bottomTab === "timeline" && playState === "stopped" ? animatorPreview.evaluate(scene, timelineTime).scene : scene);
+  let viewportScene = $derived(panelOpen.timeline && playState === "stopped" ? animatorPreview.evaluate(scene, timelineTime).scene : scene);
 
   function tracksFor(entityId: string): AnimationTrack[] {
     const value = scene.entities.find((entity) => entity.id === entityId)?.components.Animator?.tracks;
@@ -113,7 +226,7 @@
     else track.keys.push(key);
     track.keys.sort((a, b) => a.time - b.time);
     changeTracks(selectedId, tracks);
-    bottomTab = "timeline";
+    panelOpen.timeline = true;
   }
 
   function pushAIMessage(aiMessage: AIPanelMessage) { aiMessages = [...aiMessages, aiMessage]; }
@@ -124,7 +237,7 @@
     pushAIMessage({ id: `ai_${nextAIId++}`, role: "user", content: prompt });
     aiPrompt = "";
     aiLoading = true;
-    bottomTab = "ai";
+    panelOpen.ai = true;
     try {
       const result = await runSceneAgent(scene, prompt, {
         buildSystemPrompt,
@@ -673,6 +786,7 @@ on start:
 </script>
 
 <svelte:head><title>SimuStyle — Scene Editor</title></svelte:head>
+<svelte:window onpointermove={movePanelDrag} onpointerup={endPanelDrag} />
 
 <main class="editor" class:simulation-playing={playState === "playing"} class:simulation-paused={playState === "paused"}>
   <header class="toolbar">
@@ -736,7 +850,7 @@ on start:
           {/each}
         </div>
       {/if}
-      <div class="stage">
+      <div class="stage" bind:this={stageHost}>
         <Viewport scene={viewportScene} {selectedId} {selectedIds} {mode} {frameToken} {focusToken} {gridVisible} onSelect={selectEntity} onSelectMany={selectEntities} onTransform={updateTransform} onModeChange={(nextMode) => mode = nextMode} onContextMenu={(id, x, y, position) => openEntityMenu(id, x, y, position, id ? "object" : "viewport")} />
         {#if activeTab !== "scene" && openScripts.includes(activeTab)}
           {@const id = activeTab}
@@ -752,29 +866,45 @@ on start:
             />
           {/key}
         {/if}
-      </div>
-      <div class="bottom-panel" class:ai-expanded={bottomTab === "ai"} class:timeline-expanded={bottomTab === "timeline"} class:console-expanded={bottomTab === "console"}>
-        <div class="bottom-tabs">
-          <button class:selected={bottomTab === "console"} onclick={() => bottomTab = "console"}>Console</button>
-          <button class:selected={bottomTab === "ai"} onclick={() => bottomTab = "ai"}>AI</button>
-          <button class:selected={bottomTab === "timeline"} onclick={() => bottomTab = "timeline"}>Timeline</button>
+        <div class="panel-workspace" aria-label="Editor panels">
+          {#if panelOpen.console}
+            <section class="panel-window" class:floating-panel={panelLayouts.console.dock === "floating"} style={panelWindowStyle("console")} use:rememberPanelSize={"console"}>
+              <header class="panel-window-title"><button class="panel-drag-handle" type="button" aria-label="Drag Console panel to move or snap" onpointerdown={(event) => startPanelDrag(event, "console")}><strong>Console</strong><span>Drag to move or snap</span></button><button class="panel-close" type="button" aria-label="Close Console" onclick={() => panelOpen.console = false}><X size={13} /></button></header>
+              <div class="panel-window-body console-body">
+                <div class="console-line"><span class="console-dot">●</span>{message}{#if simulationWarnings.length}<span> · {simulationWarnings.join(" · ")}</span>{/if}</div>
+                <div class="console-log" aria-live="polite" use:followLog={consoleLog.length}>
+                  {#if !consoleLog.length}<div class="console-hint">Type a command below to change the scene right now, for example <code>move the box up 2</code> or <code>paint the sphere red</code>. Use the Script button to make it run on Play.</div>{/if}
+                  {#each consoleLog as entry}<div class="log-{entry.kind}">{entry.text}</div>{/each}
+                </div>
+                <form class="command-bar" onsubmit={(event) => { event.preventDefault(); runCommandBar(); }}>
+                  <span aria-hidden="true">›</span>
+                  <input aria-label="Run a script command" placeholder="move the red ball above the box" bind:value={commandText} onkeydown={commandKey} spellcheck="false" autocomplete="off" />
+                  <button type="submit" disabled={!commandText.trim() || playState !== "stopped"}>Run</button>
+                </form>
+              </div>
+            </section>
+          {/if}
+          {#if panelOpen.ai}
+            <section class="panel-window" class:floating-panel={panelLayouts.ai.dock === "floating"} style={panelWindowStyle("ai")} use:rememberPanelSize={"ai"}>
+              <header class="panel-window-title"><button class="panel-drag-handle" type="button" aria-label="Drag AI panel to move or snap" onpointerdown={(event) => startPanelDrag(event, "ai")}><strong>AI</strong><span>Drag to move or snap</span></button><button class="panel-close" type="button" aria-label="Close AI" onclick={() => panelOpen.ai = false}><X size={13} /></button></header>
+              <div class="panel-window-body"><AIPanel messages={aiMessages} loading={aiLoading} prompt={aiPrompt} onPromptChange={(value) => aiPrompt = value} onSubmit={submitAI} onUndo={undoAIChange} /></div>
+            </section>
+          {/if}
+          {#if panelOpen.timeline}
+            <section class="panel-window" class:floating-panel={panelLayouts.timeline.dock === "floating"} style={panelWindowStyle("timeline")} use:rememberPanelSize={"timeline"}>
+              <header class="panel-window-title"><button class="panel-drag-handle" type="button" aria-label="Drag Timeline panel to move or snap" onpointerdown={(event) => startPanelDrag(event, "timeline")}><strong>Timeline</strong><span>Drag to move or snap</span></button><button class="panel-close" type="button" aria-label="Close Timeline" onclick={() => panelOpen.timeline = false}><X size={13} /></button></header>
+              <div class="panel-window-body"><Timeline {scene} {selectedId} playhead={timelineTime} onPlayheadChange={(value) => timelineTime = value} onTrackChange={(tracks) => selectedId && changeTracks(selectedId, tracks)} /></div>
+            </section>
+          {/if}
+          {#if draggingPanel && snapTarget}
+            <div class="panel-snap-preview snap-{snapTarget}" aria-hidden="true"></div>
+          {/if}
         </div>
-        <div class="console-line"><span class="console-dot">●</span>{message}{#if simulationWarnings.length}<span> · {simulationWarnings.join(" · ")}</span>{/if}</div>
-        {#if bottomTab === "ai"}
-          <AIPanel messages={aiMessages} loading={aiLoading} prompt={aiPrompt} onPromptChange={(value) => aiPrompt = value} onSubmit={submitAI} onUndo={undoAIChange} />
-        {:else if bottomTab === "timeline"}
-          <Timeline {scene} {selectedId} playhead={timelineTime} onPlayheadChange={(value) => timelineTime = value} onTrackChange={(tracks) => selectedId && changeTracks(selectedId, tracks)} />
-        {:else}
-          <div class="console-log" aria-live="polite" use:followLog={consoleLog.length}>
-            {#if !consoleLog.length}<div class="console-hint">Type a command below to change the scene right now, for example <code>move the box up 2</code> or <code>paint the sphere red</code>. Use the Script button to make it run on Play.</div>{/if}
-            {#each consoleLog as entry}<div class="log-{entry.kind}">{entry.text}</div>{/each}
-          </div>
-          <form class="command-bar" onsubmit={(event) => { event.preventDefault(); runCommandBar(); }}>
-            <span aria-hidden="true">›</span>
-            <input aria-label="Run a script command" placeholder="move the red ball above the box" bind:value={commandText} onkeydown={commandKey} spellcheck="false" autocomplete="off" />
-            <button type="submit" disabled={!commandText.trim() || playState !== "stopped"}>Run</button>
-          </form>
-        {/if}
+      </div>
+      <div class="bottom-tabs" role="toolbar" aria-label="Show or hide editor panels">
+        <button class:selected={panelOpen.console} aria-pressed={panelOpen.console} onclick={() => panelOpen.console = !panelOpen.console}>Console</button>
+        <button class:selected={panelOpen.ai} aria-pressed={panelOpen.ai} onclick={() => panelOpen.ai = !panelOpen.ai}>AI</button>
+        <button class:selected={panelOpen.timeline} aria-pressed={panelOpen.timeline} onclick={() => panelOpen.timeline = !panelOpen.timeline}>Timeline</button>
       </div>
     </section>
     <Inspector {scene} entity={selectedEntity} onUpdate={updateComponent} onRemove={(component) => selectedId && apply([{ op: "update", id: selectedId, components: { [component]: null } }])} onAdd={addComponent} onKeyframe={addKeyframe} onOpenScript={() => selectedId && openScript(selectedId)} />
@@ -817,6 +947,28 @@ on start:
 
 <style>
   .stage{position:relative;flex:1;min-height:0;display:flex}
+  .panel-workspace{position:absolute;inset:0;z-index:5;overflow:hidden;pointer-events:none}
+  .panel-window{position:absolute;display:flex;min-width:220px;min-height:140px;flex-direction:column;overflow:hidden;pointer-events:auto;border:1px solid #454450;border-radius:7px;background:#191a21;box-shadow:0 8px 28px #0008}
+  .panel-window.floating-panel{resize:both;overflow:auto}
+  .panel-window-title{display:flex;flex:0 0 32px;align-items:center;gap:10px;padding:0 8px 0 12px;border-bottom:1px solid #ffffff12;background:#22232d;color:#dedce8;cursor:grab;user-select:none}
+  .panel-window-title:active{cursor:grabbing}
+  .panel-window-title strong{font-size:10px;font-weight:600}
+  .panel-window-title span{flex:1;color:#777583;font-size:9px}
+  .panel-drag-handle{display:flex;height:100%;min-width:0;flex:1;align-items:center;gap:10px;padding:0;border:0;background:transparent;text-align:left;cursor:grab;user-select:none}
+  .panel-drag-handle:active{cursor:grabbing}
+  .panel-close{display:grid;width:22px;height:22px;flex:none;place-items:center;border:0;border-radius:4px;background:transparent;color:#9795a3;cursor:pointer}
+  .panel-close:hover{background:#ffffff12;color:#fff}
+  .panel-window-body{display:flex;min-width:0;min-height:0;flex:1;flex-direction:column;overflow:hidden}
+  .panel-window-body :global(.ai-panel){flex:1}
+  .panel-window-body :global(.timeline){min-height:0;flex:1;border-top:0}
+  .console-body .console-line{flex:none;padding:6px 10px}
+  .console-body .console-log{flex:1;min-height:30px}
+  .console-body .command-bar{flex:none}
+  .panel-snap-preview{position:absolute;z-index:10;border:1px solid #a99aff;background:#9b8cff22;pointer-events:none}
+  .panel-snap-preview.snap-left{top:0;bottom:0;left:0;width:38%}
+  .panel-snap-preview.snap-right{top:0;right:0;bottom:0;width:38%}
+  .panel-snap-preview.snap-top{top:0;right:0;left:0;height:42%}
+  .panel-snap-preview.snap-bottom{right:0;bottom:0;left:0;height:42%}
   .stage-tabs{height:32px;display:flex;align-items:stretch;gap:1px;padding:0 6px;background:#15161c;border-bottom:1px solid #ffffff0e;overflow-x:auto}
   .stage-tab{display:flex;align-items:center;gap:6px;padding:0 6px 0 10px;border:0;border-top:2px solid transparent;background:transparent;color:#8a8896;font-size:10.5px;white-space:nowrap;cursor:pointer}
   button.stage-tab{padding-right:12px}
@@ -827,7 +979,6 @@ on start:
   .close-tab:hover{background:#ffffff12;color:#fff}
   .script-button{height:30px;display:flex;align-items:center;gap:6px;padding:0 11px;border:1px solid #7fd1ff40;border-radius:6px;background:#1f2f3a;color:#a9def7;font-size:10px;cursor:pointer}
   .script-button:hover{background:#26394a}
-  :global(.bottom-panel.console-expanded){height:172px;min-height:140px;display:flex;flex-direction:column}
   .console-log{flex:1;min-height:0;overflow:auto;padding:0 15px 4px;font:10.5px/17px 'DM Mono',monospace;color:#a9a7b5}
   .console-hint{color:#77757f;font-family:'DM Sans',sans-serif;font-size:10.5px}.console-hint code{color:#7fd1ff;font-family:'DM Mono',monospace}
   .log-info{color:#8a8896}.log-print{color:#d9d7e2}.log-error{color:#ff8992}
