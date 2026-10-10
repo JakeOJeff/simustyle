@@ -6,7 +6,7 @@
 - **Short description:** An AI-native 3D scene, simulation, and animation editor, being built milestone by milestone from a schema-validated scene core.
 - **Code repository URL:** https://github.com/JakeOJeff/simustyle
 - **Final submitted implementation commit SHA:** Pending final implementation commit.
-- **Working demo URL or local demo steps:** Run `npm install` and `npm run dev`; open the Vite URL and use “Add a box to the scene” to exercise the M1 browser starter.
+- **Working demo URL or local demo steps:** Run `npm install` and `npm run dev`; open the Vite URL, add a box from the hierarchy, edit color/position/scale in the inspector, use W/E/R gizmos, then undo/redo and save the scene.
 - **Demo access requirements:** Node.js 20.19+ and npm. M1 does not need an API key.
 
 ## Participants
@@ -23,10 +23,10 @@ Participate solo or in a team of up to 4. Fill in actual participant details bef
 - **Install command:** `npm install`.
 - **Required environment variable names:** None for the M1 demo. AI settings will be added in M5/M8.
 - **Start command:** `npm run dev`.
-- **Demo walkthrough:** Add a box and inspect the serialized scene JSON; validation and default omission are covered by the test suite.
-- **Checks performed and results:** `npm run check` passed, including TypeScript, Svelte diagnostics, seven Vitest tests, and Vite production build.
-- **Known limitations or incomplete features:** This is the M1 checkpoint. The 3D viewport, hierarchy, inspector, simulation, script compiler, AI agent, timeline, export, and Tauri package are not implemented yet.
-- **Libraries, APIs, and public datasets used:** Svelte 5, Vite, TypeScript, Vitest, three.js, and Rapier are installed for the required app stack; M1 does not yet use the 3D or physics packages. No public datasets.
+- **Demo walkthrough:** Add a box from the hierarchy, select it, use inspector fields and viewport gizmos to edit it, undo/redo the edits, and save/open the scene JSON.
+- **Checks performed and results:** `npm run check` passed, including TypeScript, Svelte diagnostics (0 errors/warnings), 8 Vitest tests, and Vite production build. The build emits a bundle-size warning for the current three.js viewport chunk.
+- **Known limitations or incomplete features:** This is the M2 checkpoint. Physics, script compiler, AI agent, timeline, glTF/HTML/video exports, and Tauri packaging are not implemented yet.
+- **Libraries, APIs, and public datasets used:** Svelte 5, Vite, TypeScript, Vitest, three.js, and Rapier are installed for the required app stack. No public datasets.
 - **AI usage record:** [AI_USAGE.md](AI_USAGE.md)
 - **Development change log:** [CHANGELOG.md](CHANGELOG.md)
 

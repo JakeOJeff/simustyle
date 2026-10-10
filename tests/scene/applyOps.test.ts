@@ -82,4 +82,18 @@ describe("applyOps", () => {
     expect(history.scene.entities).toEqual([]);
     expect(history.scene.settings.background).toBe("#202124");
   });
+
+  it("reparents entities through update ops and restores parent on undo", () => {
+    const history = new SceneHistory(createEmptyScene());
+    expect(history.apply([
+      { op: "create", id: "group", name: "Group", parent: null, components: {} },
+      { op: "create", id: "child", name: "Child", parent: null, components: {} }
+    ])).toEqual([]);
+    expect(history.apply([{ op: "update", id: "child", components: {}, parent: "group" }])).toEqual([]);
+    expect(history.scene.entities.find((entity) => entity.id === "child")?.parent).toBe("group");
+    const invalid = applyOps(history.scene, [{ op: "update", id: "group", components: {}, parent: "child" }]);
+    expect(invalid.errors.join(" ")).toContain("parent hierarchy contains a cycle");
+    expect(history.undo()).toEqual([]);
+    expect(history.scene.entities.find((entity) => entity.id === "child")?.parent).toBeNull();
+  });
 });
