@@ -1,6 +1,7 @@
 import * as RAPIER from "@dimforge/rapier3d-compat";
 import { applyOps } from "../scene/applyOps";
 import type { Entity, Scene, Vec3 } from "../scene/types";
+import { AnimatorRuntime } from "./animator";
 import { ScriptRuntime, scriptOps } from "./scripts";
 
 export type PlayState = "stopped" | "playing" | "paused";
@@ -232,12 +233,16 @@ export class SimulationController {
   private runtime: PhysicsRuntime | null = null;
   private snapshot: Scene | null = null;
   private scripts: ScriptRuntime | null = null;
+  private readonly animator = new AnimatorRuntime();
+  private readonly animationWarnings = new Set<string>();
   private readonly scriptMessages: string[] = [];
   private startedScene: Scene | null = null;
 
   async play(scene: Scene): Promise<string[]> {
     if (this.state !== "stopped") return [];
     this.snapshot = structuredClone(scene);
+    this.animator.reset();
+    this.animationWarnings.clear();
     try {
       this.scripts = new ScriptRuntime(scene, 1, (id, method, args) => this.runtime?.applyScriptAction(id, method, args) ?? false);
       const initial = this.scripts.start();
@@ -246,6 +251,7 @@ export class SimulationController {
         const result = applyOps(scene, initialOps);
         if (!result.errors.length) scene = result.scene;
       }
+      this.scripts.setScene(scene);
       this.startedScene = scene;
       this.scriptMessages.push(...this.scripts.takeIssues().map((issue) => `${issue.entityId}:${issue.line}:${issue.column} ${issue.message}`));
       this.runtime = await PhysicsRuntime.create(scene);
@@ -269,22 +275,42 @@ export class SimulationController {
   advance(scene: Scene, elapsedSeconds: number): Scene {
     if (this.state !== "playing" || !this.runtime) return scene;
     const before = scene;
-    if (this.scripts) scene = this.scripts.advance(elapsedSeconds);
+    if (this.scripts) {
+      this.scripts.setScene(scene);
+      scene = this.scripts.advance(elapsedSeconds);
+    }
     const operations = scriptOps(before, scene);
     if (operations.length) {
       const result = applyOps(before, operations);
       if (result.errors.length) this.scriptMessages.push(...result.errors);
       else scene = result.scene;
     }
-    const simulated = this.runtime.advance(scene, elapsedSeconds, (firstId, secondId) => {
-      this.scripts?.collide(firstId, secondId);
-      this.scripts?.collide(secondId, firstId);
-    });
+    this.scripts?.setScene(scene);
+    const collisions: Array<[string, string]> = [];
+    let simulated = this.runtime.advance(scene, elapsedSeconds, (firstId, secondId) => collisions.push([firstId, secondId]));
     if (this.scripts) {
+      this.scripts.setScene(simulated);
+      for (const [firstId, secondId] of collisions) {
+        this.scripts.collide(firstId, secondId);
+        this.scripts.collide(secondId, firstId);
+      }
+      const collisionOps = scriptOps(simulated, this.scripts.scene);
+      if (collisionOps.length) {
+        const result = applyOps(simulated, collisionOps);
+        if (result.errors.length) this.scriptMessages.push(...result.errors);
+        else simulated = result.scene;
+      }
+      this.scripts.setScene(simulated);
       this.scriptMessages.push(...this.scripts.takeIssues().map((issue) => `${issue.entityId}:${issue.line}:${issue.column} ${issue.message}`));
       this.scriptMessages.push(...this.scripts.takePrints().map((entry) => `${entry.entityId}: ${entry.values.map(String).join(" ")}`));
     }
-    return simulated;
+    const animated = this.animator.advance(simulated, elapsedSeconds);
+    for (const warning of animated.warnings) {
+      if (this.animationWarnings.has(warning)) continue;
+      this.animationWarnings.add(warning);
+      this.scriptMessages.push(warning);
+    }
+    return animated.scene;
   }
 
   stop(): Scene | null {
@@ -294,6 +320,7 @@ export class SimulationController {
     this.startedScene = null;
     this.runtime = null;
     this.snapshot = null;
+    this.animationWarnings.clear();
     this.state = "stopped";
     return snapshot ? structuredClone(snapshot) : null;
   }

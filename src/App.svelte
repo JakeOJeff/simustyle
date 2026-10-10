@@ -7,6 +7,10 @@
   import { requestSceneEdit } from "./ai/client";
   import { AI_RESPONSE_JSON_SCHEMA, buildSystemPrompt } from "./ai/prompt";
   import { runSceneAgent } from "./ai/agent";
+  import Timeline from "./editor/Timeline.svelte";
+  import type { AnimationTrack, AnimationValue } from "./runtime/animator";
+  import { AnimatorRuntime } from "./runtime/animator";
+  import { componentSchemas } from "./registry";
   import { applyOps } from "./scene/applyOps";
   import { deserializeScene, serializeScene } from "./scene/serialize";
   import { createEmptyScene, type Scene, type SceneOp } from "./scene/types";
@@ -24,13 +28,15 @@
   let playState: PlayState = $state("stopped");
   let playStarting = $state(false);
   let simulationWarnings = $state<string[]>([]);
-  let bottomTab: BottomTab = $state("console");
+  let bottomTab = $state<BottomTab>("console");
   let frameToken = $state(0);
   let aiPrompt = $state("");
   let aiLoading = $state(false);
   let aiMessages: AIPanelMessage[] = $state([]);
   let aiUndoRecords: Record<string, SceneOp[]> = $state({});
   let nextAIId = 1;
+  let timelineTime = $state(0);
+  const animatorPreview = new AnimatorRuntime();
   let openInput: HTMLInputElement;
   let activeGesture: { id: string; initial: Scene; operation: SceneOp | null } | null = null;
   let simulation: SimulationController | null = null;
@@ -38,6 +44,34 @@
   let lastFrameTime = 0;
 
   let selectedEntity = $derived(scene.entities.find((entity) => entity.id === selectedId) ?? null);
+  let viewportScene = $derived(bottomTab === "timeline" && playState === "stopped" ? animatorPreview.evaluate(scene, timelineTime).scene : scene);
+
+  function tracksFor(entityId: string): AnimationTrack[] {
+    const value = scene.entities.find((entity) => entity.id === entityId)?.components.Animator?.tracks;
+    return Array.isArray(value) ? value as AnimationTrack[] : [];
+  }
+
+  function changeTracks(entityId: string, tracks: AnimationTrack[]) {
+    apply([{ op: "update", id: entityId, components: { Animator: { tracks } } }]);
+  }
+
+  function addKeyframe(component: string, field: string) {
+    if (!selectedId) return;
+    const entity = scene.entities.find((candidate) => candidate.id === selectedId);
+    const fieldSchema = componentSchemas[component]?.fields[field];
+    if (!entity || !fieldSchema) return;
+    const value = (entity.components[component]?.[field] ?? fieldSchema.default) as AnimationValue;
+    const tracks = tracksFor(selectedId).map((track) => structuredClone(track));
+    let track = tracks.find((candidate) => candidate.component === component && candidate.field === field);
+    if (!track) { track = { component, field, keys: [] }; tracks.push(track); }
+    const existing = track.keys.findIndex((key) => Math.abs(key.time - timelineTime) < 0.001);
+    const key = { time: timelineTime, value: structuredClone(value), interpolation: "linear" as const };
+    if (existing >= 0) track.keys[existing] = key;
+    else track.keys.push(key);
+    track.keys.sort((a, b) => a.time - b.time);
+    changeTracks(selectedId, tracks);
+    bottomTab = "timeline";
+  }
 
   function pushAIMessage(aiMessage: AIPanelMessage) { aiMessages = [...aiMessages, aiMessage]; }
 
@@ -259,6 +293,7 @@
     if (playState !== "playing" || !simulation) return;
     const elapsed = Math.max(0, (time - lastFrameTime) / 1000);
     lastFrameTime = time;
+    timelineTime += elapsed;
     scene = simulation.advance(scene, elapsed);
     const scriptMessages = simulation.takeScriptMessages();
     if (scriptMessages.length) simulationWarnings = [...simulationWarnings, ...scriptMessages].slice(-30);
@@ -269,6 +304,7 @@
     if (playStarting || playState !== "stopped") return;
     playStarting = true;
     activeGesture = null;
+    timelineTime = 0;
     try {
       const { SimulationController: Controller } = await import("./runtime/physics");
       simulation ??= new Controller();
@@ -312,6 +348,7 @@
     const snapshot = simulation?.stop() ?? null;
     if (snapshot) scene = snapshot;
     playState = "stopped";
+    timelineTime = 0;
     playStarting = false;
     simulationWarnings = [];
     message = "Simulation stopped; scene restored";
@@ -357,20 +394,22 @@
   <div class="editor-body">
     <Hierarchy scene={scene} {selectedId} onSelect={(id) => selectedId = id} onCreate={createBox} onDelete={deleteEntity} onReparent={reparentEntity} />
     <section class="viewport-column">
-      <Viewport {scene} {selectedId} {mode} {frameToken} onSelect={(id) => selectedId = id} onTransform={updateTransform} onModeChange={(nextMode) => mode = nextMode} />
-      <div class="bottom-panel" class:ai-expanded={bottomTab === "ai"}>
+      <Viewport scene={viewportScene} {selectedId} {mode} {frameToken} onSelect={(id) => selectedId = id} onTransform={updateTransform} onModeChange={(nextMode) => mode = nextMode} />
+      <div class="bottom-panel" class:ai-expanded={bottomTab === "ai"} class:timeline-expanded={bottomTab === "timeline"}>
         <div class="bottom-tabs">
           <button class:selected={bottomTab === "console"} onclick={() => bottomTab = "console"}>Console</button>
           <button class:selected={bottomTab === "ai"} onclick={() => bottomTab = "ai"}>AI</button>
-          <button disabled>Timeline <small>M6</small></button>
+          <button class:selected={bottomTab === "timeline"} onclick={() => bottomTab = "timeline"}>Timeline</button>
         </div>
         <div class="console-line"><span class="console-dot">●</span>{message}{#if simulationWarnings.length}<span> · {simulationWarnings.join(" · ")}</span>{/if}</div>
         {#if bottomTab === "ai"}
           <AIPanel messages={aiMessages} loading={aiLoading} prompt={aiPrompt} onPromptChange={(value) => aiPrompt = value} onSubmit={submitAI} onUndo={undoAIChange} />
+        {:else if bottomTab === "timeline"}
+          <Timeline {scene} {selectedId} playhead={timelineTime} onPlayheadChange={(value) => timelineTime = value} onTrackChange={(tracks) => selectedId && changeTracks(selectedId, tracks)} />
         {/if}
       </div>
     </section>
-    <Inspector {scene} entity={selectedEntity} onUpdate={updateComponent} onRemove={(component) => selectedId && apply([{ op: "update", id: selectedId, components: { [component]: null } }])} onAdd={addComponent} />
+    <Inspector {scene} entity={selectedEntity} onUpdate={updateComponent} onRemove={(component) => selectedId && apply([{ op: "update", id: selectedId, components: { [component]: null } }])} onAdd={addComponent} onKeyframe={addKeyframe} />
   </div>
   <footer class="statusbar"><span><i></i> SCENE CORE</span><span>{scene.entities.length} {scene.entities.length === 1 ? "ENTITY" : "ENTITIES"}</span><span>Y-UP · METERS</span></footer>
 </main>

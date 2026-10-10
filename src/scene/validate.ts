@@ -13,6 +13,69 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
+function validateAnimationTracks(value: unknown, path: string, errors: string[]): void {
+  if (!Array.isArray(value)) {
+    errors.push(`${path}: must be an array`);
+    return;
+  }
+
+  for (const [trackIndex, track] of value.entries()) {
+    const trackPath = `${path}[${trackIndex}]`;
+    if (!isRecord(track)) {
+      errors.push(`${trackPath}: must be an object`);
+      continue;
+    }
+
+    let keyField: FieldSchema | undefined;
+    if (typeof track.component !== "string" || typeof track.field !== "string") {
+      errors.push(`${trackPath}: component and field must be strings`);
+    } else {
+      const componentSchema = componentSchemas[track.component];
+      if (!componentSchema) {
+        errors.push(`${trackPath}.component: unknown component '${track.component}'`);
+      } else {
+        keyField = componentSchema.fields[track.field];
+        if (!keyField) errors.push(`${trackPath}.field: unknown field '${track.field}' on ${track.component}`);
+        else if (keyField.type !== "float" && keyField.type !== "vec3" && keyField.type !== "color") {
+          errors.push(`${trackPath}.field: ${track.component}.${track.field} cannot be animated`);
+          keyField = undefined;
+        }
+      }
+    }
+
+    if (!Array.isArray(track.keys)) {
+      errors.push(`${trackPath}.keys: must be an array`);
+      continue;
+    }
+    for (const [keyIndex, key] of track.keys.entries()) {
+      const keyPath = `${trackPath}.keys[${keyIndex}]`;
+      if (!isRecord(key)) {
+        errors.push(`${keyPath}: must be an object`);
+        continue;
+      }
+      if (typeof key.time !== "number" || !Number.isFinite(key.time)) {
+        errors.push(`${keyPath}.time: must be a finite number`);
+      } else if (key.time < 0) {
+        errors.push(`${keyPath}.time: must be nonnegative`);
+      }
+      if (key.interpolation !== undefined && key.interpolation !== "linear" && key.interpolation !== "ease-in-out" && key.interpolation !== "step") {
+        errors.push(`${keyPath}.interpolation: must be linear, ease-in-out, or step`);
+      }
+      if (keyField) {
+        const validValue = keyField.type === "float"
+          ? typeof key.value === "number" && Number.isFinite(key.value)
+          : keyField.type === "vec3"
+            ? Array.isArray(key.value) && key.value.length === 3 && key.value.every((part) => typeof part === "number" && Number.isFinite(part))
+            : typeof key.value === "string" && /^#[0-9a-fA-F]{6}$/.test(key.value);
+        if (!validValue) {
+          const expected = keyField.type === "float" ? "a finite number" : keyField.type === "vec3" ? "an array of three finite numbers" : "a #rrggbb color";
+          errors.push(`${keyPath}.value: must be ${expected}`);
+        }
+      }
+    }
+  }
+}
+
 export function validateFieldValue(field: FieldSchema, value: unknown): string | undefined {
   switch (field.type) {
     case "float":
@@ -60,7 +123,10 @@ function validateComponent(componentName: string, value: unknown, path: string, 
       if (error) errors.push(`${path}.${fieldName}: ${error}`);
       continue;
     }
-    if (schema.managedFields?.[fieldName] === "animationTracks" && Array.isArray(fieldValue)) continue;
+    if (schema.managedFields?.[fieldName] === "animationTracks") {
+      validateAnimationTracks(fieldValue, `${path}.${fieldName}`, errors);
+      continue;
+    }
     if (schema.managedFields?.[fieldName] === "scriptParameters" && isRecord(fieldValue) && Object.values(fieldValue).every((value) => ["number", "boolean", "string"].includes(typeof value))) continue;
     errors.push(`${path}.${fieldName}: unknown field`);
   }

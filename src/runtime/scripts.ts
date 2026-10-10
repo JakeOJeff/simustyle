@@ -185,6 +185,8 @@ export class ScriptRuntime {
   }
 
   get scene(): Scene { return this.currentScene; }
+  /** Rebase script reads on the latest physics/animation scene while preserving local script state. */
+  setScene(scene: Scene): void { this.currentScene = scene; }
   takeIssues(): ScriptIssue[] { return this.issues.splice(0); }
   takePrints(): ScriptPrint[] { return this.prints.splice(0); }
 }

@@ -10,9 +10,10 @@
     onUpdate: (component: string, fields: Record<string, unknown>, phase?: "start" | "preview" | "end") => void;
     onRemove: (component: string) => void;
     onAdd: (component: string) => void;
+    onKeyframe: (component: string, field: string) => void;
   }
 
-  let { scene, entity, onUpdate, onRemove, onAdd }: Props = $props();
+  let { scene, entity, onUpdate, onRemove, onAdd, onKeyframe }: Props = $props();
   let openComponents = $state<Record<string, boolean>>({});
   let addComponent = $state("");
 
@@ -45,6 +46,8 @@
     }
     update("Script", "parameters", { ...values, [param.name]: value });
   }
+
+  function keyframeable(field: FieldSchema): boolean { return field.type === "float" || field.type === "vec3" || field.type === "color"; }
 </script>
 
 <aside class="inspector panel">
@@ -70,7 +73,10 @@
           {#if openComponents[component] ?? true}
             <div class="fields">
               {#each Object.entries(schema.fields) as [fieldName, field] (fieldName)}
-                {@render fieldControl(fieldName, field, fields[fieldName] ?? field.default, scene, (value, phase) => update(component, fieldName, value, phase))}
+                <div class="inspector-animatable-field">
+                  {@render fieldControl(fieldName, field, fields[fieldName] ?? field.default, scene, (value, phase) => update(component, fieldName, value, phase))}
+                  {#if keyframeable(field)}<button class="keyframe-button" aria-label="Add keyframe for {component}.{fieldName}" title="Add keyframe at current playhead" onclick={() => onKeyframe(component, fieldName)}>◇</button>{/if}
+                </div>
               {/each}
               {#if component === "Script"}
                 {@const script = inspectScript(fields.source)}
@@ -144,4 +150,5 @@
 <style>
   .inspector{width:292px;min-width:260px;overflow:auto;background:#17181f;border-left:1px solid #ffffff10}.panel-heading{height:42px;padding:0 14px;display:flex;align-items:center;justify-content:space-between;border-bottom:1px solid #ffffff10;color:#9a98a6;font:9px 'DM Mono',monospace;letter-spacing:.13em}.muted{color:#666573}.entity-heading{display:flex;align-items:center;gap:10px;padding:17px 14px 13px}.entity-icon{display:grid;place-items:center;width:30px;height:30px;background:#282538;border-radius:7px;color:#a99cff}.entity-title{display:grid;gap:3px}.entity-title strong{font-size:12px;font-weight:600}.entity-title small{font:9px 'DM Mono',monospace;color:#757381}.name-field{display:grid;gap:6px;padding:0 14px 13px}.name-field span,.field-label{font:9px 'DM Mono',monospace;color:#898795;text-transform:uppercase;letter-spacing:.07em}.name-field input,.text-input,textarea{width:100%;height:29px;background:#111217;border:1px solid #ffffff12;border-radius:4px;color:#c9c8d1;padding:0 8px;font:11px 'DM Sans',sans-serif}.component-card{border-top:1px solid #ffffff0d}.component-title{height:36px;padding:0 10px;display:flex;align-items:center;gap:6px;color:#d4d2dd;font-size:11px;font-weight:600}.collapse,.remove-component{border:0;background:none;color:#777583;cursor:pointer}.collapse{width:18px;font-size:16px}.remove-component{margin-left:auto;font-size:17px}.remove-component:hover{color:#ff7a87}.fields{padding:2px 11px 10px}.field-row{display:grid;gap:7px;padding:7px 0}.range-input{display:grid;grid-template-columns:1fr 64px;align-items:center;gap:8px}.range-input input[type=range]{width:100%;accent-color:#9788ff;height:14px}.numeric{width:64px;height:25px;background:#111217;border:1px solid #ffffff13;border-radius:4px;color:#d2d0dc;text-align:right;padding:0 5px;font:10px 'DM Mono',monospace}.numeric.full{width:100%}.toggle{width:30px;height:17px;border:0;border-radius:10px;background:#35343d;padding:2px;cursor:pointer}.toggle i{display:block;width:13px;height:13px;background:#96939f;border-radius:50%;transition:transform .15s}.toggle.checked{background:#7765dc}.toggle.checked i{transform:translateX(13px);background:#fff}.color-input{display:flex;align-items:center;gap:8px}.color-input input{width:28px;height:23px;background:none;border:0;padding:0;cursor:pointer}.color-input code{font:10px 'DM Mono',monospace;color:#c2bfcd}.vector-input{display:grid;grid-template-columns:repeat(3,1fr);gap:5px}.vector-input label{display:flex;align-items:center;border:1px solid #ffffff12;border-radius:4px;background:#111217;overflow:hidden}.vector-input span{padding-left:5px;font:9px 'DM Mono',monospace;color:#85828e}.vector-input .axis-0 span{color:#e88689}.vector-input .axis-1 span{color:#87c99f}.vector-input .axis-2 span{color:#829bdf}.vector-input input{width:100%;min-width:0;height:25px;background:transparent;border:0;outline:none;color:#dedce7;text-align:right;padding:0 4px;font:10px 'DM Mono',monospace}.field-select{height:27px;width:100%;background:#111217;border:1px solid #ffffff13;border-radius:4px;color:#cfccd9;padding:0 6px;font:10px 'DM Sans',sans-serif}.text-input{height:26px}textarea{height:80px;padding:7px;resize:vertical;font:10px/1.5 'DM Mono',monospace}.managed-hint{color:#777583;font-size:9px;padding:7px 1px}.add-component-row{display:grid;grid-template-columns:1fr 29px;gap:5px;padding:12px;border-top:1px solid #ffffff0d}.add-component-row select{height:29px;background:#111217;border:1px solid #ffffff13;border-radius:4px;color:#aaa8b4;padding:0 7px;font:10px 'DM Sans',sans-serif}.add-component-row button{border:0;border-radius:4px;background:#2e2a40;color:#b0a3ff;font-size:17px;cursor:pointer}.add-component-row button:disabled{opacity:.4;cursor:default}.empty-inspector{display:grid;justify-items:center;padding:55px 27px;color:#777583;text-align:center}.empty-inspector span{font-size:25px;color:#5f5c6a}.empty-inspector p{font-size:11px;line-height:1.55}
   .script-params{display:grid;gap:7px;margin:8px 0;padding:9px;background:#111217;border:1px solid #ffffff10;border-radius:5px}.script-params>strong{font:9px 'DM Mono',monospace;color:#8e87bd;letter-spacing:.08em}.script-params label{display:flex;align-items:center;justify-content:space-between;color:#b8b6c2;font-size:10px}.script-params input{width:100px;background:#191a21;color:#e0deea;border:1px solid #ffffff18;border-radius:3px;padding:4px}.script-errors{display:grid;gap:4px;color:#ff8992;font:10px/1.4 'DM Mono',monospace;padding:7px 2px}
+  .inspector-animatable-field{position:relative}.inspector-animatable-field .field-row{padding-right:22px}.keyframe-button{position:absolute;right:0;top:5px;width:20px;height:23px;border:0;background:none;color:#777583;font-size:17px;cursor:pointer}.keyframe-button:hover{color:#b2a5ff}
 </style>

@@ -4,6 +4,13 @@ Record meaningful project changes during the event, newest first.
 
 ## Event build log
 
+### 2026-10-10T23:48:00+05:30 — Build M6 timeline animation
+
+- Changed: Added schema-validated Animator tracks, float/vector/color interpolation, an animation runtime for scrubbing and Play, inspector keyframe buttons, and the timeline panel with playhead, tracks, and interpolation controls. Rebased script state against physics updates and applied collision-triggered scene operations after physics sync so their changes persist. Files: `src/runtime/animator.ts`, `src/runtime/physics.ts`, `src/runtime/scripts.ts`, `src/scene/validate.ts`, `src/editor/Timeline.svelte`, `src/editor/Inspector.svelte`, `src/App.svelte`, `src/app.css`, `tests/runtime/animator.test.ts`, `tests/scene/validate-animations.test.ts`, `README.md`, `SUBMISSION.md`, `DECISIONS.md`, `AI_USAGE.md`, and `CHANGELOG.md`.
+- Why: Complete the M6 keyframe, scrub, and Play acceptance flow on the shared scene operation path.
+- Validation: `npm run check` passed TypeScript, Svelte diagnostics (0 errors/0 warnings), all 45 Vitest tests, and Vite production build.
+- Limitations: Dynamic rigid body Transform tracks are skipped with a console warning. No graph editor or key dragging is included. Production build still reports large three.js and Rapier chunks.
+
 ### 2026-10-10T23:41:00+05:30 — Build M5 AI scene agent
 
 - Changed: Added registry-driven component/script prompts and JSON Schema output, a Vite dev-server proxy that reads credentials server-side, browser transport, operation/script validation with up to three correction retries, an AI chat panel with expandable operation diffs and per-change undo, and viewport framing for the first changed entity. Added `.env.example` and prompt/transport/agent tests. Files: `src/ai/`, `src/editor/AIPanel.svelte`, `src/App.svelte`, `src/editor/Viewport.svelte`, `src/app.css`, `vite.config.ts`, `.env.example`, `tests/ai/`, `tests/ai-client.test.ts`, `README.md`, `SUBMISSION.md`, `DECISIONS.md`, `AI_USAGE.md`, and `CHANGELOG.md`.
