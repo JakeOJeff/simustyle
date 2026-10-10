@@ -4,6 +4,13 @@ Record meaningful project changes during the event, newest first.
 
 ## Event build log
 
+### 2026-10-11T00:36:00+05:30 — Reconcile AI and submission verification notes
+
+- Changed: Updated AI usage, M8 verification notes, and submission limitations to reflect the successful browser check, unavailable Cargo toolchain, untested live AI connection, missing visual review, and local WIP commit `76f4a72`. Files: `AI_USAGE.md`, `SUBMISSION.md`, and `CHANGELOG.md`.
+- Why: Keep the event record and submission claims aligned with the checks actually run and the remaining gaps.
+- Validation: Cross-checked the recorded check results, Cargo failure, Git commit SHA, and current Git state. No code changed, so no new test run was needed.
+- Limitations: The Windows installer, live provider call, and interactive visual review remain unverified.
+
 ### 2026-10-11T00:33:00+05:30 — Fix primitive placement and script command validation
 
 - Changed: New primitives use distinct deterministic positions, the Add menu includes capsules, and README demo instructions match. Completed type checking and AST code generation for the pending natural-language script commands; scene mutations use `applyOps`, and unsupported animation commands or ignored durations produce console issues. Files: `src/App.svelte`, `src/lang/checker.ts`, `src/lang/codegen.ts`, `src/runtime/scripts.ts`, `README.md`, `SUBMISSION.md`, `AI_USAGE.md`, and `CHANGELOG.md`.
