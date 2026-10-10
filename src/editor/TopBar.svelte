@@ -1,6 +1,7 @@
 <script lang="ts" module>
   export type ToolMode = "select" | "translate" | "rotate" | "scale";
   export type PrimitiveShape = "box" | "sphere" | "cylinder" | "cone" | "plane" | "capsule";
+  export type LightKind = "point" | "directional" | "spot";
 
   /** Everything the top bar can ask the editor to do. */
   export interface TopBarActions {
@@ -8,8 +9,8 @@
     undo(): void; redo(): void;
     cut(): void; copy(): void; paste(): void; duplicate(): void; remove(): void; rename(): void; group(): void;
     togglePanel(name: string): void; frameSelected(): void; openSettings(): void;
-    setTool(tool: ToolMode): void; toggleSpace(): void; toggleSnap(): void; toggleGrid(): void;
-    addPrimitive(shape: PrimitiveShape): void; addGroup(): void; openScript(): void;
+    setTool(tool: ToolMode): void; toggleSpace(): void; toggleSnap(): void; toggleGrid(): void; toggleCollisions(): void; showSceneSettings(): void;
+    addPrimitive(shape: PrimitiveShape, physics?: boolean): void; addLight(kind: LightKind): void; addCamera(): void; addSceneScript(): void; addGroup(): void; openScript(): void;
     play(): void; pause(): void; resume(): void; stop(): void; step(): void;
   }
 </script>
@@ -17,7 +18,7 @@
 <script lang="ts">
   import type { Snippet } from "svelte";
   import type { PlayState } from "../runtime/physics";
-  import { BookOpen, Box, ChevronDown, Circle, Code, Cone, Cylinder, FolderPlus, Globe, Grid3X3, Magnet, MousePointer2, Move, Pause, Play, Plus, Redo2, RotateCw, Scaling, SkipForward, Square, Undo2 } from "@lucide/svelte";
+  import { Atom, BookOpen, Box, Boxes, Camera, ChevronDown, Circle, Code, Cone, Cylinder, FileCode, Flashlight, FolderPlus, Globe, Grid3X3, Lightbulb, Magnet, MousePointer2, Move, Pause, Play, Plus, Redo2, RotateCw, Scaling, SkipForward, Square, Sun, Undo2 } from "@lucide/svelte";
 
   interface Props {
     sceneName: string;
@@ -32,6 +33,8 @@
     space: "world" | "local";
     snap: boolean;
     gridVisible: boolean;
+    /** The scene's collision switch. */
+    collisions: boolean;
     panels: { name: string; label: string; open: boolean }[];
     showSettings: boolean;
     playState: PlayState;
@@ -43,7 +46,7 @@
     exportMenu: Snippet;
   }
 
-  let { sceneName, saved, editable, canUndo, canRedo, hasSelection, canPaste, tool, space, snap, gridVisible, panels, showSettings, playState, playStarting, time, actions, exportMenu }: Props = $props();
+  let { sceneName, saved, editable, canUndo, canRedo, hasSelection, canPaste, tool, space, snap, gridVisible, collisions, panels, showSettings, playState, playStarting, time, actions, exportMenu }: Props = $props();
 
   type MenuName = "scene" | "file" | "edit" | "view" | "add";
   let openMenu: MenuName | null = $state(null);
@@ -58,6 +61,10 @@
     { shape: "box", label: "Cube", icon: Box }, { shape: "sphere", label: "Sphere", icon: Circle },
     { shape: "cylinder", label: "Cylinder", icon: Cylinder }, { shape: "capsule", label: "Capsule", icon: Circle },
     { shape: "cone", label: "Cone", icon: Cone }, { shape: "plane", label: "Plane", icon: Square }
+  ];
+
+  const lights: { kind: LightKind; label: string; icon: typeof Box }[] = [
+    { kind: "point", label: "Point light", icon: Lightbulb }, { kind: "directional", label: "Sun light", icon: Sun }, { kind: "spot", label: "Spot light", icon: Flashlight }
   ];
 
   /** 00:00.00 for the Play clock, and the frame number at 60 fps. */
@@ -128,6 +135,7 @@
             <div class="tb-sep"></div>
             <button role="menuitemcheckbox" aria-checked={gridVisible} onclick={() => run(actions.toggleGrid)}><span class="tb-check">{gridVisible ? "✓" : ""}</span>Floor grid</button>
             <button role="menuitem" disabled={!hasSelection} onclick={() => run(actions.frameSelected)}><span class="tb-check"></span>Frame selected <kbd>F</kbd></button>
+            <button role="menuitem" onclick={() => run(actions.showSceneSettings)}><span class="tb-check"></span>Scene settings…</button>
             {#if showSettings}<button role="menuitem" onclick={() => run(actions.openSettings)}><span class="tb-check"></span>AI settings…</button>{/if}
           </div>
         {/if}
@@ -148,6 +156,7 @@
     <div class="tb-segment">
       <button class="tb-icon" class:active={snap} aria-pressed={snap} title="Snap: 0.5 m, 15°, 0.1 scale" aria-label="Snap" onclick={actions.toggleSnap}><Magnet size={15} /></button>
       <button class="tb-icon" class:active={gridVisible} aria-pressed={gridVisible} title="Floor grid" aria-label="Floor grid" onclick={actions.toggleGrid}><Grid3X3 size={15} /></button>
+      <button class="tb-icon" class:active={collisions} aria-pressed={collisions} disabled={!editable} title={collisions ? "Collisions on: objects bump into each other during Play. Click to turn off." : "Collisions off: objects pass through each other (the floor stays solid). Click to turn on."} aria-label="Collisions" onclick={actions.toggleCollisions}><Boxes size={15} /></button>
     </div>
   </div>
 
@@ -155,11 +164,20 @@
     <div class="tb-menu-root">
       <button class="tb-text" aria-haspopup="menu" aria-expanded={openMenu === "add"} disabled={!editable} onclick={() => toggle("add")}><Plus size={14} /> <span class="tb-label">Add</span> <ChevronDown size={12} /></button>
       {#if openMenu === "add"}
-        <div class="tb-menu align-right" role="menu" aria-label="Add mesh primitive">
+        <div class="tb-menu align-right" role="menu" aria-label="Add to scene">
           {#each primitives as item (item.shape)}
             <button role="menuitem" onclick={() => run(() => actions.addPrimitive(item.shape))}><item.icon size={14} /> {item.label}</button>
           {/each}
           <div class="tb-sep"></div>
+          <button role="menuitem" title="A ball that falls and bounces during Play" onclick={() => run(() => actions.addPrimitive("sphere", true))}><Atom size={14} /> Physics ball</button>
+          <button role="menuitem" title="A box that falls and stacks during Play" onclick={() => run(() => actions.addPrimitive("box", true))}><Atom size={14} /> Physics box</button>
+          <div class="tb-sep"></div>
+          {#each lights as item (item.kind)}
+            <button role="menuitem" onclick={() => run(() => actions.addLight(item.kind))}><item.icon size={14} /> {item.label}</button>
+          {/each}
+          <button role="menuitem" onclick={() => run(actions.addCamera)}><Camera size={14} /> Camera</button>
+          <div class="tb-sep"></div>
+          <button role="menuitem" title="An invisible object that only holds a script" onclick={() => run(actions.addSceneScript)}><FileCode size={14} /> Script object</button>
           <button role="menuitem" onclick={() => run(actions.addGroup)}><FolderPlus size={14} /> Empty group</button>
         </div>
       {/if}

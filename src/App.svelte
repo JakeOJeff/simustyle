@@ -11,7 +11,7 @@
   import DocsPanel from "./editor/DocsPanel.svelte";
   import PanelResizeHandles, { type ResizeEdge } from "./editor/PanelResizeHandles.svelte";
   import ExportMenu from "./editor/ExportMenu.svelte";
-  import TopBar, { type TopBarActions, type ToolMode } from "./editor/TopBar.svelte";
+  import TopBar, { type LightKind, type TopBarActions, type ToolMode } from "./editor/TopBar.svelte";
   import SettingsPanel from "./editor/SettingsPanel.svelte";
   import ScriptEditor from "./editor/ScriptEditor.svelte";
   import type { ParseEntity } from "./ai/scriptParse";
@@ -421,18 +421,60 @@
   }
 
 
-  function createPrimitive(shape: "box" | "sphere" | "cylinder" | "cone" | "plane" | "capsule") {
-    const label = shape[0].toUpperCase() + shape.slice(1);
+  function freeId(prefix: string): string {
     let index = 1;
-    while (scene.entities.some((entity) => entity.id === `${shape}_${index}`)) index += 1;
-    const id = `${shape}_${index}`;
-    // Place new primitives in a deterministic spiral so they remain visible and pickable.
+    while (scene.entities.some((entity) => entity.id === `${prefix}_${index}`)) index += 1;
+    return `${prefix}_${index}`;
+  }
+
+  /** Place new objects in a deterministic spiral so they remain visible and pickable. */
+  function spiralSpot(height: number): Vec3 {
     const placement = scene.entities.length;
     const angle = placement * 2.399963229728653;
     const radius = 1.5 * Math.sqrt(placement);
-    if (apply([{ op: "create", id, name: uniqueName(scene, label), parent: null, components: {
-      Transform: { position: [radius * Math.cos(angle), shape === "plane" ? 0.01 : 0.5, radius * Math.sin(angle)], rotation: shape === "plane" ? [-90, 0, 0] : [0, 0, 0] }, Mesh: { shape }, Material: { color: "#8b7cff" }
-    } }])) selectEntity(id);
+    return [radius * Math.cos(angle), height, radius * Math.sin(angle)];
+  }
+
+  /** Add an entity the same way the AI agent does: one validated, undoable create op. */
+  function addEntity(prefix: string, label: string, components: Record<string, Record<string, unknown>>) {
+    const id = freeId(prefix);
+    if (apply([{ op: "create", id, name: uniqueName(scene, label), parent: null, components }])) selectEntity(id);
+  }
+
+  function createPrimitive(shape: "box" | "sphere" | "cylinder" | "cone" | "plane" | "capsule", physics = false) {
+    const label = (physics ? "Physics " : "") + shape[0].toUpperCase() + shape.slice(1);
+    // Physics objects start up in the air so they visibly fall when Play starts.
+    addEntity(shape, label, {
+      Transform: { position: spiralSpot(physics ? 3 : shape === "plane" ? 0.01 : 0.5), rotation: shape === "plane" ? [-90, 0, 0] : [0, 0, 0] },
+      Mesh: { shape },
+      Material: { color: physics ? "#ffb35c" : "#8b7cff" },
+      ...(physics ? { RigidBody: { restitution: 0.5 } } : {})
+    });
+  }
+
+  // Default intensities are bright enough to see next to the editor's fill light.
+  function addLight(kind: LightKind) {
+    const light = {
+      point: { label: "Point Light", position: spiralSpot(2.5), rotation: [0, 0, 0], intensity: 20 },
+      directional: { label: "Sun Light", position: [0, 8, 0], rotation: [-30, 0, 20], intensity: 2 },
+      spot: { label: "Spot Light", position: spiralSpot(4), rotation: [0, 0, 0], intensity: 40 }
+    }[kind];
+    addEntity(`${kind}_light`, light.label, { Transform: { position: light.position, rotation: light.rotation }, Light: { type: kind, intensity: light.intensity } });
+  }
+
+  function addCamera() {
+    addEntity("camera", "Camera", { Transform: { position: [0, 4, 10], rotation: [-20, 0, 0] }, Camera: { isActive: !scene.entities.some((entity) => entity.components.Camera?.isActive === true) } });
+  }
+
+  function addScriptObject() {
+    const id = freeId("script");
+    if (!apply([{ op: "create", id, name: uniqueName(scene, "Script"), parent: null, components: { Transform: {}, Script: { source: scriptTemplate("the scene", true) } } }])) return;
+    selectEntity(id);
+    openScript(id);
+  }
+
+  function updateSettings(settings: Partial<Scene["settings"]>) {
+    if (apply([{ op: "settings", settings }])) message = "Scene settings updated";
   }
 
   function descendantsInDeleteOrder(id: string): string[] {
@@ -1069,7 +1111,12 @@ when clicked
     toggleSpace: () => space = space === "world" ? "local" : "world",
     toggleSnap: () => snap = !snap,
     toggleGrid: () => gridVisible = !gridVisible,
+    toggleCollisions: () => updateSettings({ collisions: !scene.settings.collisions }),
+    showSceneSettings: () => { selectEntity(null); if (!panelOpen.inspector) togglePanel("inspector"); },
     addPrimitive: createPrimitive,
+    addLight,
+    addCamera,
+    addSceneScript: addScriptObject,
     addGroup: () => { selectEntity(null); groupSelection(); },
     openScript: openScriptForSelection,
     play: () => void startSimulation(), pause: pauseSimulation, resume: resumeSimulation, stop: stopSimulation, step: stepSimulation
@@ -1097,6 +1144,7 @@ when clicked
     {space}
     {snap}
     {gridVisible}
+    collisions={scene.settings.collisions}
     panels={panelNames.map((name) => ({ name, label: panelLabels[name], open: panelOpen[name] }))}
     showSettings={isDesktopRuntime()}
     {playState}
@@ -1155,7 +1203,7 @@ when clicked
           {#if panelOpen.inspector}
             <section class="panel-window" class:floating-panel={panelLayouts.inspector.dock === "floating"} style={panelWindowStyle("inspector")} use:rememberPanelSize={"inspector"}>
               <header class="panel-window-title"><button class="panel-drag-handle" type="button" aria-label="Drag Inspector panel to move or snap" onpointerdown={(event) => startPanelDrag(event, "inspector")}><strong>Inspector</strong><span>Drag to move or snap</span></button><button class="panel-close" type="button" aria-label="Close Inspector" onclick={() => panelOpen.inspector = false}><X size={13} /></button></header>
-              <div class="panel-window-body sidebar-panel-body"><Inspector {scene} entity={selectedEntity} onUpdate={updateComponent} onRemove={(component) => selectedId && apply([{ op: "update", id: selectedId, components: { [component]: null } }])} onAdd={addComponent} onKeyframe={addKeyframe} onOpenScript={() => selectedId && openScript(selectedId)} onRename={(name) => selectedId && apply([{ op: "update", id: selectedId, components: {}, name }])} onReparent={(parent) => selectedId && reparentEntity(selectedId, parent)} /></div>
+              <div class="panel-window-body sidebar-panel-body"><Inspector {scene} entity={selectedEntity} onUpdate={updateComponent} onRemove={(component) => selectedId && apply([{ op: "update", id: selectedId, components: { [component]: null } }])} onAdd={addComponent} onKeyframe={addKeyframe} onOpenScript={() => selectedId && openScript(selectedId)} onRename={(name) => selectedId && apply([{ op: "update", id: selectedId, components: {}, name }])} onReparent={(parent) => selectedId && reparentEntity(selectedId, parent)} onSettings={updateSettings} /></div>
               <PanelResizeHandles panelName="Inspector" dock={panelLayouts.inspector.dock} onResizeStart={(event, edge) => startPanelResize(event, "inspector", edge)} />
             </section>
           {/if}

@@ -49,6 +49,16 @@ function rotationToEuler(rotation: RAPIER.Rotation): Vec3 {
   return [roll, pitch, yaw].map((radians) => radians * 180 / Math.PI) as Vec3;
 }
 
+// Collision groups: the upper 16 bits say what a collider is, the lower 16 what it may touch.
+const OBJECT_GROUP = 0x0001;
+const GROUND_GROUP = 0x0002;
+const groups = (member: number, filter: number) => (member << 16) | filter;
+
+/** Entities that take part in physics: rigid bodies, plus anything with an enabled Collider. */
+function isPhysical(entity: Entity): boolean {
+  return Boolean(entity.components.RigidBody) || (Boolean(entity.components.Collider) && entity.components.Collider?.enabled !== false);
+}
+
 function colliderFor(entity: Entity): RAPIER.ColliderDesc {
   const mesh = record(entity, "Mesh");
   const transform = record(entity, "Transform");
@@ -71,12 +81,14 @@ export class PhysicsRuntime {
   readonly warnings: string[] = [];
   private readonly bodies = new Map<string, BodyEntry>();
   private readonly colliderEntities = new Map<number, string>();
-  private activeContacts = new Set<string>();
+  private readonly events = new RAPIER.EventQueue(true);
   private accumulator = 0;
   private readonly fixedTimestep: number;
+  private readonly collisions: boolean;
 
   private constructor(scene: Scene) {
     this.world = new RAPIER.World({ x: scene.settings.gravity[0], y: scene.settings.gravity[1], z: scene.settings.gravity[2] });
+    this.collisions = scene.settings.collisions !== false;
     this.fixedTimestep = scene.settings.fixedTimestep;
     this.world.timestep = this.fixedTimestep;
     this.createGround();
@@ -91,17 +103,20 @@ export class PhysicsRuntime {
 
   private createGround(): void {
     const body = this.world.createRigidBody(RAPIER.RigidBodyDesc.fixed().setTranslation(0, -0.1, 0));
-    this.world.createCollider(RAPIER.ColliderDesc.cuboid(100, 0.1, 100).setFriction(0.8), body);
+    this.world.createCollider(RAPIER.ColliderDesc.cuboid(100, 0.1, 100).setFriction(0.8).setCollisionGroups(groups(GROUND_GROUP, OBJECT_GROUP)), body);
   }
 
   private createBodies(scene: Scene): void {
     for (const entity of scene.entities) {
+      if (!isPhysical(entity)) continue;
       const data = record(entity, "RigidBody");
-      if (!entity.components.RigidBody) continue;
+      const settings = record(entity, "Collider");
       const transform = record(entity, "Transform");
       const position = vector(transform.position, [0, 0, 0]);
       const rotation = eulerToRotation(vector(transform.rotation, [0, 0, 0]));
-      const type = typeof data.bodyType === "string" ? data.bodyType : "dynamic";
+      // A Collider without a RigidBody follows its Transform (scripts, animation, gizmo) like a kinematic body.
+      const type = !entity.components.RigidBody ? "kinematic" : typeof data.bodyType === "string" ? data.bodyType : "dynamic";
+      const solid = this.collisions && settings.enabled !== false;
       const descriptor = type === "static"
         ? RAPIER.RigidBodyDesc.fixed()
         : type === "kinematic"
@@ -117,7 +132,13 @@ export class PhysicsRuntime {
       const collider = colliderFor(entity)
         .setDensity(0)
         .setFriction(number(data.friction, 0.5))
-        .setRestitution(number(data.restitution, 0.2));
+        .setRestitution(number(data.restitution, 0.2))
+        .setSensor(settings.trigger === true)
+        // Only the floor is solid when collisions are off for the scene or for this object.
+        .setCollisionGroups(solid ? groups(OBJECT_GROUP, OBJECT_GROUP | GROUND_GROUP) : groups(OBJECT_GROUP, GROUND_GROUP))
+        // Report touches between every body type, so script-moved Colliders still fire "when I touch".
+        .setActiveCollisionTypes(RAPIER.ActiveCollisionTypes.ALL)
+        .setActiveEvents(RAPIER.ActiveEvents.COLLISION_EVENTS);
       const physicsCollider = this.world.createCollider(collider, body);
       this.bodies.set(entity.id, { entity, body, type, collider: physicsCollider });
       this.colliderEntities.set(physicsCollider.handle, entity.id);
@@ -176,27 +197,23 @@ export class PhysicsRuntime {
   /** Accumulate wall-clock time and advance only in fixed simulation steps. */
   advance(scene: Scene, elapsedSeconds: number, onCollision?: (firstId: string, secondId: string) => void): Scene {
     this.accumulator += Math.max(0, Math.min(elapsedSeconds, 0.25));
+    this.removeMissing(scene);
     let changed = false;
     while (this.accumulator >= this.fixedTimestep) {
       for (const [id, entry] of this.bodies) {
         if (entry.type !== "kinematic") continue;
-        const entity = scene.entities.find((candidate) => candidate.id === id);
-        const position = vector(entity?.components.Transform?.position, [0, 0, 0]);
+        const transform = scene.entities.find((candidate) => candidate.id === id)?.components.Transform;
+        const position = vector(transform?.position, [0, 0, 0]);
         entry.body.setNextKinematicTranslation({ x: position[0], y: position[1], z: position[2] });
+        entry.body.setNextKinematicRotation(eulerToRotation(vector(transform?.rotation, [0, 0, 0])));
       }
-      this.world.step();
-      const contacts = new Set<string>();
-      for (const [id, entry] of this.bodies) {
-        this.world.contactPairsWith(entry.collider, (otherCollider) => {
-          const otherId = this.colliderEntities.get(otherCollider.handle);
-          if (!otherId || otherId === id) return;
-          const pair = [id, otherId].sort();
-          const key = pair.join("\u0000");
-          contacts.add(key);
-          if (!this.activeContacts.has(key)) onCollision?.(pair[0]!, pair[1]!);
-        });
-      }
-      this.activeContacts = contacts;
+      this.world.step(this.events);
+      this.events.drainCollisionEvents((firstHandle, secondHandle, started) => {
+        if (!started) return;
+        const firstId = this.colliderEntities.get(firstHandle);
+        const secondId = this.colliderEntities.get(secondHandle);
+        if (firstId && secondId && firstId !== secondId) onCollision?.(firstId, secondId);
+      });
       this.accumulator -= this.fixedTimestep;
       changed = true;
     }
@@ -224,18 +241,24 @@ export class PhysicsRuntime {
     return result.scene;
   }
 
-  /** Keep live rigid bodies aligned when a Console command edits the Play scene. */
-  syncSceneEdits(before: Scene, after: Scene): void {
-    const entities = new Map(after.entities.map((entity) => [entity.id, entity]));
+  /** Drop bodies whose entity was destroyed (by a script or a Collider reaction) or lost its physics. */
+  private removeMissing(scene: Scene): void {
+    const entities = new Map(scene.entities.map((entity) => [entity.id, entity]));
     for (const [id, entry] of this.bodies) {
       const entity = entities.get(id);
-      if (!entity?.components.RigidBody) {
-        const colliderHandle = entry.collider.handle;
-        this.world.removeRigidBody(entry.body);
-        this.bodies.delete(id);
-        this.colliderEntities.delete(colliderHandle);
-        continue;
-      }
+      if (entity && isPhysical(entity)) continue;
+      this.colliderEntities.delete(entry.collider.handle);
+      this.world.removeRigidBody(entry.body);
+      this.bodies.delete(id);
+    }
+  }
+
+  /** Keep live rigid bodies aligned when a Console command edits the Play scene. */
+  syncSceneEdits(before: Scene, after: Scene): void {
+    this.removeMissing(after);
+    const entities = new Map(after.entities.map((entity) => [entity.id, entity]));
+    for (const [id, entry] of this.bodies) {
+      const entity = entities.get(id)!;
       const oldEntity = before.entities.find((candidate) => candidate.id === id);
       const oldTransform = oldEntity?.components.Transform;
       const transform = entity.components.Transform;
@@ -246,16 +269,15 @@ export class PhysicsRuntime {
       entry.body.setRotation(rotation, true);
       if (entry.type === "dynamic") entry.body.setLinvel({ x: 0, y: 0, z: 0 }, true);
     }
-    const addedRigidBodies = after.entities.filter((entity) => entity.components.RigidBody && !this.bodies.has(entity.id));
-    if (addedRigidBodies.length) this.createBodies({ ...after, entities: addedRigidBodies });
-    this.activeContacts.clear();
+    const added = after.entities.filter((entity) => isPhysical(entity) && !this.bodies.has(entity.id));
+    if (added.length) this.createBodies({ ...after, entities: added });
   }
 
   dispose(): void {
+    this.events.free();
     this.world.free();
     this.bodies.clear();
     this.colliderEntities.clear();
-    this.activeContacts.clear();
   }
 }
 

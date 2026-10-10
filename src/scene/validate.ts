@@ -6,7 +6,8 @@ const settingSchemas: Record<keyof SceneSettings, FieldSchema> = {
   gravity: { type: "vec3", default: DEFAULT_SCENE_SETTINGS.gravity },
   background: { type: "color", default: DEFAULT_SCENE_SETTINGS.background },
   fixedTimestep: { type: "float", min: 0.001, max: 0.1, default: DEFAULT_SCENE_SETTINGS.fixedTimestep },
-  ambientLightIntensity: { type: "float", min: 0, max: 10, default: DEFAULT_SCENE_SETTINGS.ambientLightIntensity }
+  ambientLightIntensity: { type: "float", min: 0, max: 10, default: DEFAULT_SCENE_SETTINGS.ambientLightIntensity },
+  collisions: { type: "bool", default: DEFAULT_SCENE_SETTINGS.collisions }
 };
 
 function isRecord(value: unknown): value is Record<string, unknown> {

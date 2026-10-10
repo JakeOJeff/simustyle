@@ -60,7 +60,7 @@ export function buildSystemPrompt(scene: Scene): string {
   return `You are the scene agent inside a 3D simulation and animation editor.
 Build or edit scenes by returning operations that follow the component schemas below. You never write UI code, HTML, or three.js code.
 
-World: Y-up, right-handed. Units are meters, seconds, kilograms. Ground is y = 0. Gravity defaults to [0, -9.81, 0]. The default camera looks at the origin from [0, 4, 10].
+World: Y-up, right-handed. Units are meters, seconds, kilograms. Ground is y = 0. Gravity defaults to [0, -9.81, 0]. The scene setting "collisions" (default true) turns object-to-object collisions and touch events on or off; the floor stays solid either way. Objects only collide when they have a RigidBody or a Collider. The default camera looks at the origin from [0, 4, 10].
 
 ## Component schemas
 Use only these registered components and fields. Fields shown with defaults may be omitted; include only non-default values when possible.
@@ -130,7 +130,8 @@ const settingsSchema = {
     gravity: { type: "array", items: { type: "number" }, minItems: 3, maxItems: 3 },
     background: { type: "string", pattern: "^#[0-9a-fA-F]{6}$" },
     fixedTimestep: { type: "number", minimum: 0.001, maximum: 0.1 },
-    ambientLightIntensity: { type: "number", minimum: 0, maximum: 10 }
+    ambientLightIntensity: { type: "number", minimum: 0, maximum: 10 },
+    collisions: { type: "boolean" }
   },
   additionalProperties: false
 };

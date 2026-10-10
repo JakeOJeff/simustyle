@@ -26,7 +26,7 @@ The top bar contains scene file actions, edit and view menus, transform tools, A
 
 ### Add and select objects
 
-Choose **Add** in the top bar to create a Cube, Sphere, Cylinder, Capsule, Cone, Plane, or Empty group. New primitives are spaced around the origin. Select an object by clicking it in the viewport or its row in Hierarchy. The selected object's properties appear in Inspector.
+Choose **Add** in the top bar to create a Cube, Sphere, Cylinder, Capsule, Cone, Plane, Physics ball or box, Point/Sun/Spot light, Camera, Script object, or Empty group. Lights and cameras show a small clickable wireframe marker; rotate a Sun or Spot light to aim it. New primitives are spaced around the origin. Select an object by clicking it in the viewport or its row in Hierarchy. The selected object's properties appear in Inspector.
 
 Hold **Ctrl** and drag in the viewport to draw a selection box. Every object whose visible bounds intersect the box is selected. Ctrl-click or Shift-click rows in Hierarchy to add or remove items from the current selection.
 
@@ -49,6 +49,12 @@ Use the scene menu at the left of the top bar or the File menu to create, open, 
 ## Inspector and components
 
 Inspector edits the selected entity. Rename it in the Name field; edit Position, Rotation, and Scale in the Transform section. Component sections expose their fields and can be collapsed or removed when allowed. Add a component from the controls at the bottom of Inspector. Script settings and ranged parameters appear here too. Click a keyframe diamond beside an animatable property to key its current value at the Timeline playhead.
+
+With nothing selected (or **View → Scene settings…**), Inspector shows **Scene settings**: Collisions, Gravity, Background, Ambient light, and Physics step. These edits are undoable and take effect the next time you press Play.
+
+### Collisions
+
+During Play, objects with Physics (RigidBody) or a **Collider** bump into each other. The stacked-boxes button in the top bar turns collisions on or off for the whole scene; when off, objects pass through each other but still land on the floor, and touch events stop. A Collider makes an object solid and touchable without Physics. Turn off **Enabled** to let one object pass through others, or turn on **Trigger** to detect touches without blocking. Choose a **Reaction** (flash, shake, change color, jump, disappear, destroy other) to react without a script, or write `when I touch a ball` in a script.
 
 ## Console
 

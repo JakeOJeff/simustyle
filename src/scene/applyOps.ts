@@ -56,6 +56,7 @@ function settingsPatch(value: Record<string, unknown>): Partial<Scene["settings"
     else if (key === "background" && typeof setting === "string") result.background = setting;
     else if (key === "fixedTimestep" && typeof setting === "number") result.fixedTimestep = setting;
     else if (key === "ambientLightIntensity" && typeof setting === "number") result.ambientLightIntensity = setting;
+    else if (key === "collisions" && typeof setting === "boolean") result.collisions = setting;
   }
   return result;
 }

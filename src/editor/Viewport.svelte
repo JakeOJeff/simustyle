@@ -78,7 +78,9 @@
     orbit.enableDamping = true;
     orbit.target.set(0, 0.8, 0);
 
-    world.add(new THREE.HemisphereLight(0xe8efff, 0x44404b, 1.6));
+    // Matches the standalone export: the scene's ambient setting plus a fixed base fill.
+    const ambient = new THREE.HemisphereLight(0xe8efff, 0x44404b, scene.settings.ambientLightIntensity + 0.7);
+    world.add(ambient);
     const keyLight = new THREE.DirectionalLight(0xffffff, 2.2);
     keyLight.position.set(5, 9, 6);
     keyLight.castShadow = true;
@@ -91,6 +93,8 @@
     if (mode !== "select") gizmo.setMode(mode);
     world.add(gizmo.getHelper());
     const entityObjects = new Map<string, THREE.Object3D>();
+    const lightObjects = new Map<string, THREE.Light>();
+    const markerObjects = new Map<string, THREE.Mesh>();
     const selectionHelpers = new Map<string, THREE.BoxHelper>();
     const raycaster = new THREE.Raycaster();
     const pointer = new THREE.Vector2();
@@ -142,21 +146,23 @@
       const rect = renderer.domElement.getBoundingClientRect();
       pointer.set(((event.clientX - rect.left) / rect.width) * 2 - 1, -((event.clientY - rect.top) / rect.height) * 2 + 1);
     }
+    /** The entity under the pointer: a visible shape, or the marker of a light or camera. */
+    function pickEntity(): string | undefined {
+      const pickables = [...[...entityObjects.values()].filter((object) => object instanceof THREE.Mesh), ...markerObjects.values()];
+      const hit = raycaster.intersectObjects(pickables, false)[0]?.object;
+      return hit?.userData.markerFor ?? hit?.userData.entityId;
+    }
     function pick(event: PointerEvent) {
       if (Math.hypot(event.clientX - downX, event.clientY - downY) > 4) return;
       setPointer(event);
       raycaster.setFromCamera(pointer, camera);
-      const pickables = [...entityObjects.values()].filter((object) => object instanceof THREE.Mesh);
-      const hit = raycaster.intersectObjects(pickables, false)[0]?.object;
-      const entity = hit && [...entityObjects.entries()].find(([, object]) => object === hit)?.[0];
+      const entity = pickEntity();
       onSelect(entity ?? null);
     }
     function pickContextMenu(event: MouseEvent) {
       setPointer(event);
       raycaster.setFromCamera(pointer, camera);
-      const pickables = [...entityObjects.values()].filter((object) => object instanceof THREE.Mesh);
-      const hit = raycaster.intersectObjects(pickables, false)[0]?.object;
-      const entity = hit && [...entityObjects.entries()].find(([, object]) => object === hit)?.[0];
+      const entity = pickEntity();
       event.preventDefault();
       if (entity) onSelect(entity);
       const groundHit = raycaster.ray.intersectPlane(groundPlane, new THREE.Vector3());
@@ -280,7 +286,64 @@
       object.name = entity.name;
     }
 
+    /** Directional and spot lights shine along the entity's local -Y, so rotating the entity aims them. */
+    function makeLight(type: string): THREE.Light {
+      const light = type === "directional" ? new THREE.DirectionalLight() : type === "spot" ? new THREE.SpotLight(0xffffff, 1, 0, Math.PI / 6, 0.3) : new THREE.PointLight();
+      if (light instanceof THREE.DirectionalLight || light instanceof THREE.SpotLight) {
+        light.target.position.set(0, -1, 0);
+        light.add(light.target);
+      }
+      light.userData.type = type;
+      return light;
+    }
+
+    function syncLight(entity: Entity, object: THREE.Object3D) {
+      const data = entity.components.Light;
+      const type = typeof data?.type === "string" ? data.type : "point";
+      let light = lightObjects.get(entity.id);
+      if (light && (!data || light.userData.type !== type)) {
+        light.removeFromParent();
+        light.dispose();
+        lightObjects.delete(entity.id);
+        light = undefined;
+      }
+      if (!data) return;
+      if (!light) {
+        light = makeLight(type);
+        lightObjects.set(entity.id, light);
+      }
+      if (light.parent !== object) object.add(light);
+      light.color.set(typeof data.color === "string" ? data.color : "#ffffff");
+      light.intensity = typeof data.intensity === "number" ? data.intensity : 1;
+      light.castShadow = data.castShadow !== false;
+    }
+
+    /** A small pickable marker for lights and cameras that have no visible shape. */
+    function syncMarker(entity: Entity, object: THREE.Object3D) {
+      const kind = entity.components.Mesh ? null : entity.components.Light ? "light" : entity.components.Camera ? "camera" : null;
+      let marker = markerObjects.get(entity.id);
+      if (marker && marker.userData.kind !== kind) {
+        disposeObject(marker);
+        markerObjects.delete(entity.id);
+        marker = undefined;
+      }
+      if (!kind) return;
+      if (!marker) {
+        marker = kind === "light"
+          ? new THREE.Mesh(new THREE.OctahedronGeometry(0.18), new THREE.MeshBasicMaterial({ wireframe: true }))
+          : new THREE.Mesh(new THREE.ConeGeometry(0.2, 0.35, 4).rotateX(-Math.PI / 2), new THREE.MeshBasicMaterial({ color: 0x70d8ff, wireframe: true }));
+        marker.userData.kind = kind;
+        marker.userData.markerFor = entity.id;
+        markerObjects.set(entity.id, marker);
+      }
+      if (marker.parent !== object) object.add(marker);
+      if (kind === "light") (marker.material as THREE.MeshBasicMaterial).color.set(typeof entity.components.Light?.color === "string" ? entity.components.Light.color : "#ffffff");
+    }
+
     function syncEntities() {
+      ambient.intensity = scene.settings.ambientLightIntensity + 0.7;
+      for (const [id, light] of lightObjects) if (!scene.entities.some((entity) => entity.id === id)) { light.removeFromParent(); light.dispose(); lightObjects.delete(id); }
+      for (const [id, marker] of markerObjects) if (!scene.entities.some((entity) => entity.id === id)) { disposeObject(marker); markerObjects.delete(id); }
       // Entities without a Mesh (groups, scene scripts, lights) become invisible Groups,
       // so their Transform still moves the children placed inside them.
       const live = new Map(scene.entities.map((entity) => [entity.id, entity]));
@@ -335,6 +398,8 @@
       // Parent once every object exists, so children listed before their parent still attach.
       for (const entity of scene.entities) {
         const object = entityObjects.get(entity.id)!;
+        syncLight(entity, object);
+        syncMarker(entity, object);
         const intendedParent = (entity.parent ? entityObjects.get(entity.parent) : undefined) ?? world;
         if (object.parent !== intendedParent) intendedParent.add(object);
       }

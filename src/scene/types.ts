@@ -5,6 +5,8 @@ export interface SceneSettings {
   background: string;
   fixedTimestep: number;
   ambientLightIntensity: number;
+  /** When false, objects pass through each other (the floor stays solid) and touch events stop. */
+  collisions: boolean;
 }
 
 export interface Entity {
@@ -36,7 +38,8 @@ export const DEFAULT_SCENE_SETTINGS: SceneSettings = {
   gravity: [0, -9.81, 0],
   background: "#202124",
   fixedTimestep: 1 / 60,
-  ambientLightIntensity: 0.5
+  ambientLightIntensity: 0.5,
+  collisions: true
 };
 
 export function createEmptyScene(): Scene {

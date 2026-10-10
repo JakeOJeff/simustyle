@@ -1,5 +1,6 @@
 import { animatorSchema } from "./components/animator";
 import { cameraSchema } from "./components/camera";
+import { colliderSchema } from "./components/collider";
 import { jointSchema } from "./components/joint";
 import { lightSchema } from "./components/light";
 import { materialSchema } from "./components/material";
@@ -14,6 +15,7 @@ export const componentSchemas: Record<string, ComponentSchema> = {
   Mesh: meshSchema,
   Material: materialSchema,
   RigidBody: rigidBodySchema,
+  Collider: colliderSchema,
   Joint: jointSchema,
   Light: lightSchema,
   Camera: cameraSchema,

@@ -36,6 +36,23 @@ Any object can hold other objects. A child moves, turns, and scales with its par
 - **Shortcuts:** `/` focuses the Console command bar; Tab in Console selects the most recently added scene object; Ctrl+Z / Ctrl+Y undo and redo, Ctrl+D duplicates, Delete removes the selection (and everything inside it), F2 renames.
 - **In scripts:** a script on a group can use `my children` (`paint my children red`), `my parent`, and `when clicked`, which also fires when one of its children is clicked during Play.
 
+## Collisions
+
+Objects bump into each other during Play when they have **Physics** (RigidBody) or a **Collider**.
+
+- **Turn collisions on or off:** the stacked-boxes button in the top bar, or **Collisions** in Scene settings. When off, objects pass through each other but still land on the floor, and `when I touch` events stop.
+- **Collider:** add it from the Inspector's **Add a feature** list. It makes an object solid and touchable even without Physics, so script-moved or animated objects can push physics objects and fire touch events. Turn off **Enabled** to let one object pass through others. Turn on **Trigger** to detect touches without blocking (a finish line or coin).
+- **React without a script:** pick a Collider **Reaction**: flash, shake, change color (uses **Reaction color**), jump (Physics objects), disappear, or destroy other (removes what touched it).
+- **React with a script:** `when I touch a ball` → `paint red` / `destroy it`. `it` is the object that was touched.
+
+## Add anything by hand
+
+Everything the AI assistant can create is also in the editor:
+
+- **Add** menu: shapes, Physics ball/box, Point/Sun/Spot lights, Camera, Script object (an invisible object that only holds a script), and Empty group. Lights and cameras show a small wireframe marker you can click; rotate a Sun or Spot light to aim it (it shines along its local down axis).
+- **Inspector → Add a feature:** Physics, Collider, Joint, Light, Camera, Script, or Animation on the selected object.
+- **Scene settings:** click empty space (or **View → Scene settings…**) to edit collisions, gravity, background, ambient light, and the physics step. Changes are undoable and take effect the next time you press Play.
+
 ## Scripting
 
 Scripts are short plain-English sentences. Learn it in a minute:

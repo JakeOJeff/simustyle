@@ -105,9 +105,12 @@ export async function startStandalone(sceneInput: Scene): Promise<void> {
     if (!entity.components.Light) return null;
     const color = typeof values.color === "string" ? values.color : "#ffffff";
     const intensity = typeof values.intensity === "number" ? values.intensity : 1;
-    if (values.type === "directional") return new THREE.DirectionalLight(color, intensity);
-    if (values.type === "spot") return new THREE.SpotLight(color, intensity);
-    return new THREE.PointLight(color, intensity);
+    if (values.type !== "directional" && values.type !== "spot") return new THREE.PointLight(color, intensity);
+    // Same as the editor viewport: aimed along the entity's local -Y.
+    const light = values.type === "directional" ? new THREE.DirectionalLight(color, intensity) : new THREE.SpotLight(color, intensity, 0, Math.PI / 6, 0.3);
+    light.target.position.set(0, -1, 0);
+    light.add(light.target);
+    return light;
   };
 
   function syncScene(): void {

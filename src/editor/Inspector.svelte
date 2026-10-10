@@ -1,6 +1,7 @@
 <script lang="ts">
   import { componentSchemas, type ComponentSchema, type FieldSchema } from "../registry";
-  import type { Entity, Scene } from "../scene/types";
+  import type { Entity, Scene, SceneSettings } from "../scene/types";
+  import { settingSchemas } from "../scene/validate";
   import { parseScript } from "../lang/parser";
   import { typecheckScript } from "../lang/checker";
   import type { ScriptHandler } from "../lang/ast";
@@ -15,9 +16,11 @@
     onOpenScript: () => void;
     onRename: (name: string) => void;
     onReparent: (parent: string | null) => void;
+    /** Change scene-wide settings (shown when nothing is selected). */
+    onSettings: (settings: Partial<SceneSettings>) => void;
   }
 
-  let { scene, entity, onUpdate, onRemove, onAdd, onKeyframe, onOpenScript, onRename, onReparent }: Props = $props();
+  let { scene, entity, onUpdate, onRemove, onAdd, onKeyframe, onOpenScript, onRename, onReparent, onSettings }: Props = $props();
 
   /** Plain names for components, so the panel reads as "Shape" and "Look" rather than schema names. */
   const friendly: Record<string, { title: string; hint: string }> = {
@@ -25,6 +28,7 @@
     Mesh: { title: "Shape", hint: "The visible 3D shape." },
     Material: { title: "Look", hint: "Color, shine, glow, and see-through." },
     RigidBody: { title: "Physics", hint: "Makes it fall, bounce, and collide during Play." },
+    Collider: { title: "Collider", hint: "Makes it solid and touchable during Play, and can react when touched." },
     Joint: { title: "Joint", hint: "Connects this physics body to another object." },
     Light: { title: "Light", hint: "Lights up the scene." },
     Camera: { title: "Camera", hint: "A viewpoint for the scene." },
@@ -92,6 +96,15 @@
     }
     update("Script", "parameters", { ...values, [param.name]: value });
   }
+
+  /** Scene settings in the order a person would look for them. */
+  const sceneSettings: { key: keyof SceneSettings; title: string; hint: string }[] = [
+    { key: "collisions", title: "Collisions", hint: "Off: objects pass through each other and touch events stop. The floor stays solid." },
+    { key: "gravity", title: "Gravity", hint: "Meters per second², usually 0 -9.81 0." },
+    { key: "background", title: "Background", hint: "Sky color behind the scene." },
+    { key: "ambientLightIntensity", title: "Ambient light", hint: "Soft light on everything." },
+    { key: "fixedTimestep", title: "Physics step", hint: "Seconds per physics step. Smaller is more accurate and slower." }
+  ];
 
   function keyframeable(field: FieldSchema): boolean { return field.type === "float" || field.type === "vec3" || field.type === "color"; }
 </script>
@@ -198,6 +211,16 @@
     </div>
   {:else}
     <div class="empty-inspector"><span>◇</span><p>Select an object in the viewport or the Scene panel to see and change it here.</p></div>
+    <section class="component-card">
+      <div class="component-title"><span title="Settings for the whole scene">Scene settings</span></div>
+      <div class="fields">
+        {#each sceneSettings as setting (setting.key)}
+          <div title={setting.hint}>
+            {@render fieldControl(setting.title, settingSchemas[setting.key], scene.settings[setting.key], scene, (value, phase) => { if (phase === undefined || phase === "end") onSettings({ [setting.key]: value }); })}
+          </div>
+        {/each}
+      </div>
+    </section>
   {/if}
 </aside>
 

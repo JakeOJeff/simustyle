@@ -6,6 +6,7 @@ import { parseScript } from "../lang/parser";
 import type { ScriptProgram } from "../lang/ast";
 import { COLOR_NAMES, DIRECTIONS, matchAnimation, type RelationName } from "../lang/vocabulary";
 import type { Entity } from "../scene/types";
+import { reactionSource } from "./reactions";
 import { MotionController, describedMatches, findNamed, halfExtents, placeRelative, positionOf, rotationOf, scaleOf, uniqueName, type RuntimeDescription } from "./commands";
 
 /** Generated handler bodies are generator functions: `yield n` means "wait n seconds". */
@@ -86,6 +87,8 @@ export class ScriptRuntime {
   readonly issues: ScriptIssue[] = [];
   readonly prints: ScriptPrint[] = [];
   private readonly instances = new Map<string, ScriptInstance>();
+  /** Collider reactions ("flash", "destroy other", ...), kept apart so they run alongside the object's own script. */
+  private readonly reactions = new Map<string, ScriptInstance>();
   private coroutines: Coroutine[] = [];
   private randomState: number;
   private currentScene: Scene;
@@ -103,19 +106,20 @@ export class ScriptRuntime {
     this.randomState = seed >>> 0 || 1;
     this.physicsActions = physicsActions;
     for (const entity of scene.entities) {
-      if (!entity.components.Script) continue;
-      this.compile(entity.id, sourceOf(scene, entity.id));
+      if (entity.components.Script) this.compile(entity.id, sourceOf(scene, entity.id));
+      const reaction = reactionSource(entity);
+      if (reaction) this.compile(entity.id, reaction, this.reactions);
     }
   }
 
-  private compile(id: string, source: string): void {
+  private compile(id: string, source: string, into = this.instances): void {
     try {
       const program = parseScript(source);
       const errors = typecheckScript(program);
       if (errors.length) { this.issues.push(...errors.map((issue) => ({ entityId: id, ...issue }))); return; }
       const generated = generateScript(program);
       const stored = this.currentScene.entities.find((entity) => entity.id === id)?.components.Script?.parameters as Record<string, unknown> | undefined;
-      this.instances.set(id, {
+      into.set(id, {
         id, program,
         state: Object.fromEntries(program.params.map((param) => [param.name, stored?.[param.name] ?? param.defaultValue])),
         initialize: makeRunner(generated.initialize),
@@ -567,10 +571,12 @@ export class ScriptRuntime {
   }
 
   collide(selfId: string, otherId: string): void {
-    const instance = this.instances.get(selfId);
     const entity = this.currentScene.entities.find((candidate) => candidate.id === otherId);
-    if (!instance || !entity) return;
-    for (const handler of instance.handlers) if (handler.event === "collide") this.invoke(instance, handler.run, handle(entity), handler);
+    if (!entity) return;
+    for (const instance of [this.instances.get(selfId), this.reactions.get(selfId)]) {
+      if (!instance) continue;
+      for (const handler of instance.handlers) if (handler.event === "collide") this.invoke(instance, handler.run, handle(entity), handler);
+    }
   }
 
   get scene(): Scene { return this.currentScene; }
