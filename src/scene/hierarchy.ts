@@ -38,6 +38,12 @@ export function worldMatrix(scene: Scene, id: string | null): THREE.Matrix4 {
   return chain.reduce((matrix, entity) => matrix.multiply(localMatrix(entity)), new THREE.Matrix4());
 }
 
+/** Convert a world-space point to the local coordinates of a parent entity. */
+export function localPosition(scene: Scene, parent: string | null, position: Vec3): Vec3 {
+  const local = worldMatrix(scene, parent).invert().multiply(new THREE.Vector3(...position));
+  return local.toArray() as Vec3;
+}
+
 const tidy = (value: number) => Math.abs(value) < 1e-9 ? 0 : Math.round(value * 1e6) / 1e6;
 
 function transformFrom(matrix: THREE.Matrix4): { position: Vec3; rotation: Vec3; scale: Vec3 } {

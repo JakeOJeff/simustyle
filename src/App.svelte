@@ -11,7 +11,7 @@
   import DocsPanel from "./editor/DocsPanel.svelte";
   import PanelResizeHandles, { type ResizeEdge } from "./editor/PanelResizeHandles.svelte";
   import ExportMenu from "./editor/ExportMenu.svelte";
-  import TopBar, { type LightKind, type TopBarActions, type ToolMode } from "./editor/TopBar.svelte";
+  import TopBar, { type LightKind, type PrimitiveShape, type TopBarActions, type ToolMode } from "./editor/TopBar.svelte";
   import SettingsPanel from "./editor/SettingsPanel.svelte";
   import ScriptEditor from "./editor/ScriptEditor.svelte";
   import type { ParseEntity } from "./ai/scriptParse";
@@ -26,7 +26,7 @@
   import { Box, FileCode2, X } from "@lucide/svelte";
   import { applyOps } from "./scene/applyOps";
   import { describeChanges } from "./scene/describeChanges";
-  import { groupOps, reparentOps, ungroupOps, uniqueId } from "./scene/hierarchy";
+  import { groupOps, localPosition, reparentOps, ungroupOps, uniqueId } from "./scene/hierarchy";
   import { keyName } from "./lang/vocabulary";
   import { deserializeScene, serializeScene } from "./scene/serialize";
   import { createEmptyScene, type Entity, type Scene, type SceneOp, type Vec3 } from "./scene/types";
@@ -96,6 +96,7 @@
   let commandHistoryIndex = -1;
   let consoleLog: { kind: "info" | "error" | "print"; text: string }[] = $state([]);
   let contextMenu: { id: string | null; x: number; y: number; position: Vec3 | null; source: "object" | "viewport" | "hierarchy" } | null = $state(null);
+  let contextAddOpen = $state(false);
   let renameTarget: { id: string; name: string } | null = $state(null);
   let entityClipboard: Entity[] | null = $state.raw(null);
   const animatorPreview = new AnimatorRuntime();
@@ -467,9 +468,68 @@
   }
 
   /** Add an entity the same way the AI agent does: one validated, undoable create op. */
-  function addEntity(prefix: string, label: string, components: Record<string, Record<string, unknown>>) {
+  function addEntity(prefix: string, label: string, components: Record<string, Record<string, unknown>>, parent: string | null = null) {
     const id = freeId(prefix);
-    if (apply([{ op: "create", id, name: uniqueName(scene, label), parent: null, components }])) selectEntity(id);
+    if (apply([{ op: "create", id, name: uniqueName(scene, label), parent, components }])) selectEntity(id);
+  }
+
+  function contextPlacement(height: number): { parent: string | null; position: Vec3 } {
+    const parent = contextMenu?.id ?? null;
+    if (contextMenu?.source === "viewport" && contextMenu.position) {
+      const point: Vec3 = [contextMenu.position[0], contextMenu.position[1] + height, contextMenu.position[2]];
+      return { parent, position: localPosition(scene, parent, point) };
+    }
+    return { parent, position: parent ? [0, height, 0] : spiralSpot(height) };
+  }
+
+  function addFromContext(prefix: string, label: string, height: number, components: Record<string, Record<string, unknown>>) {
+    const { parent, position } = contextPlacement(height);
+    addEntity(prefix, label, { ...components, Transform: { ...(components.Transform ?? {}), position } }, parent);
+    contextMenu = null;
+    contextAddOpen = false;
+  }
+
+  function addContextPrimitive(shape: PrimitiveShape) {
+    const height = shape === "plane" ? 0.01 : 0.5;
+    addFromContext(shape, shape[0].toUpperCase() + shape.slice(1), height, {
+      Transform: { rotation: shape === "plane" ? [-90, 0, 0] : [0, 0, 0] },
+      Mesh: { shape }, Material: { color: "#8b7cff" }
+    });
+  }
+
+  function addContextLight(kind: LightKind) {
+    const details = {
+      point: { label: "Point Light", height: 2.5, intensity: 20 },
+      directional: { label: "Sun Light", height: 8, intensity: 2 },
+      spot: { label: "Spot Light", height: 4, intensity: 40 }
+    }[kind];
+    addFromContext(`${kind}_light`, details.label, details.height, {
+      Transform: { rotation: kind === "directional" ? [-30, 0, 20] : [0, 0, 0] },
+      Light: { type: kind, intensity: details.intensity }
+    });
+  }
+
+  function addContextCamera() {
+    const { parent, position } = contextPlacement(4);
+    const id = freeId("camera");
+    if (apply([{ op: "create", id, name: uniqueName(scene, "Camera"), parent, components: { Transform: { position, rotation: [-20, 0, 0] }, Camera: { isActive: !scene.entities.some((entity) => entity.components.Camera?.isActive === true) } } }])) selectEntity(id);
+    contextMenu = null;
+    contextAddOpen = false;
+  }
+
+  function addContextScript() {
+    const { parent, position } = contextPlacement(0);
+    const id = freeId("script");
+    if (apply([{ op: "create", id, name: uniqueName(scene, "Script"), parent, components: { Transform: { position }, Script: { source: scriptTemplate("the scene", true) } } }])) {
+      selectEntity(id);
+      openScript(id);
+    }
+    contextMenu = null;
+    contextAddOpen = false;
+  }
+
+  function addContextGroup() {
+    addFromContext("group", "Empty group", 0, { Transform: {} });
   }
 
   function createPrimitive(shape: "box" | "sphere" | "cylinder" | "cone" | "plane" | "capsule") {
@@ -542,7 +602,8 @@
     if (playState !== "stopped") { message = "Stop the simulation before editing entities."; return; }
     // Right-clicking inside a multi-selection keeps it, so "Group" can wrap all of it.
     if (id && !selectedIds.includes(id)) selectEntity(id);
-    contextMenu = { id, position, source, x: Math.max(8, Math.min(x, window.innerWidth - 210)), y: Math.max(8, Math.min(y, window.innerHeight - 300)) };
+    contextAddOpen = false;
+    contextMenu = { id, position, source, x: Math.max(8, Math.min(x, window.innerWidth - 210)), y: Math.max(8, Math.min(y, window.innerHeight - 360)) };
   }
 
   function copyEntity(id: string) {
@@ -1484,6 +1545,26 @@ when clicked
   {#if contextMenu}
     <button class="context-dismiss" type="button" aria-label="Close entity menu" onclick={() => contextMenu = null}></button>
     <div class="entity-context-menu" style={`left:${contextMenu.x}px;top:${contextMenu.y}px`} role="menu" aria-label="Entity actions" tabindex="-1" oncontextmenu={(event) => event.preventDefault()}>
+      <button role="menuitem" aria-expanded={contextAddOpen} onclick={() => contextAddOpen = !contextAddOpen}>Add <span class="context-chevron">{contextAddOpen ? "−" : "›"}</span></button>
+      {#if contextAddOpen}
+        <div class="context-add-list" aria-label="Add object">
+          <button role="menuitem" onclick={() => addContextPrimitive("box")}>Cube</button>
+          <button role="menuitem" onclick={() => addContextPrimitive("sphere")}>Sphere</button>
+          <button role="menuitem" onclick={() => addContextPrimitive("cylinder")}>Cylinder</button>
+          <button role="menuitem" onclick={() => addContextPrimitive("capsule")}>Capsule</button>
+          <button role="menuitem" onclick={() => addContextPrimitive("cone")}>Cone</button>
+          <button role="menuitem" onclick={() => addContextPrimitive("plane")}>Plane</button>
+          <div class="context-separator"></div>
+          <button role="menuitem" onclick={() => addContextLight("point")}>Point light</button>
+          <button role="menuitem" onclick={() => addContextLight("directional")}>Sun light</button>
+          <button role="menuitem" onclick={() => addContextLight("spot")}>Spot light</button>
+          <button role="menuitem" onclick={addContextCamera}>Camera</button>
+          <div class="context-separator"></div>
+          <button role="menuitem" onclick={addContextScript}>Script object</button>
+          <button role="menuitem" onclick={addContextGroup}>Empty group</button>
+        </div>
+        <div class="context-separator"></div>
+      {/if}
       {#if contextMenu.id}
         <button role="menuitem" onclick={() => cutEntity(contextMenu!.id!)} disabled={playState !== "stopped"}>Cut</button>
         <button role="menuitem" onclick={() => copyEntity(contextMenu!.id!)}>Copy</button>
@@ -1569,9 +1650,11 @@ when clicked
   .scene-loader-list small{max-width:100%;overflow:hidden;color:#777583;font-size:9px;text-overflow:ellipsis}
   .scene-loader-empty{margin:0;color:#777583;font-size:10px;line-height:1.5}
   .context-dismiss{position:fixed;inset:0;z-index:30;border:0;background:transparent}
-  .entity-context-menu{position:fixed;z-index:31;width:194px;padding:5px;border:1px solid #383845;border-radius:8px;background:#1b1b23;box-shadow:0 12px 36px #0009}
+  .entity-context-menu{position:fixed;z-index:31;width:194px;max-height:75vh;overflow:auto;padding:5px;border:1px solid #383845;border-radius:8px;background:#1b1b23;box-shadow:0 12px 36px #0009}
   .entity-context-menu button{display:block;width:100%;height:30px;padding:0 10px;border:0;border-radius:4px;background:transparent;color:#e6e3f1;text-align:left;font-size:11px;cursor:pointer}
   .entity-context-menu button:hover:not(:disabled){background:#302d40}
+  .context-add-list{margin:2px 0 4px 10px;padding-left:5px;border-left:1px solid #ffffff20}
+  .context-chevron{float:right;color:#9995a9}
   .entity-context-menu button:disabled{opacity:.4;cursor:default}
   .entity-context-menu kbd{float:right;color:#7d7a8a;font:9px 'DM Mono',monospace}
   .menu-separator{height:1px;margin:4px 3px;background:#ffffff18}

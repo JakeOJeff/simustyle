@@ -8,6 +8,7 @@ SimuStyle is a 3D scene editor for building, scripting, animating, and simulatin
 - Add physics, collisions, lights, cameras, and parented objects.
 - Write behaviors in a plain-English scripting language.
 - Preview scenes with physics and animation, then undo or redo edits.
+- Orbit with left-drag, pan with middle-drag, and right-click to add objects at the pointer or under a parent.
 - Export scenes as GLB, standalone HTML, or WebM.
 - Optionally use an AI assistant to create and edit scenes.
 

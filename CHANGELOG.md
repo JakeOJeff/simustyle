@@ -4,6 +4,13 @@ Record meaningful project changes during the event, newest first.
 
 ## Event build log
 
+### 2026-10-11T22:47:49+05:30 — Add middle-button panning and contextual creation
+
+- Changed: Mapped middle-drag to viewport panning and reserved right-click for context menus. Added the toolbar's object choices to the context menu, placing them at the viewport pointer or as children of the clicked object; empty Hierarchy space creates root objects. Updated the README and in-app guide.
+- Why: Make viewport navigation and object creation work with the requested mouse controls and context.
+- Validation: Reviewed pointer handling, placement parent transforms, and local documentation links; ran `git diff --check`. No tests were run.
+- Limitations: Viewport placement projects onto the clicked object surface or the ground plane; clicking empty sky falls back to the existing spiral placement.
+
 ### 2026-10-11T22:12:11+05:30 — Restore and streamline the README
 
 - Changed: Restored the root `README.md` with concise project, setup, AI configuration, desktop, documentation, checks, and limitation sections.

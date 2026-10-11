@@ -31,7 +31,7 @@
       <h2>Arrange your workspace</h2>
       <p>Hierarchy, Inspector, Console, AI, Timeline, and Docs are independent windows. The tabs along the bottom show or hide them. Drag a title bar to move a window; drop near an edge to snap it, or release away from edges to float it.</p>
       <p>Resize a floating window from any edge or corner. Resize a snapped window from its inner edge. Snapped windows reserve room for the Scene and Script work areas. Your panel layout is saved on this device.</p>
-      <p>In the Scene view, drag to orbit the camera, use the wheel to zoom, and right-drag to pan. Drag a selected object's gizmo to transform the object without orbiting the camera.</p>
+      <p>In the Scene view, drag to orbit the camera, use the wheel to zoom, and middle-drag to pan. Right-click to open the context menu; choose <b>Add</b> to create an object at the pointer, or as a child of the clicked object. Drag a selected object's gizmo to transform the object without orbiting the camera.</p>
     </section>
 
     <section id="docs-scene-editing">

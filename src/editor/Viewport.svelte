@@ -77,6 +77,8 @@
     const orbit = new OrbitControls(camera, renderer.domElement);
     orbit.enableDamping = true;
     orbit.target.set(0, 0.8, 0);
+    orbit.mouseButtons.MIDDLE = THREE.MOUSE.PAN;
+    orbit.mouseButtons.RIGHT = null;
 
     // Matches the standalone export: the scene's ambient setting plus a fixed base fill.
     const ambient = new THREE.HemisphereLight(0xe8efff, 0x44404b, scene.settings.ambientLightIntensity + 0.7);
@@ -162,11 +164,14 @@
     function pickContextMenu(event: MouseEvent) {
       setPointer(event);
       raycaster.setFromCamera(pointer, camera);
-      const entity = pickEntity();
+      const pickables = [...[...entityObjects.values()].filter((object) => object instanceof THREE.Mesh), ...markerObjects.values()];
+      const hit = raycaster.intersectObjects(pickables, false)[0];
+      const entity = hit?.object.userData.markerFor ?? hit?.object.userData.entityId;
       event.preventDefault();
       if (entity) onSelect(entity);
       const groundHit = raycaster.ray.intersectPlane(groundPlane, new THREE.Vector3());
-      onContextMenu(entity ?? null, event.clientX, event.clientY, groundHit ? [groundHit.x, 0, groundHit.z] : null);
+      const placement = hit?.point ?? groundHit;
+      onContextMenu(entity ?? null, event.clientX, event.clientY, placement ? [placement.x, placement.y, placement.z] : null);
     }
     function updateMarquee(event: PointerEvent) {
       if (!marqueeStart) return;
@@ -243,7 +248,7 @@
     const pointerMove = (event: PointerEvent) => updateMarquee(event);
     const pointerUp = (event: PointerEvent) => {
       if (marqueeStart?.pointerId === event.pointerId) { finishMarquee(event); return; }
-      pick(event);
+      if (event.button === 0) pick(event);
     };
     const pointerCancel = () => {
       if (!marqueeStart) return;
