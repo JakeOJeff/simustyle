@@ -4,6 +4,13 @@ Record meaningful project changes during the event, newest first.
 
 ## Event build log
 
+### 2026-10-12T03:10:00+05:30 — Lead the landing hero with AI Parse
+
+- Changed: The hero headline is now "Write it in your words. Watch it come alive." The intro explains that AI Parse turns rough, misspelled English into working code, checks every line with a real compiler, and runs it in a live 3D world. Page title and meta description updated to match. Files: `index.html`.
+- Why: Requested hero copy that leads with AI parsing and sounds more impressive.
+- Validation: Full-page headless Chrome screenshot at 1440 px; the headline fits on two lines and nothing overlaps.
+- Limitations: "Free forever" under the buttons came from separate in-progress work and is not part of this commit.
+
 ### 2026-10-12T02:55:00+05:30 — Declutter the landing page
 
 - Changed: The nav has four links. The hero intro is one sentence and the note under the buttons is shorter. Removed the "Built on" strip, the final repeated call-to-action, the assistant checklist, the scripting checklist, and the download tags and checklists. The AI Parse steps are plain text with a top rule that lights up as the demo plays. Features is one row of four calmer cards (the AI and scripting cards repeated other sections). The example script is shorter. Removed the pointer glow on cards. Page height at 1440 px went from about 5650 px to 4390 px. Files: `index.html`, `src/landing/landing.css`, `src/landing/main.ts`.
