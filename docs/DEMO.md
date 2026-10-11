@@ -2,6 +2,8 @@
 
 A short walkthrough for presenting the project. Each part shows one feature: the AI scene agent, the plain-English script language, and AI Parse.
 
+For a tighter, paste-ready script presentation with setup steps and a timed run of show, see [Live demos: scripts](DEMO_SCRIPTS.md).
+
 > The scripts in sections 2 and 3 were checked with the project's parser and checker. The AI prompts (sections 1 and 4) have not been run against a live model, so do a dry run before presenting.
 
 ## Setup

@@ -4,6 +4,13 @@ Record meaningful project changes during the event, newest first.
 
 ## Event build log
 
+### 2026-10-11T08:30:00+05:30 — Add a script-focused demo runbook
+
+- Changed: Added `docs/DEMO_SCRIPTS.md` with a click-to-animate example, a playable coin-collection scene, a back-and-forth patrol, setup steps, presenter cues, and recovery tips. Linked it from `docs/DEMO.md` and README.
+- Why: Give the presenter a concise, repeatable script demo with setup and expected results alongside the broader walkthrough.
+- Validation: Compared the example syntax with the scripting reference and the editor's shipped templates; checked Markdown links and ran `git diff --check`. No tests were run because this is a documentation change.
+- Limitations: The new runbook was not rehearsed in the running app; physics and touch-event behavior depend on the described collision settings.
+
 ### 2026-10-11T08:15:00+05:30 — Add scene naming and a Scene Loader window
 
 - Changed: Added a Rename scene dialog and persist scene names in scene JSON. Added a movable Scene Loader window with Open, Open Recent, recent-scene entries, and Save current scene as JSON. Browser recents cache scene contents in IndexedDB; desktop recents retain their file paths. Updated README, the user guide, and in-app Docs.
