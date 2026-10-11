@@ -1,0 +1,113 @@
+# Build native desktop installers whenever a GitHub release is published.
+# Release tags must use semantic versions, for example v1.2.3.
+name: Release desktop apps
+
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: desktop-build-${{ github.event.release.tag_name || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  desktop:
+    name: Build ${{ matrix.name }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: Windows
+            os: windows-latest
+            bundles: nsis
+            artifact-path: src-tauri/target/release/bundle/nsis/*-setup.exe
+          - name: macOS
+            os: macos-latest
+            bundles: dmg
+            artifact-path: src-tauri/target/release/bundle/dmg/*.dmg
+          - name: Linux
+            os: ubuntu-24.04
+            bundles: deb,appimage
+            artifact-path: |
+              src-tauri/target/release/bundle/deb/*.deb
+              src-tauri/target/release/bundle/appimage/*.AppImage
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.release.tag_name || github.ref }}
+
+      - name: Install Linux build dependencies
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            libwebkit2gtk-4.1-dev \
+            build-essential \
+            curl \
+            wget \
+            file \
+            libxdo-dev \
+            libssl-dev \
+            libayatana-appindicator3-dev \
+            librsvg2-dev \
+            libfuse2t64
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri -> target
+
+      - run: npm ci
+
+      - name: Set app version from the release tag
+        if: github.event_name == 'release'
+        shell: bash
+        env:
+          TAG: ${{ github.event.release.tag_name }}
+        run: |
+          VERSION="${TAG#v}"
+          if ! [[ "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?$ ]]; then
+            echo "::error::Release tag '$TAG' is not a version like v1.2.3."
+            exit 1
+          fi
+          node -e '
+            const fs = require("fs");
+            const file = "src-tauri/tauri.conf.json";
+            const config = JSON.parse(fs.readFileSync(file, "utf8"));
+            config.version = process.argv[1];
+            fs.writeFileSync(file, JSON.stringify(config, null, 2) + "\n");
+          ' "$VERSION"
+          echo "Building SimuStyle $VERSION for ${{ matrix.name }}"
+
+      - name: Build and attach installer to the release
+        if: github.event_name == 'release'
+        uses: tauri-apps/tauri-action@v1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          releaseId: ${{ github.event.release.id }}
+          args: --bundles ${{ matrix.bundles }}
+
+      - name: Build installer (manual run)
+        if: github.event_name != 'release'
+        uses: tauri-apps/tauri-action@v1
+        with:
+          args: --bundles ${{ matrix.bundles }}
+
+      - name: Keep installer as a build artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: SimuStyle-${{ matrix.name }}-installer
+          path: ${{ matrix.artifact-path }}
+          if-no-files-found: error
