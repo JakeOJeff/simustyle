@@ -4,7 +4,7 @@
 
   const topics = [
     ["getting-started", "Getting started"], ["workspace", "Workspace"], ["scene-editing", "Scene editing"],
-    ["hierarchy-inspector", "Hierarchy & Inspector"], ["scripts", "Scripts & Console"],
+    ["hierarchy-inspector", "Scene panel & Inspector"], ["scripts", "Scripts & Console"],
     ["ai-assistant", "AI assistant"], ["animation-play", "Animation & Play"],
     ["save-export", "Save & export"], ["shortcuts", "Keyboard shortcuts"], ["troubleshooting", "Troubleshooting"]
   ];
@@ -35,35 +35,35 @@
   <article class="docs-content">
     <section id="docs-getting-started">
       <h2>Getting started</h2>
-      <p>Choose <b>Add</b> in the top bar to make your first object. Select it in the Scene or Hierarchy, then change its position, rotation, scale, and components in Inspector. Use <b>Play</b> to run scripts, animation, and physics.</p>
+      <p>Choose <b>Add</b> in the top bar to make your first object. Select it in the viewport or the Scene panel, then change its position, rotation, scale, and components in Inspector. Use <b>Play</b> to run scripts, animation, and physics.</p>
       <p>To start the browser editor locally, run <code>npm install</code> and <code>npm run dev</code> in a terminal, then open the local address Vite prints.</p>
     </section>
 
     <section id="docs-workspace">
       <h2>Arrange your workspace</h2>
-      <p>Hierarchy, Inspector, Console, AI, Timeline, and Docs are independent windows. The tabs along the bottom show or hide them. Drag a title bar to move a window; drop near an edge to snap it, or release away from edges to float it.</p>
+      <p>Scene, Inspector, Console, Assistant, Timeline, and Docs are independent windows. The tabs along the bottom show or hide them. Drag a title bar to move a window; drop near an edge to snap it, or release away from edges to float it.</p>
       <p>Resize a floating window from any edge or corner. Resize a snapped window from its inner edge. Snapped windows reserve room for the Scene and Script work areas. Your panel layout is saved on this device.</p>
       <p>In the Scene view, drag to orbit the camera, use the wheel to zoom, and middle-drag to pan. Right-click to open the context menu; choose <b>Add</b> to create an object at the pointer, or as a child of the clicked object. Drag a selected object's gizmo to transform the object without orbiting the camera.</p>
     </section>
 
     <section id="docs-scene-editing">
       <h2>Create and edit objects</h2>
-      <p><b>Add</b> creates a Cube, Sphere, Cylinder, Capsule, Cone, Plane, Point/Sun/Spot light, Camera, Script object, or Empty group. Lights and cameras show a clickable wireframe marker; rotate a Sun or Spot light to aim it. New primitives are spaced around the origin. Click an object in the view or its row in Hierarchy to select it. Hold <kbd>Ctrl</kbd> and drag in the viewport to box-select intersecting objects; Ctrl-click or Shift-click Hierarchy rows to extend a selection.</p>
+      <p><b>Add</b> creates a Cube, Sphere, Cylinder, Capsule, Cone, Plane, Point/Sun/Spot light, Camera, Script object, or Empty group. Lights and cameras show a clickable wireframe marker; rotate a Sun or Spot light to aim it. New primitives are spaced around the origin. Click an object in the view or its row in the Scene panel to select it. Hold <kbd>Ctrl</kbd> and drag in the viewport to box-select intersecting objects; Ctrl-click or Shift-click Hierarchy rows to extend a selection.</p>
       <p>Choose Select, Move, Rotate, or Scale in the toolbar. Move, Rotate, and Scale show a gizmo in the viewport. The World/Local button changes the gizmo axes. The magnet toggles snapping (0.5 m movement, 15° rotation, 0.1 scale); the grid button toggles the floor grid. The viewport has no solid ground plane. Press <kbd>F</kbd> to frame the selection.</p>
-      <p>Right-click an object for Cut, Copy, Paste, Duplicate, Rename, Delete, Group, and Ungroup actions. Right-click empty viewport or Hierarchy space to paste. Viewport paste uses the ground point under the pointer; Hierarchy paste creates a root object. Copying, duplicating, or deleting a group includes its descendants.</p>
+      <p>Right-click an object for Cut, Copy, Paste, Duplicate, Rename, Delete, Group, and Ungroup actions. Right-click empty viewport or Scene panel space to paste. Viewport paste uses the ground point under the pointer; Scene panel paste creates a root object. Copying, duplicating, or deleting a group includes its descendants.</p>
     </section>
 
     <section id="docs-hierarchy-inspector">
-      <h2>Hierarchy and Inspector</h2>
-      <p>Drag a Hierarchy row onto another object to make it a child. Drop on the top or bottom edge to place it beside an object, or drop on blank space to move it to the root. The Inspector's <b>Inside</b> menu also changes the parent. Reparenting preserves world position. Groups are invisible but transform their children together.</p>
+      <h2>Scene panel and Inspector</h2>
+      <p>Drag a Scene panel row onto another object to make it a child. Drop on the top or bottom edge to place it beside an object, or drop on blank space to move it to the root. The Inspector's <b>Inside</b> menu also changes the parent. Reparenting preserves world position. Groups are invisible but transform their children together.</p>
       <p>In Inspector, edit the selected object's name and transform, change component fields, collapse sections, or add components. Script controls and ranged script settings also appear here. Click a diamond beside an animatable field to key its value at the current Timeline time.</p>
-      <p>With nothing selected, Inspector shows <b>Scene settings</b>: collisions, gravity, background, ambient light, and physics step. They apply the next time you press Play.</p>
+      <p>With nothing selected, Inspector shows <b>Scene settings</b>: collisions, gravity (with Earth, Moon, and Zero presets), physics step, sky color, ambient light, and grid snap. They apply the next time you press Play.</p>
       <p><b>Collisions:</b> the stacked-boxes toolbar button turns collisions on or off. Each object has <b>Physics</b> and <b>Collision</b> switches at the top of Inspector. A <b>Collider</b> makes an object solid and touchable without Physics; <b>Trigger</b> detects touches without blocking; <b>Reaction</b> (flash, shake, change color, jump, disappear, destroy other) reacts without a script. Scripts can use <code>when I touch a ball</code>.</p>
     </section>
 
     <section id="docs-scripts">
       <h2>Scripts and Console</h2>
-      <p>Scripts belong to an object. Select one and click <b>Script</b>, choose <b>+ Add a script</b> in Inspector, or click its script icon in Hierarchy. With nothing selected, Script creates a scene-wide script. In an object script, <code>me</code>, <code>I</code>, and <code>my</code> refer to its owner.</p>
+      <p>Scripts belong to an object. Select one and click <b>Script</b>, choose <b>+ Add a script</b> in Inspector, or click its script icon in the Scene panel. With nothing selected, Script creates a scene-wide script. In an object script, <code>me</code>, <code>I</code>, and <code>my</code> refer to its owner.</p>
       <p>Start with an event and indent actions underneath:</p>
       <pre>when game starts
   say "Scene started"
@@ -71,7 +71,7 @@
 when space is pressed
   move up 2 over 0.5 seconds</pre>
       <p>Tab and Shift+Tab indent, Enter auto-indents, and Ctrl+/ toggles comments. Apply changes with <b>Apply</b> or Ctrl+S. The editor also applies edits when you leave it, save, or start Play. <b>✦ Parse</b> fixes typos locally first, then asks AI to fix only the broken lines, never valid ones, without adding actions you did not write; review the highlighted changes before using them. Hover an object name, <code>me</code>, or a shape word to see which object it refers to.</p>
-      <p>Console runs supported plain-English commands immediately. Quick commands include <code>play</code>/<code>run</code>, <code>pause</code>, <code>stop</code>, and <code>clear</code>. While stopped, scene commands are one undoable edit; during Play or Pause, they affect the live simulation and Stop restores the original scene. To target one match, add a zero-based index, for example <code>move all balls[2] up 1</code> selects the third matching ball. Up and Down recall command history. Waits and glides complete immediately in Console.</p>
+      <p>Console runs supported plain-English commands immediately. Quick commands include <code>play</code>/<code>run</code>, <code>pause</code>, <code>stop</code>, <code>clear</code>, and <code>help</code>; the buttons above the command bar run the common ones. While stopped, scene commands are one undoable edit; during Play or Pause, they affect the live simulation and Stop restores the original scene. To target one match, add a zero-based index, for example <code>move all balls[2] up 1</code> selects the third matching ball. Up and Down recall command history. Waits and glides complete immediately in Console.</p>
       <h3>Common script sentences</h3>
       <ul>
         <li><b>Events:</b> <code>when game starts</code>, <code>forever</code>, <code>every 2 seconds</code>, <code>when clicked</code>, <code>when space is pressed</code>, <code>when I touch a coin</code>, <code>when I receive "win"</code>.</li>
@@ -85,7 +85,7 @@ when space is pressed
 
     <section id="docs-ai-assistant">
       <h2>AI scene assistant</h2>
-      <p>Open the AI window, describe the change, then send with <kbd>Ctrl</kbd>+<kbd>Enter</kbd>. Before applying anything, the assistant builds a first draft, runs its scripts in an isolated Play-start preview, and asks for a separate second pass against your request and the captured Console output. It validates the second result and shows the preview output before the change is applied as one undoable edit. The preview runs game-start scripts and five short script ticks; it does not render the scene or run Rapier physics. Expand the check details in the assistant response.</p>
+      <p>Open the Assistant window, describe the change, then send with <kbd>Enter</kbd> (<kbd>Shift</kbd>+<kbd>Enter</kbd> adds a new line). Before applying anything, the assistant builds a first draft, runs its scripts in an isolated Play-start preview, and asks for a separate second pass against your request and the captured Console output. It validates the second result and shows the preview output before the change is applied as one undoable edit. The preview runs game-start scripts and five short script ticks; it does not render the scene or run Rapier physics. Expand the check details in the assistant response.</p>
       <p>For browser development, set <code>AI_API_KEY</code> and <code>AI_MODEL</code> in the ignored root <code>.env</code> file. <code>AI_BASE_URL</code> is optional. In the desktop app, use AI Settings; the key is stored in the operating system credential store. Requests need network access. Never put a key in a <code>VITE_</code> variable.</p>
     </section>
 
@@ -117,7 +117,8 @@ when space is pressed
         <div><dt>Q / W / E / R</dt><dd>Select / Move / Rotate / Scale</dd></div>
         <div><dt>F</dt><dd>Frame selected object</dd></div>
         <div><dt>Ctrl+drag</dt><dd>Box-select in viewport</dd></div>
-        <div><dt>Ctrl+Enter</dt><dd>Send AI prompt</dd></div>
+        <div><dt>Enter</dt><dd>Send Assistant prompt (Shift+Enter: new line)</dd></div>
+        <div><dt>K</dt><dd>Key selected object's position at the playhead</dd></div>
         <div><dt>Space</dt><dd>Start / resume Play; during Play, send the space key to scripts</dd></div>
         <div><dt>/</dt><dd>Focus Console command bar</dd></div>
         <div><dt>Tab in Console</dt><dd>Select most recently added scene object</dd></div>

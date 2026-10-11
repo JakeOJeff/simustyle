@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { Box, Camera, ChevronDown, ChevronRight, Circle, Cone, Cylinder, FileCode, FilePlus, Folder, FolderOpen, FolderPlus, Lightbulb, Pill, ScrollText, Search, Square, X } from "@lucide/svelte";
+  import { Box, Camera, ChevronDown, ChevronRight, Circle, Cone, Cylinder, FileCode, FilePlus, Folder, FolderOpen, Lightbulb, Pill, Plus, ScrollText, Search, Square, X } from "@lucide/svelte";
   import type { Entity, Scene } from "../scene/types";
 
   interface Props {
@@ -7,7 +7,8 @@
     selectedIds: string[];
     onSelect: (id: string) => void;
     onSelectMany: (ids: string[]) => void;
-    onGroup: () => void;
+    /** Creates a new object; shown as the empty-state action. */
+    onAdd: () => void;
     onDelete: (id: string) => boolean;
     onRename: (id: string, name: string) => void;
     onReparent: (id: string, parent: string | null) => void;
@@ -24,7 +25,7 @@
 
   type DropZone = { id: string | null; mode: "inside" | "beside" };
 
-  let { scene, selectedIds, onSelect, onSelectMany, onGroup, onDelete, onRename, onReparent, onOpenScript, onContextMenu, onContextMenuEmpty }: Props = $props();
+  let { scene, selectedIds, onSelect, onSelectMany, onAdd, onDelete, onRename, onReparent, onOpenScript, onContextMenu, onContextMenuEmpty }: Props = $props();
   let collapsed = $state<Record<string, boolean>>({});
   let filter = $state("");
   let renaming = $state<{ id: string; name: string } | null>(null);
@@ -135,22 +136,22 @@
     event.preventDefault();
     onContextMenuEmpty(event.clientX, event.clientY);
   }}>
-  <header class="panel-header">
-    <div>
-      <h2>Scene</h2>
-      <span class="entity-count">{scene.entities.length} {scene.entities.length === 1 ? "object" : "objects"}{selectedIds.length > 1 ? ` · ${selectedIds.length} selected` : ""}</span>
-    </div>
-    <button class="add-button" data-tutorial-target="hierarchy-group" type="button" onclick={onGroup} aria-label="New group" title={selectedIds.length ? "Group the selected objects (Ctrl+G)" : "Add an empty group (Ctrl+G)"}>
-      <FolderPlus size={14} />
-    </button>
-  </header>
-
-  {#if scene.entities.length > 6}
-    <label class="filter"><Search size={12} /><input placeholder="Find an object…" bind:value={filter} spellcheck="false" /></label>
-  {/if}
+  <div class="filter-row">
+    <label class="filter"><Search size={13} /><input aria-label="Filter objects" placeholder="Filter" bind:value={filter} spellcheck="false" />
+      {#if filter}<button class="clear-filter" type="button" aria-label="Clear filter" onclick={() => filter = ""}><X size={12} /></button>{/if}
+    </label>
+  </div>
 
   {#if rows.length === 0}
-    <p class="empty-state">{filter ? "No objects match." : "Your scene is empty. Use Add in the toolbar to create an object."}</p>
+    {#if filter}
+      <p class="empty-state no-match">No objects match “{filter.trim()}”.</p>
+    {:else}
+      <div class="empty-state">
+        <strong>No objects yet</strong>
+        <button class="add-object" type="button" onclick={onAdd}><Plus size={14} />Add object</button>
+        <span>Drag one object onto another to nest it</span>
+      </div>
+    {/if}
   {:else}
     <ul class="entity-list" class:drop-root={dropZone?.id === null && dragging} role="tree" aria-label="Scene objects" aria-multiselectable="true">
       {#each rows as row (row.entity.id)}
@@ -210,6 +211,7 @@
       {/each}
     </ul>
   {/if}
+  {#if rows.length}
   <footer class="tips">
     {#if dragging}
       Drop <b>on</b> an object to put it inside · drop on an <b>edge</b> to place it next to one · drop on empty space for the top level
@@ -217,6 +219,7 @@
       Drag onto an object to make it a child · Ctrl+click to pick several · <kbd>Ctrl+G</kbd> group
     {/if}
   </footer>
+  {/if}
 </section>
 
 <style>
@@ -232,45 +235,24 @@
     border-right: 1px solid var(--border, #2c2c32);
   }
 
-  .panel-header {
-    display: flex;
-    min-height: 52px;
-    align-items: center;
-    justify-content: space-between;
-    padding: 0 12px 0 14px;
-    border-bottom: 1px solid var(--border, #2c2c32);
-  }
-
-  .panel-header h2 { margin: 0; font-size: 12px; font-weight: 650; letter-spacing: 0.02em; }
-  .entity-count { display: block; margin-top: 3px; color: var(--text-muted, #878792); font-size: 10px; }
-
-  .add-button {
-    display: grid;
-    width: 28px;
-    height: 28px;
-    place-items: center;
-    border: 1px solid var(--border, #36363c);
-    border-radius: 6px;
-    color: var(--text-muted, #ababb3);
-    background: #29292e;
-    cursor: pointer;
-  }
-  .add-button:hover { color: var(--accent, #a99bff); border-color: var(--accent, #a99bff); }
-
+  .filter-row { flex: none; padding: 8px 8px; border-bottom: 1px solid var(--window-line, #ffffff0d); }
   .filter {
     display: flex;
     align-items: center;
-    gap: 6px;
-    margin: 8px 8px 0;
-    padding: 0 8px;
-    height: 26px;
-    border: 1px solid #ffffff12;
-    border-radius: 5px;
-    background: #131315;
-    color: #747480;
+    gap: 8px;
+    height: 32px;
+    padding: 0 6px 0 11px;
+    border: 1px solid var(--field-border, #ffffff14);
+    border-radius: 7px;
+    background: var(--field-bg, #161618);
+    color: #7a7a85;
+    cursor: text;
   }
-  .filter input { flex: 1; min-width: 0; border: 0; outline: none; background: transparent; color: #e9e9eb; font-size: 10.5px; }
-  .filter:focus-within { border-color: #a99bff66; }
+  .filter input { flex: 1; min-width: 0; height: 100%; border: 0; outline: none; background: transparent; color: #e9e9eb; font-size: 12px; }
+  .filter input::placeholder { color: #6e6e79; }
+  .filter:focus-within { border-color: #a99bff80; color: #a9a9b2; }
+  .clear-filter { display: grid; width: 20px; height: 20px; place-items: center; padding: 0; border: 0; border-radius: 4px; background: transparent; color: #8d8d97; cursor: pointer; }
+  .clear-filter:hover { background: #ffffff10; color: #fff; }
 
   .entity-list {
     flex: 1;
@@ -388,7 +370,12 @@
   .script-button:hover { background: #1f2f3a; color: #a9def7; }
   .delete-button:hover { color: #ff858d; background: #39252b; }
 
-  .empty-state { margin: 0; padding: 18px 14px; color: var(--text-muted, #878792); font-size: 11px; line-height: 1.5; }
+  .empty-state { display: flex; flex: 1; flex-direction: column; align-items: center; justify-content: center; gap: 12px; margin: 0; padding: 24px 16px; color: var(--text-muted, #878792); font-size: 11px; line-height: 1.5; text-align: center; }
+  .empty-state strong { color: var(--text-primary, #ececed); font-size: 12.5px; font-weight: 500; }
+  .empty-state.no-match { justify-content: flex-start; padding-top: 28px; }
+  .add-object { display: flex; align-items: center; gap: 6px; height: 32px; padding: 0 13px 0 11px; border: 1px solid #ffffff1c; border-radius: 7px; background: #ffffff08; color: #f0f0f2; font-size: 12px; font-weight: 500; cursor: pointer; transition: background .12s, border-color .12s; }
+  .add-object:hover { border-color: #ffffff30; background: #ffffff10; }
+  .add-object:focus-visible { outline: 2px solid var(--accent, #a99bff); outline-offset: 2px; }
 
   .tips {
     padding: 8px 12px;

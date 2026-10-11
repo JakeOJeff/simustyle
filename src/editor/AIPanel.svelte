@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { ArrowUp } from "@lucide/svelte";
   import type { SceneOp } from "../scene/types";
 
   export interface AIPanelMessage {
@@ -32,6 +33,8 @@
     onSubmit(value);
   }
 
+  const suggestions = ["Add a tower of colorful blocks", "Drop 20 balls from above", "Make it night with one lamp"];
+
   function operationLabel(operation: SceneOp): string {
     switch (operation.op) {
       case "create": return `Create ${operation.name} (${operation.id})`;
@@ -43,14 +46,14 @@
 </script>
 
 <section class="ai-panel" aria-label="AI scene assistant">
-  <header class="ai-header">
-    <div class="ai-title"><span class="ai-mark" aria-hidden="true">✦</span><span>SCENE ASSISTANT</span></div>
-    <span class="ai-caption">Describe a change to your scene</span>
-  </header>
-
   <div class="conversation" aria-live="polite" aria-relevant="additions text">
     {#if messages.length === 0 && !loading}
-      <div class="empty-state">Try “Add a tower of colorful blocks”</div>
+      <div class="empty-state">
+        <p>Describe a change and I'll make it. You can undo anything.</p>
+        <div class="suggestions">
+          {#each suggestions as suggestion (suggestion)}<button type="button" onclick={() => onSubmit(suggestion)}>{suggestion}</button>{/each}
+        </div>
+      </div>
     {/if}
     {#each messages as message (message.id)}
       <article class="message" class:user-message={message.role === "user"}>
@@ -122,35 +125,41 @@
   </div>
 
   <form class="prompt-form" data-tutorial-target="ai-prompt" onsubmit={submit}>
-    <textarea
-      aria-label="Describe a scene change"
-      placeholder="What would you like to build or change?"
-      rows="2"
-      value={prompt}
-      disabled={loading}
-      oninput={(event) => onPromptChange(event.currentTarget.value)}
-      onkeydown={(event) => {
-        if (event.key === "Enter" && (event.ctrlKey || event.metaKey)) {
-          event.preventDefault();
-          submit(event);
-        }
-      }}
-    ></textarea>
-    <div class="prompt-actions">
-      <span>Ctrl + Enter to send</span>
-      <button type="submit" disabled={loading || !prompt.trim()}>{loading ? "Working…" : "Generate changes"}<span aria-hidden="true"> ↗</span></button>
+    <div class="composer">
+      <textarea
+        aria-label="Describe a scene change"
+        placeholder="What should change?"
+        rows="2"
+        value={prompt}
+        disabled={loading}
+        oninput={(event) => onPromptChange(event.currentTarget.value)}
+        onkeydown={(event) => {
+          if (event.key === "Enter" && !event.shiftKey && !event.isComposing) {
+            event.preventDefault();
+            submit(event);
+          }
+        }}
+      ></textarea>
+      <div class="prompt-actions">
+        <span>{loading ? "Working…" : "Enter to send · Shift+Enter for new line"}</span>
+        <button type="submit" aria-label={loading ? "Working" : "Send"} title="Send (Enter)" disabled={loading || !prompt.trim()}>
+          {#if loading}<span class="spinner" aria-hidden="true"></span>{:else}<ArrowUp size={15} />{/if}
+        </button>
+      </div>
     </div>
   </form>
 </section>
 
 <style>
-  .ai-panel{height:100%;min-height:0;display:flex;flex-direction:column;background:#19191d;color:#ebebec;font-family:'DM Sans',Inter,Segoe UI,sans-serif}
-  .ai-header{height:34px;min-height:34px;display:flex;align-items:center;gap:12px;padding:0 12px;border-bottom:1px solid #ffffff0c}
-  .ai-title{display:flex;align-items:center;gap:7px;color:#d8d8dc;font:9px 'DM Mono',monospace;letter-spacing:.1em}
-  .ai-mark{font-size:13px;color:#a99bff}.ai-caption{color:#767682;font-size:10px}
-  .conversation{flex:1;min-height:0;overflow:auto;padding:9px 12px;display:flex;flex-direction:column;gap:8px}
-  .empty-state,.loading-state{display:flex;align-items:center;gap:7px;color:#848490;font:10px 'DM Mono',monospace}
-  .empty-state{min-height:30px}.loading-state{padding:4px 0;color:#b0a6e8}
+  .ai-panel{height:100%;min-height:0;display:flex;flex-direction:column;background:var(--window-bg,#1c1c1f);color:#ebebec;font-family:'DM Sans',Inter,Segoe UI,sans-serif}
+  .conversation{flex:1;min-height:0;overflow:auto;padding:12px;display:flex;flex-direction:column;gap:8px}
+  .empty-state{display:grid;justify-items:start;gap:12px}
+  .empty-state p{margin:0;color:#e3e3e6;font-size:12.5px;line-height:1.55}
+  .suggestions{display:flex;flex-direction:column;align-items:flex-start;gap:6px}
+  .suggestions button{max-width:100%;padding:7px 11px;border:1px solid #ffffff17;border-radius:7px;background:#ffffff05;color:#e6e6e9;font-size:12px;line-height:1.35;text-align:left;cursor:pointer;transition:background .12s,border-color .12s}
+  .suggestions button:hover{border-color:#a99bff66;background:#a99bff10;color:#fff}
+  .suggestions button:focus-visible{outline:2px solid var(--accent,#a99bff);outline-offset:1px}
+  .loading-state{display:flex;align-items:center;gap:7px;padding:4px 0;color:#b0a6e8;font:10.5px 'DM Mono',monospace}
   .spinner{width:11px;height:11px;border:1px solid #655b94;border-top-color:#a99bff;border-radius:50%;animation:spin .8s linear infinite}
   @keyframes spin{to{transform:rotate(360deg)}}
   .message{max-width:min(760px,100%);display:grid;grid-template-columns:62px minmax(0,1fr);align-items:baseline;column-gap:8px;row-gap:3px}
@@ -172,11 +181,14 @@
   .undo-button{margin:2px 0 4px 18px;padding:4px 9px;border:1px solid #ffffff12;border-radius:6px;background:#222226;color:#d4d4d8;font-size:10px;cursor:pointer}
   .undo-button:hover{background:#2d2d33;color:#fff}
   .fallback-draft{grid-column:2;display:grid;gap:5px;color:#d2b98a;font-size:9px;line-height:1.4}
-  .prompt-form{padding:7px 10px 8px;border-top:1px solid #ffffff10;background:#17171a}
-  textarea{display:block;width:100%;min-height:39px;max-height:90px;resize:vertical;padding:7px 9px;border:1px solid #ffffff14;border-radius:8px;outline:none;background:#121214;color:#e6e6e9;font:10px/1.45 'DM Sans',sans-serif}
-  textarea::placeholder{color:#696974}textarea:focus{border-color:#a99bff88}textarea:disabled{opacity:.55}
-  .prompt-actions{display:flex;align-items:center;justify-content:space-between;gap:8px;margin-top:5px;color:#676771;font:8px 'DM Mono',monospace}
-  .prompt-actions button{height:26px;padding:0 12px;border:1px solid transparent;border-radius:6px;background:#7c6cf0;color:#fff;font-weight:600;font-size:10px;font-family:'DM Sans',sans-serif;cursor:pointer}
-  .prompt-actions button:hover:not(:disabled){background:#8b7cf6}.prompt-actions button:disabled{opacity:.4;cursor:default}
-  @media(max-height:600px){.ai-header{height:29px;min-height:29px}.conversation{padding-top:5px;padding-bottom:5px}.prompt-form{padding:5px 8px}.prompt-form textarea{min-height:32px}}
+  .prompt-form{padding:10px;border-top:1px solid var(--window-line,#ffffff0d)}
+  .composer{display:flex;flex-direction:column;border:1px solid var(--field-border,#ffffff14);border-radius:9px;background:var(--field-bg,#161618);transition:border-color .12s}
+  .composer:focus-within{border-color:#a99bff80}
+  textarea{display:block;width:100%;min-height:46px;max-height:140px;resize:none;padding:10px 12px 4px;border:0;outline:none;background:transparent;color:#e6e6e9;font:12px/1.5 'DM Sans',sans-serif}
+  textarea::placeholder{color:#74747f}textarea:disabled{opacity:.55}
+  .prompt-actions{display:flex;align-items:center;justify-content:space-between;gap:8px;padding:4px 6px 6px 12px;color:#6e6e79;font-size:10.5px}
+  .prompt-actions>span{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .prompt-actions button{display:grid;width:28px;height:28px;flex:none;place-items:center;padding:0;border:0;border-radius:7px;background:var(--accent-fill,#7c6cf0);color:#fff;cursor:pointer;transition:background .12s,opacity .12s}
+  .prompt-actions button:hover:not(:disabled){background:var(--accent-hover,#8b7cf6)}.prompt-actions button:disabled{background:#ffffff12;color:#8d8d97;cursor:default}
+  @media(max-height:600px){.conversation{padding-top:6px;padding-bottom:6px}.prompt-form{padding:6px 8px}.prompt-form textarea{min-height:36px}}
 </style>

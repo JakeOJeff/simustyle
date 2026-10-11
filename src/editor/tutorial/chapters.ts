@@ -72,7 +72,7 @@ export const chapters: TutorialChapter[] = [
       { label: "Drag a panel by its title bar", done: (context) => context.happened("panel-move"), targets: ["panel-title"] },
       { label: "Resize a panel from an edge", done: (context) => context.happened("panel-resize"), targets: ["panel-edge", "panel-title"] }
     ] },
-    { title: "Find a panel", instruction: "The tabs along the bottom show and hide Hierarchy, Inspector, Console, AI, Timeline, and Docs. Your layout is saved on this device.", targets: ["panel-tabs"], tasks: [
+    { title: "Find a panel", instruction: "The tabs along the bottom show and hide Scene, Inspector, Console, Assistant, Timeline, and Docs. Your layout is saved on this device.", targets: ["panel-tabs"], tasks: [
       { label: "Hide or show a panel from the tabs", done: (context) => context.happened("panel") }
     ] }
   ] },
@@ -87,7 +87,7 @@ export const chapters: TutorialChapter[] = [
       { label: "Right-click empty space in the Scene view", done: (context) => context.happened("context-menu", (detail) => detail.source === "viewport"), targets: ["viewport"] },
       { label: "Choose Add, then a shape", done: (context) => context.happened("context-add", (detail) => detail.source === "viewport"), targets: ["context-add-grid", "context-add", "viewport"] }
     ] },
-    { title: "Add as a child", instruction: "Right-click an object in the Scene view or a row in Hierarchy, open Add, and create something. It is created inside the object you clicked.", tasks: [
+    { title: "Add as a child", instruction: "Right-click an object in the Scene view or a row in the Scene panel, open Add, and create something. It is created inside the object you clicked.", tasks: [
       { label: "Right-click an object", done: (context) => context.happened("context-menu", (detail) => detail.id !== null), targets: ["hierarchy-row", "viewport"] },
       { label: "Add a child from the Add section", done: (context) => created(context, (entity) => entity.parent !== null), targets: ["context-add-grid", "context-add", "hierarchy-row"] }
     ] },
@@ -95,7 +95,7 @@ export const chapters: TutorialChapter[] = [
       { label: "Add a light", done: (context) => created(context, (entity) => Boolean(entity.components.Light)), targets: ["add-light", "shelf-light", "add-menu"] },
       { label: "Add a camera", done: (context) => created(context, (entity) => Boolean(entity.components.Camera)), targets: ["add-camera", "shelf-camera", "add-menu"] }
     ] },
-    { title: "Select several objects", instruction: "Ctrl-drag a box in the Scene view, or Ctrl-click / Shift-click rows in Hierarchy to extend the selection.", targets: ["hierarchy-list", "viewport"], tasks: [
+    { title: "Select several objects", instruction: "Ctrl-drag a box in the Scene view, or Ctrl-click / Shift-click rows in the Scene panel to extend the selection.", targets: ["hierarchy-list", "viewport"], tasks: [
       { label: "Select two or more objects", done: (context) => context.now.selectedIds.length >= 2 }
     ] }
   ] },
@@ -122,10 +122,10 @@ export const chapters: TutorialChapter[] = [
     ] }
   ] },
   { id: "hierarchy", title: "Hierarchy and groups", summary: "Organize objects into parents and groups.", steps: [
-    { title: "Make a child", instruction: "Drag one Hierarchy row onto another object. The child follows its parent when the parent moves.", targets: ["hierarchy-list"], tasks: [
+    { title: "Make a child", instruction: "Drag one Scene panel row onto another object. The child follows its parent when the parent moves.", targets: ["hierarchy-list"], tasks: [
       { label: "Drop a row onto another object", done: (context) => context.happened("reparent", (detail) => detail.parent !== null) }
     ] },
-    { title: "Create a group", instruction: "Select two or more objects and press Ctrl+G (or the folder button in Hierarchy). Move the group to move its members together.", tasks: [
+    { title: "Create a group", instruction: "Select two or more objects and press Ctrl+G (or the folder button in the Scene panel). Move the group to move its members together.", tasks: [
       { label: "Select two or more objects", done: (context) => context.now.selectedIds.length >= 2 || context.happened("group", (detail) => Number(detail.count) >= 2), targets: ["hierarchy-list", "viewport"] },
       { label: "Group them with Ctrl+G", done: (context) => context.happened("group", (detail) => Number(detail.count) >= 2), targets: ["hierarchy-group"] }
     ] },
@@ -225,11 +225,11 @@ export const chapters: TutorialChapter[] = [
     ] }
   ] },
   { id: "ai", title: "AI scene assistant", summary: "Request scene edits and review them before applying.", steps: [
-    { title: "Open AI", instruction: "Show the AI panel from the bottom tabs or the Generate button. AI is optional; other chapters work without it.", tasks: [
-      { label: "Open the AI panel", done: (context) => context.now.panelOpen.ai, targets: ["panel-tab-ai", "shelf-generate"] }
+    { title: "Open the Assistant", instruction: "Show the Assistant panel from the bottom tabs or the Generate button. AI is optional; other chapters work without it.", tasks: [
+      { label: "Open the Assistant panel", done: (context) => context.now.panelOpen.ai, targets: ["panel-tab-ai", "shelf-generate"] }
     ] },
     { title: "Configure a provider", instruction: "For browser development, set AI_API_KEY and AI_MODEL in the root .env file. In the desktop app, open View → AI settings…. Continue when you're set up.", tasks: [] },
-    { title: "Request a small edit", instruction: "Describe a simple scene change, such as `add three red balls in a row`, and send it with Ctrl+Enter.", targets: ["ai-prompt", "panel-tab-ai"], tasks: [
+    { title: "Request a small edit", instruction: "Describe a simple scene change, such as `add three red balls in a row`, and send it with Enter.", targets: ["ai-prompt", "panel-tab-ai"], tasks: [
       { label: "Send a request", done: (context) => context.happened("ai-request") }
     ] },
     { title: "Review the result", instruction: "Read the summary and script checks in the reply. Applied edits can be undone from the reply or with Ctrl+Z; send another request to revise.", targets: ["ai-prompt", "panel-tab-ai"], tasks: [

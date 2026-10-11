@@ -1,6 +1,6 @@
 <script lang="ts">
   import { componentSchemas, type ComponentSchema, type FieldSchema } from "../registry";
-  import type { Entity, Scene, SceneSettings } from "../scene/types";
+  import type { Entity, Scene, SceneSettings, Vec3 } from "../scene/types";
   import { settingSchemas } from "../scene/validate";
   import { parseScript } from "../lang/parser";
   import { typecheckScript } from "../lang/checker";
@@ -32,9 +32,12 @@
     onOpenTimeline?: () => void;
     /** Opens the animation preset gallery next to the clicked button. */
     onAnimate?: (anchor: DOMRect) => void;
+    /** Viewport grid snap, shown in the scene settings. */
+    snap?: boolean;
+    onSnap?: (enabled: boolean) => void;
   }
 
-  let { scene, entity, onUpdate, onRemove, onAdd, onKeyframe, onOpenScript, onRename, onReparent, onSettings, onPhysics, onCollision, playhead = 0, onOpenTimeline, onAnimate }: Props = $props();
+  let { scene, entity, onUpdate, onRemove, onAdd, onKeyframe, onOpenScript, onRename, onReparent, onSettings, onPhysics, onCollision, playhead = 0, onOpenTimeline, onAnimate, snap = false, onSnap }: Props = $props();
 
   /** "keyed": a key sits at the playhead; "animated": the field has a track; otherwise not animated. */
   function keyState(component: string, field: string): "keyed" | "animated" | "none" {
@@ -134,14 +137,24 @@
     update("Script", "parameters", { ...values, [param.name]: value });
   }
 
-  /** Scene settings in the order a person would look for them. */
-  const sceneSettings: { key: keyof SceneSettings; title: string; hint: string }[] = [
-    { key: "collisions", title: "Collisions", hint: "Off: objects pass through each other and touch events stop. The floor stays solid." },
-    { key: "gravity", title: "Gravity", hint: "Meters per second², usually 0 -9.81 0." },
-    { key: "background", title: "Background", hint: "Sky color behind the scene." },
-    { key: "ambientLightIntensity", title: "Ambient light", hint: "Soft light on everything." },
-    { key: "fixedTimestep", title: "Physics step", hint: "Seconds per physics step. Smaller is more accurate and slower." }
+  const settingHints: Record<keyof SceneSettings, string> = {
+    collisions: "Off: objects pass through each other and touch events stop. The floor stays solid.",
+    gravity: "Meters per second², usually 0 -9.81 0.",
+    background: "Sky color behind the scene.",
+    ambientLightIntensity: "Soft light on everything.",
+    fixedTimestep: "Seconds per physics step. Smaller is more accurate and slower."
+  };
+
+  const gravityPresets: { name: string; gravity: Vec3 }[] = [
+    { name: "Earth", gravity: [0, -9.81, 0] },
+    { name: "Moon", gravity: [0, -1.62, 0] },
+    { name: "Zero", gravity: [0, 0, 0] }
   ];
+
+  /** The slider covers the useful range; the setting itself accepts up to 10. */
+  const ambientSliderMax = 1;
+  /** Live slider value while dragging, committed to the scene on release. */
+  let ambientDraft = $state<number | null>(null);
 
   /** Objects collide when they have Physics or a Collider, unless the Collider is switched off. */
   function collides(current: Entity): boolean {
@@ -153,7 +166,7 @@
 </script>
 
 <aside class="inspector panel" data-tutorial-target="inspector">
-  <div class="panel-heading"><span>INSPECTOR</span><span class="muted">{entity ? "ENTITY" : "—"}</span></div>
+
   {#if entity}
     {@const EntityIcon = entityIcon(entity)}
     <div class="entity-heading">
@@ -277,17 +290,67 @@
       <button disabled={!addComponent} aria-label="Add feature" onclick={() => { onAdd(addComponent); addComponent = ""; }}><Plus size={15} /></button>
     </div>
   {:else}
-    <div class="empty-inspector"><span>◇</span><p>Select an object in the viewport or the Scene panel to see and change it here.</p></div>
-    <section class="component-card" data-tutorial-target="inspector-scene-settings">
-      <div class="component-title"><span title="Settings for the whole scene">Scene settings</span></div>
-      <div class="fields">
-        {#each sceneSettings as setting (setting.key)}
-          <div title={setting.hint}>
-            {@render fieldControl(setting.title, settingSchemas[setting.key], scene.settings[setting.key], scene, (value, phase) => { if (phase === undefined || phase === "end") onSettings({ [setting.key]: value }); })}
+    {@const settings = scene.settings}
+    {@const ambient = ambientDraft ?? settings.ambientLightIntensity}
+    <div class="entity-heading scene-heading">
+      <div class="entity-icon"><Globe size={15} /></div>
+      <div class="entity-title"><strong>Scene</strong><small>Select an object to edit it instead</small></div>
+    </div>
+    <div data-tutorial-target="inspector-scene-settings">
+      <section class="settings-group">
+        <h3>Physics</h3>
+        <div class="setting-row" title={settingHints.collisions}>
+          <span class="setting-label">Collisions</span>
+          <button class:checked={settings.collisions} class="toggle setting-toggle" role="switch" aria-label="Collisions" aria-checked={settings.collisions} onclick={() => onSettings({ collisions: !settings.collisions })}><i></i></button>
+        </div>
+        <div class="setting-row" title={settingHints.gravity}>
+          <span class="setting-label">Gravity</span>
+          <div class="vector-input">{#each [0, 1, 2] as axis}<label class="axis-{axis}"><span>{["X", "Y", "Z"][axis]}</span><input aria-label="Gravity {["x", "y", "z"][axis]}" type="number" step="any" value={settings.gravity[axis]} onchange={(event) => { const next = [...settings.gravity] as Vec3; next[axis] = Number(event.currentTarget.value); onSettings({ gravity: next }); }} /></label>{/each}</div>
+        </div>
+        <div class="setting-row">
+          <span class="setting-label">Preset</span>
+          <div class="segmented" role="group" aria-label="Gravity preset">
+            {#each gravityPresets as preset (preset.name)}
+              {@const active = preset.gravity.every((component, axis) => Math.abs(component - settings.gravity[axis]!) < 1e-6)}
+              <button class:active aria-pressed={active} title="{preset.name} gravity: {preset.gravity[1]} m/s²" onclick={() => onSettings({ gravity: [...preset.gravity] as Vec3 })}>{preset.name}</button>
+            {/each}
           </div>
-        {/each}
-      </div>
-    </section>
+        </div>
+        <div class="setting-row" title={settingHints.fixedTimestep}>
+          <span class="setting-label">Step</span>
+          <label class="unit-input"><input aria-label="Physics step in seconds" type="number" min="0.001" max="0.1" step="0.001" value={Number(settings.fixedTimestep.toFixed(4))} onchange={(event) => { const value = Number(event.currentTarget.value); if (value >= 0.001 && value <= 0.1) onSettings({ fixedTimestep: value }); else event.currentTarget.value = String(settings.fixedTimestep); }} /><em>s</em></label>
+        </div>
+      </section>
+      <section class="settings-group">
+        <h3>Environment</h3>
+        <div class="setting-row" title={settingHints.background}>
+          <span class="setting-label">Sky</span>
+          <label class="color-field">
+            <input class="swatch" aria-label="Sky color" type="color" value={settings.background} onchange={(event) => onSettings({ background: event.currentTarget.value })} />
+            {#key settings.background}<input aria-label="Sky color hex" type="text" maxlength="7" spellcheck="false" value={settings.background.toUpperCase()} onchange={(event) => { const value = event.currentTarget.value.trim(); const hex = value.startsWith("#") ? value : `#${value}`; if (/^#[0-9a-f]{6}$/i.test(hex)) onSettings({ background: hex.toLowerCase() }); else event.currentTarget.value = settings.background.toUpperCase(); }} />{/key}
+          </label>
+        </div>
+        <div class="setting-row" title={settingHints.ambientLightIntensity}>
+          <span class="setting-label">Ambient</span>
+          <div class="slider-field">
+            <input aria-label="Ambient light" type="range" min="0" max={ambientSliderMax} step="0.01" style:--fill={rangeFill(ambient, 0, ambientSliderMax)} value={Math.min(ambient, ambientSliderMax)} oninput={(event) => ambientDraft = Number(event.currentTarget.value)} onchange={(event) => { ambientDraft = null; onSettings({ ambientLightIntensity: Number(event.currentTarget.value) }); }} />
+            <output>{ambient.toFixed(2)}</output>
+          </div>
+        </div>
+      </section>
+      {#if onSnap}
+        <section class="settings-group">
+          <h3>Grid</h3>
+          <div class="setting-row" title="Snap moves to 0.5 m, turns to 15°, and scaling to 0.1 steps">
+            <span class="setting-label">Snap</span>
+            <div class="segmented" role="group" aria-label="Grid snap">
+              <button class:active={!snap} aria-pressed={!snap} onclick={() => onSnap(false)}>Off</button>
+              <button class="mono" class:active={snap} aria-pressed={snap} onclick={() => onSnap(true)}>0.5 m</button>
+            </div>
+          </div>
+        </section>
+      {/if}
+    </div>
   {/if}
 </aside>
 
@@ -315,7 +378,7 @@
 {/snippet}
 
 <style>
-  .inspector{width:292px;min-width:260px;overflow:auto;background:#19191d;border-left:1px solid #ffffff10}.panel-heading{height:42px;padding:0 14px;display:flex;align-items:center;justify-content:space-between;border-bottom:1px solid #ffffff10;color:#9a9aa4;font:9px 'DM Mono',monospace;letter-spacing:.13em}.muted{color:#676771}.entity-heading{display:flex;align-items:center;gap:10px;padding:17px 14px 13px}.entity-icon{display:grid;place-items:center;width:30px;height:30px;background:#2c2c31;border-radius:7px;color:#a99bff}.entity-title{display:grid;gap:3px}.entity-title strong{font-size:12px;font-weight:600}.entity-title small{font:9px 'DM Mono',monospace;color:#747480}.name-field{display:grid;gap:6px;padding:0 14px 13px}.name-field span,.field-label{font:9px 'DM Mono',monospace;color:#888894;text-transform:uppercase;letter-spacing:.07em}.name-field input,.text-input,textarea{width:100%;height:29px;background:#131315;border:1px solid #ffffff12;border-radius:6px;color:#cacacf;padding:0 8px;font:11px 'DM Sans',sans-serif}.component-card{border-top:1px solid #ffffff0d}.component-title{height:36px;padding:0 10px;display:flex;align-items:center;gap:6px;color:#d6d6d9;font-size:11px;font-weight:600}.collapse,.remove-component{border:0;background:none;color:#767682;cursor:pointer}.collapse{width:18px;font-size:16px}.remove-component{margin-left:auto;font-size:17px}.remove-component:hover{color:#ff7a87}.fields{padding:2px 11px 10px}.field-row{display:grid;gap:7px;padding:7px 0}.range-input{display:grid;grid-template-columns:1fr 64px;align-items:center;gap:8px}.numeric{width:64px;height:25px;background:#131315;border:1px solid #ffffff13;border-radius:6px;color:#d4d4d8;text-align:right;padding:0 5px;font:10px 'DM Mono',monospace}.numeric.full{width:100%}.toggle{width:30px;height:17px;border:0;border-radius:10px;background:#36363b;padding:2px;cursor:pointer}.toggle i{display:block;width:13px;height:13px;background:#94949e;border-radius:50%;transition:transform .15s}.toggle.checked{background:#7c6cf0}.toggle.checked i{transform:translateX(13px);background:#fff}.color-input{display:flex;align-items:center;gap:8px}.color-input input{width:28px;height:23px;background:none;border:0;padding:0;cursor:pointer}.color-input code{font:10px 'DM Mono',monospace;color:#c3c3c9}.vector-input{display:grid;grid-template-columns:repeat(3,1fr);gap:5px}.vector-input label{display:flex;align-items:center;border:1px solid #ffffff12;border-radius:6px;background:#131315;overflow:hidden}.vector-input span{padding-left:5px;font:9px 'DM Mono',monospace;color:#82828e}.vector-input .axis-0 span{color:#e88689}.vector-input .axis-1 span{color:#87c99f}.vector-input .axis-2 span{color:#829bdf}.vector-input input{width:100%;min-width:0;height:25px;background:transparent;border:0;outline:none;color:#e0e0e3;text-align:right;padding:0 4px;font:10px 'DM Mono',monospace}.field-select{height:27px;width:100%;background:#131315;border:1px solid #ffffff13;border-radius:6px;color:#d0d0d5;padding:0 6px;font:10px 'DM Sans',sans-serif}.text-input{height:26px}textarea{height:80px;padding:7px;resize:vertical;font:10px/1.5 'DM Mono',monospace}.managed-hint{color:#767682;font-size:9px;padding:7px 1px}.add-component-row{display:grid;grid-template-columns:1fr 29px;gap:5px;padding:12px;border-top:1px solid #ffffff0d}.add-component-row select{height:29px;background:#131315;border:1px solid #ffffff13;border-radius:6px;color:#aaaab2;padding:0 7px;font:10px 'DM Sans',sans-serif}.add-component-row button{border:0;border-radius:6px;background:#7c6cf0;color:#fff;font-size:17px;cursor:pointer}.add-component-row button:hover:not(:disabled){background:#8b7cf6}.add-component-row button:disabled{opacity:.4;cursor:default}.empty-inspector{display:grid;justify-items:center;padding:55px 27px;color:#767682;text-align:center}.empty-inspector span{font-size:25px;color:#5e5e68}.empty-inspector p{font-size:11px;line-height:1.55}
+  .inspector{width:292px;min-width:260px;overflow:auto;background:var(--window-bg,#1c1c1f);border-left:1px solid #ffffff10}.entity-heading{display:flex;align-items:center;gap:10px;padding:17px 14px 13px}.entity-icon{display:grid;place-items:center;width:30px;height:30px;background:#2c2c31;border-radius:7px;color:#a99bff}.entity-title{display:grid;gap:3px}.entity-title strong{font-size:12px;font-weight:600}.entity-title small{font:9px 'DM Mono',monospace;color:#747480}.name-field{display:grid;gap:6px;padding:0 14px 13px}.name-field span,.field-label{font:9px 'DM Mono',monospace;color:#888894;text-transform:uppercase;letter-spacing:.07em}.name-field input,.text-input,textarea{width:100%;height:29px;background:#131315;border:1px solid #ffffff12;border-radius:6px;color:#cacacf;padding:0 8px;font:11px 'DM Sans',sans-serif}.component-card{border-top:1px solid #ffffff0d}.component-title{height:36px;padding:0 10px;display:flex;align-items:center;gap:6px;color:#d6d6d9;font-size:11px;font-weight:600}.collapse,.remove-component{border:0;background:none;color:#767682;cursor:pointer}.collapse{width:18px;font-size:16px}.remove-component{margin-left:auto;font-size:17px}.remove-component:hover{color:#ff7a87}.fields{padding:2px 11px 10px}.field-row{display:grid;gap:7px;padding:7px 0}.range-input{display:grid;grid-template-columns:1fr 64px;align-items:center;gap:8px}.numeric{width:64px;height:25px;background:#131315;border:1px solid #ffffff13;border-radius:6px;color:#d4d4d8;text-align:right;padding:0 5px;font:10px 'DM Mono',monospace}.numeric.full{width:100%}.toggle{width:30px;height:17px;border:0;border-radius:10px;background:#36363b;padding:2px;cursor:pointer}.toggle i{display:block;width:13px;height:13px;background:#94949e;border-radius:50%;transition:transform .15s}.toggle.checked{background:#7c6cf0}.toggle.checked i{transform:translateX(13px);background:#fff}.color-input{display:flex;align-items:center;gap:8px}.color-input input{width:28px;height:23px;background:none;border:0;padding:0;cursor:pointer}.color-input code{font:10px 'DM Mono',monospace;color:#c3c3c9}.vector-input{display:grid;grid-template-columns:repeat(3,1fr);gap:5px}.vector-input label{display:flex;align-items:center;border:1px solid #ffffff12;border-radius:6px;background:#131315;overflow:hidden}.vector-input span{padding-left:5px;font:9px 'DM Mono',monospace;color:#82828e}.vector-input .axis-0 span{color:#e88689}.vector-input .axis-1 span{color:#87c99f}.vector-input .axis-2 span{color:#829bdf}.vector-input input{width:100%;min-width:0;height:25px;background:transparent;border:0;outline:none;color:#e0e0e3;text-align:right;padding:0 4px;font:10px 'DM Mono',monospace}.field-select{height:27px;width:100%;background:#131315;border:1px solid #ffffff13;border-radius:6px;color:#d0d0d5;padding:0 6px;font:10px 'DM Sans',sans-serif}.text-input{height:26px}textarea{height:80px;padding:7px;resize:vertical;font:10px/1.5 'DM Mono',monospace}.managed-hint{color:#767682;font-size:9px;padding:7px 1px}.add-component-row{display:grid;grid-template-columns:1fr 29px;gap:5px;padding:12px;border-top:1px solid #ffffff0d}.add-component-row select{height:29px;background:#131315;border:1px solid #ffffff13;border-radius:6px;color:#aaaab2;padding:0 7px;font:10px 'DM Sans',sans-serif}.add-component-row button{border:0;border-radius:6px;background:#7c6cf0;color:#fff;font-size:17px;cursor:pointer}.add-component-row button:hover:not(:disabled){background:#8b7cf6}.add-component-row button:disabled{opacity:.4;cursor:default}
   .script-params{display:grid;gap:7px;margin:8px 0;padding:9px;background:#131315;border:1px solid #ffffff10;border-radius:8px}.script-params>strong{font:9px 'DM Mono',monospace;color:#8e87bd;letter-spacing:.08em}.script-params label{display:flex;align-items:center;justify-content:space-between;color:#b9b9bf;font-size:10px}.script-params input:not([type=range]){width:100px;height:25px;background:#1b1b1f;color:#e3e3e5;border:1px solid #ffffff14;border-radius:6px;padding:0 6px}.script-params input[type=range]{flex:1;min-width:60px;margin:0 8px}.script-errors{display:grid;gap:4px;color:#ff8992;font:10px/1.4 'DM Mono',monospace;padding:7px 2px}
   .quick-toggles{display:grid;grid-template-columns:1fr 1fr;gap:8px;padding:0 14px 13px}.quick-toggles label{display:flex;align-items:center;justify-content:space-between;gap:6px;padding:7px 9px;background:#131315;border:1px solid #ffffff12;border-radius:6px;cursor:pointer}.quick-toggles span{font:9px 'DM Mono',monospace;color:#888894;text-transform:uppercase;letter-spacing:.07em}
   .children-note{margin:-4px 14px 12px;color:#8e8e99;font-size:10px}
@@ -330,4 +393,29 @@
   .entity-heading .heading-action{display:grid;width:28px;height:28px;margin-left:auto;place-items:center;padding:0;border:1px solid #7c6cf066;border-radius:7px;background:#3b3566;color:#e1dbff;cursor:pointer}.entity-heading .heading-action:hover{background:#463f78;border-color:#a99bff88;color:#fff}
   .animator-actions{display:flex;flex-wrap:wrap;align-items:center;gap:5px;padding:4px 0}.animator-actions .managed-hint{flex:1;padding:0}.animator-actions button{display:flex;align-items:center;gap:5px;height:25px;padding:0 9px;border:1px solid #ffffff12;border-radius:6px;background:#222226;color:#cfcbe0;font-size:10px;cursor:pointer}.animator-actions button:hover{background:#2d2d33;color:#fff}.animator-actions button.accent{border-color:#7c6cf066;background:#3b3566;color:#e1dbff}.animator-actions button.accent:hover{background:#463f78}
   .add-component-row button{display:grid;place-items:center}
+  /* Scene settings: labelled rows grouped under small caps headings. */
+  .scene-heading{padding:12px 14px;border-bottom:1px solid var(--window-line,#ffffff0d)}
+  .scene-heading .entity-title strong{font-size:13px}
+  .scene-heading .entity-title small{font:11px 'DM Sans',sans-serif;color:#8a8a95}
+  .settings-group{display:grid;gap:6px;padding:12px 14px 14px;border-bottom:1px solid var(--window-line,#ffffff0d)}
+  .settings-group h3{margin:0 0 4px;color:#8a8a95;font-size:10px;font-weight:600;letter-spacing:.09em;text-transform:uppercase}
+  .setting-row{display:grid;grid-template-columns:68px minmax(0,1fr);align-items:center;gap:8px;min-height:32px}
+  .setting-label{color:#dcdce0;font-size:12px}
+  .setting-toggle{justify-self:end;width:34px;height:20px}.setting-toggle i{width:16px;height:16px}.setting-toggle.checked i{transform:translateX(14px)}
+  .setting-row .vector-input label{height:30px;background:var(--field-bg,#161618)}.setting-row .vector-input span{padding-left:7px}.setting-row .vector-input input{height:100%;text-align:left;padding:0 6px;font-size:11px}
+  .segmented{display:grid;grid-auto-columns:1fr;grid-auto-flow:column;gap:4px}
+  .segmented button{height:30px;padding:0 6px;border:1px solid var(--field-border,#ffffff14);border-radius:6px;background:var(--field-bg,#161618);color:#a9a9b2;font-size:11.5px;cursor:pointer;transition:background .12s,border-color .12s,color .12s}
+  .segmented button:hover:not(.active){border-color:#ffffff26;color:#f2f2f3}
+  .segmented button.active{border-color:#8b7cf6;background:#3b3566;color:#fff}
+  .segmented button.mono{font-family:'DM Mono',monospace;font-size:11px}
+  .unit-input,.color-field{display:flex;align-items:center;gap:8px;height:30px;padding:0 9px;border:1px solid var(--field-border,#ffffff14);border-radius:6px;background:var(--field-bg,#161618)}
+  .unit-input:focus-within,.color-field:focus-within,.setting-row .vector-input label:focus-within{border-color:#a99bff80}
+  .unit-input input,.color-field input[type=text]{flex:1;min-width:0;height:100%;padding:0;border:0;outline:none;background:transparent;color:#e6e6e9;font:11px 'DM Mono',monospace}
+  .unit-input em{color:#74747f;font:normal 11px 'DM Mono',monospace}
+  .color-field{padding-left:6px}
+  .color-field .swatch{width:20px;height:20px;flex:none;padding:0;border:1px solid #ffffff26;border-radius:4px;background:none;cursor:pointer;overflow:hidden}
+  .color-field .swatch::-webkit-color-swatch-wrapper{padding:0}.color-field .swatch::-webkit-color-swatch{border:0;border-radius:3px}.color-field .swatch::-moz-color-swatch{border:0;border-radius:3px}
+  .slider-field{display:grid;grid-template-columns:minmax(0,1fr) 34px;align-items:center;gap:10px}
+  .slider-field output{color:#c9c9cf;font:11px 'DM Mono',monospace;text-align:right}
+  .settings-group button:focus-visible,.settings-group input:focus-visible{outline:2px solid var(--accent,#a99bff);outline-offset:1px}
 </style>

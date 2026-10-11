@@ -15,7 +15,7 @@ Open the local URL printed by Vite. To run the desktop app during development, u
 
 ## Editor layout
 
-The top bar contains scene file actions, edit and view menus, transform tools, Add, Script, Docs, simulation controls, and Export. The editor windows are Hierarchy, Inspector, Console, AI, Timeline, and Docs. Use the Docs button in the top bar or the tabs along the bottom to open it; the other panel tabs show or hide their windows.
+The top bar contains scene file actions, edit and view menus, transform tools, Add, Script, Docs, simulation controls, and Export. The editor windows are Scene, Inspector, Console, Assistant, Timeline, and Docs. Use the Docs button in the top bar or the tabs along the bottom to open it; the other panel tabs show or hide their windows.
 
 - Drag a window title bar to move it. Drop it near an edge to snap it there; keep it away from edges to leave it floating.
 - Resize a floating window from any edge or corner. Resize a snapped window from its edge facing the center of the editor.
@@ -26,9 +26,9 @@ The top bar contains scene file actions, edit and view menus, transform tools, A
 
 ### Add and select objects
 
-Choose **Add** in the top bar to create a Cube, Sphere, Cylinder, Capsule, Cone, Plane, Point/Sun/Spot light, Camera, Script object, or Empty group. Lights and cameras show a small clickable wireframe marker; rotate a Sun or Spot light to aim it. New primitives are spaced around the origin. Select an object by clicking it in the viewport or its row in Hierarchy. The selected object's properties appear in Inspector.
+Choose **Add** in the top bar to create a Cube, Sphere, Cylinder, Capsule, Cone, Plane, Point/Sun/Spot light, Camera, Script object, or Empty group. Lights and cameras show a small clickable wireframe marker; rotate a Sun or Spot light to aim it. New primitives are spaced around the origin. Select an object by clicking it in the viewport or its row in the Scene panel. The selected object's properties appear in Inspector.
 
-Hold **Ctrl** and drag in the viewport to draw a selection box. Every object whose visible bounds intersect the box is selected. Ctrl-click or Shift-click rows in Hierarchy to add or remove items from the current selection.
+Hold **Ctrl** and drag in the viewport to draw a selection box. Every object whose visible bounds intersect the box is selected. Ctrl-click or Shift-click rows in the Scene panel to add or remove items from the current selection.
 
 ### Transform objects
 
@@ -38,9 +38,9 @@ Use **Frame selected** from View or press **F** to bring the current selection i
 
 ### Organize objects
 
-Hierarchy lists scene objects and groups. Drag one row onto another to make it a child. Drop on the top or bottom edge of a row to place it beside that object; drop on empty space to move it to the top level. The Inspector's **Inside** menu can also set an object's parent. Reparenting preserves the object's world position. Expand or collapse groups with the row arrow. Groups are invisible in the viewport, but selecting a group lets you transform its children together.
+The Scene panel lists scene objects and groups. Drag one row onto another to make it a child. Drop on the top or bottom edge of a row to place it beside that object; drop on empty space to move it to the top level. The Inspector's **Inside** menu can also set an object's parent. Reparenting preserves the object's world position. Expand or collapse groups with the row arrow. Groups are invisible in the viewport, but selecting a group lets you transform its children together.
 
-Right-click an object in the viewport or Hierarchy to open its context menu. It includes available actions such as Cut, Copy, Paste, Duplicate, Rename, Delete, Group, and Ungroup. Right-click empty viewport or Hierarchy space to paste. A viewport paste uses the ground point under the pointer; a Hierarchy paste creates a root-level copy. Copying and deleting a group includes its descendants. Paste and Duplicate offset the copy from its source.
+Right-click an object in the viewport or the Scene panel to open its context menu. It includes available actions such as Cut, Copy, Paste, Duplicate, Rename, Delete, Group, and Ungroup. Right-click empty viewport or Scene panel space to paste. A viewport paste uses the ground point under the pointer; a Scene panel paste creates a root-level copy. Copying and deleting a group includes its descendants. Paste and Duplicate offset the copy from its source.
 
 ### Save and open scenes
 
@@ -50,7 +50,7 @@ Use the scene menu at the left of the top bar or the File menu to create, open, 
 
 Inspector edits the selected entity. Rename it in the Name field; edit Position, Rotation, and Scale in the Transform section. Component sections expose their fields and can be collapsed or removed when allowed. Add a component from the controls at the bottom of Inspector. Script settings and ranged parameters appear here too. Click a keyframe diamond beside an animatable property to key its current value at the Timeline playhead.
 
-With nothing selected (or **View → Scene settings…**), Inspector shows **Scene settings**: Collisions, Gravity, Background, Ambient light, and Physics step. These edits are undoable and take effect the next time you press Play.
+With nothing selected (or **View → Scene settings…**), Inspector shows **Scene settings**: Physics (Collisions, Gravity with Earth/Moon/Zero presets, and Physics step), Environment (Sky color and Ambient light), and Grid (viewport Snap). These edits are undoable and take effect the next time you press Play.
 
 ### Collisions
 
@@ -58,7 +58,7 @@ During Play, objects with Physics (RigidBody) or a **Collider** bump into each o
 
 ## Console
 
-Type a supported plain-English scene command in the Console command bar and press Enter. While stopped, it applies as one undoable edit. During Play or Pause, it edits the live simulation; Stop restores the scene from before Play. Quick commands are `play` (or `run`/`start`), `pause`, `stop`, and `clear` (clears the Console output). `play` resumes a paused simulation. To target one object from a matching group, use a zero-based index, for example `move all balls[2] up 1` selects the third matching ball. For example:
+Type a supported plain-English scene command in the Console command bar and press Enter. While stopped, it applies as one undoable edit. During Play or Pause, it edits the live simulation; Stop restores the scene from before Play. Quick commands are `play` (or `run`/`start`), `pause`, `stop`, `clear` (clears the Console output), and `help` (lists commands and keys). The buttons above the command bar run `play`, `pause`, `stop`, and `help`, and the header button clears the output. `play` resumes a paused simulation. To target one object from a matching group, use a zero-based index, for example `move all balls[2] up 1` selects the third matching ball. For example:
 
 ```text
 add a red ball named player at 0 2 0
@@ -70,7 +70,7 @@ After each command, Console lists every created, changed, or removed object by n
 
 ## Scripts
 
-Scripts belong to an object. Select an object and choose **Script** in the top bar, **+ Add a script** in Inspector, or the script icon on its Hierarchy row. A script with no object selected becomes a Scene Script. Inside an object script, `me`, `I`, and `my` refer to that object; scripts on groups can also address `my children` and `my parent`.
+Scripts belong to an object. Select an object and choose **Script** in the top bar, **+ Add a script** in Inspector, or the script icon on its Scene panel row. A script with no object selected becomes a Scene Script. Inside an object script, `me`, `I`, and `my` refer to that object; scripts on groups can also address `my children` and `my parent`.
 
 Start with an event line and indent the actions beneath it:
 
@@ -86,7 +86,7 @@ The editor provides syntax highlighting, line numbers, starter examples, and inl
 
 ## AI scene assistant
 
-Open the AI window and describe a scene change in the prompt box; Ctrl+Enter sends the request. Before applying anything, the assistant builds a first draft, runs its scripts in an isolated Play-start preview, then asks for an independent second pass that checks the design against your request and the captured Console output. The second result is validated before it is applied as one undoable edit. Expand **Checked before apply** in the response to see script output and runtime issues. This preview runs game-start scripts and five short script ticks; it does not render the scene or run Rapier physics, so it cannot verify the visual appearance or physics behavior. New objects are placed on free floor space when no position is given, lifted if they would sink into the floor, and renamed if their name is already taken; the reply mentions any adjustment. AI requires a configured provider and network access.
+Open the Assistant window and describe a scene change in the prompt box; Enter sends the request and Shift+Enter adds a new line. The suggestions in an empty panel send a starter request with one click. Before applying anything, the assistant builds a first draft, runs its scripts in an isolated Play-start preview, then asks for an independent second pass that checks the design against your request and the captured Console output. The second result is validated before it is applied as one undoable edit. Expand **Checked before apply** in the response to see script output and runtime issues. This preview runs game-start scripts and five short script ticks; it does not render the scene or run Rapier physics, so it cannot verify the visual appearance or physics behavior. New objects are placed on free floor space when no position is given, lifted if they would sink into the floor, and renamed if their name is already taken; the reply mentions any adjustment. AI requires a configured provider and network access.
 
 In the browser development server, set `AI_API_KEY` and `AI_MODEL` in the ignored `.env` file. `AI_BASE_URL` is optional and defaults to OpenAI's `/v1` API. Never expose a provider key with a `VITE_` variable. In the desktop app, configure the provider from AI Settings; the API key is stored in the operating system credential store. See [installation and desktop setup](../README.md#install-and-run).
 
@@ -117,8 +117,9 @@ Choose **Export** in the top bar:
 | Q / W / E / R | Select / Move / Rotate / Scale tool |
 | F | Frame selected object |
 | Ctrl+drag in viewport | Box-select intersecting objects |
-| Ctrl+click or Shift+click in Hierarchy | Extend selection |
-| Ctrl+Enter in AI prompt | Send the AI request |
+| Ctrl+click or Shift+click in the Scene panel | Extend selection |
+| Enter in Assistant prompt | Send the AI request (Shift+Enter for a new line) |
+| K | Key the selected object's position at the playhead |
 | Space while stopped / paused | Start / resume Play |
 | Space during Play | Send the `space` key to scripts |
 | / | Focus the Console command bar |
@@ -129,7 +130,7 @@ Choose **Export** in the top bar:
 
 ## Troubleshooting
 
-- **AI requests fail:** Check the model, base URL, and API key in AI Settings or `.env`, then confirm network access. Provider errors are shown in the AI window.
+- **AI requests fail:** Check the model, base URL, and API key in AI Settings or `.env`, then confirm network access. Provider errors are shown in the Assistant window.
 - **Scripts do not run:** Check inline diagnostics and Console for the line and error, then use the language examples in the [scripting reference](../README.md#scripting).
 - **An object is hidden behind a panel:** Move the panel or snap it to an edge. Snapped windows reserve space for the Scene and Script areas; floating windows may overlap them.
 - **A scene does not look the same after Stop:** Stop deliberately restores the scene to its exact pre-Play snapshot. Save scene edits before starting Play.

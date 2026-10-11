@@ -330,6 +330,12 @@
     return values;
   }
 
+  /** Seconds and hundredths, such as 04:50 for 4.5 seconds. */
+  function clock(time: number): string {
+    const hundredths = Math.round(Math.max(0, time) * 100);
+    return `${String(Math.floor(hundredths / 100)).padStart(2, "0")}:${String(hundredths % 100).padStart(2, "0")}`;
+  }
+
   function formatTick(time: number): string {
     return time >= 60 ? `${Math.floor(time / 60)}:${String(Math.round(time % 60)).padStart(2, "0")}` : `${Number(time.toFixed(2))}s`;
   }
@@ -395,6 +401,16 @@
 </script>
 
 <section class="timeline" aria-label="Animation timeline">
+  {#if !entity}
+  <header class="idle-bar">
+    <button class="icon" disabled aria-label="Play preview" title="Select an object to preview its animation"><Play size={12} fill="currentColor" /></button>
+    <button class="icon" disabled aria-label="Add keyframe" title="Select an object, then press K to add a keyframe"><Diamond size={12} /></button>
+    <span class="idle-time">{clock(0)} / {clock(duration)}</span>
+  </header>
+  <div class="idle-ruler" aria-hidden="true">
+    {#each Array.from({ length: Math.floor(duration) + 1 }, (_, second) => second) as second (second)}<span style={`left:${percent(second)}`}>{second}s</span>{/each}
+  </div>
+  {:else}
   <header class="timeline-heading">
     <div class="heading-title">
       <span class="title-icon"><Clapperboard size={14} /></span>
@@ -427,6 +443,7 @@
       </div>
     {/if}
   </header>
+  {/if}
 
   {#if entity}
     <div class="timeline-content">
@@ -527,8 +544,9 @@
     {/if}
   {:else}
     <div class="empty-state">
-      <Clapperboard size={22} />
-      <p>Select an object to animate it. Presets, easing curves, and keyframes appear here.</p>
+      <Diamond size={22} strokeWidth={1.6} />
+      <strong>Nothing to animate yet</strong>
+      <p>Select an object, then press <kbd>K</kbd> to add a keyframe.</p>
     </div>
   {/if}
 </section>
@@ -568,7 +586,7 @@
 {/if}
 
 <style>
-  .timeline{display:flex;flex-direction:column;min-height:190px;background:#19191d;color:#d8d8dc;font:11px 'DM Sans',sans-serif;overflow:hidden}
+  .timeline{display:flex;flex-direction:column;min-height:190px;background:var(--window-bg,#1c1c1f);color:#d8d8dc;font:11px 'DM Sans',sans-serif;overflow:hidden}
   .timeline-heading{display:flex;flex:none;flex-wrap:wrap;align-items:center;gap:8px 12px;min-height:44px;padding:6px 12px;border-bottom:1px solid #ffffff0c}
   .heading-title{display:flex;align-items:center;gap:8px;min-width:0;margin-right:auto}
   .heading-title>div{display:grid;gap:1px;min-width:0}
@@ -600,7 +618,7 @@
 
   .timeline-content{flex:1;min-height:0;overflow:auto}
   .ruler-row,.track-row{display:grid;grid-template-columns:190px minmax(0,1fr)}
-  .ruler-row{position:sticky;top:0;z-index:4;background:#19191d;border-bottom:1px solid #ffffff0c}
+  .ruler-row{position:sticky;top:0;z-index:4;background:var(--window-bg,#1c1c1f);border-bottom:1px solid #ffffff0c}
   .ruler-gutter{display:flex;align-items:flex-end;padding:0 10px 6px 12px;border-right:1px solid #ffffff0b}
   .legend{display:flex;align-items:center;gap:4px;color:#6e6e7a;font-size:8.5px}
   .legend .glyph.glyph{position:static;flex:none;width:7px;height:7px;margin-left:3px;transform:none;cursor:default}
@@ -673,8 +691,17 @@
   .ease-button:hover{background:#463f78;border-color:#a99bff99}
   .detail-hint{color:#77748a;font-size:9.5px}
   .spacer{flex:1}
-  .empty-state{display:grid;flex:1;place-items:center;align-content:center;gap:8px;padding:24px 16px;color:#6e6e7a;text-align:center}
-  .empty-state p{max-width:300px;margin:0;font-size:10.5px;line-height:1.5;color:#7e7e8a}
+  .empty-state{display:grid;flex:1;place-items:center;align-content:center;gap:8px;padding:24px 16px;color:#8d8d97;text-align:center}
+  .empty-state strong{margin-top:4px;color:#ececed;font-size:12.5px;font-weight:500}
+  .empty-state p{max-width:260px;margin:0;font-size:12px;line-height:1.6;color:#9a9aa4}
+  .empty-state kbd{display:inline-grid;min-width:20px;height:20px;place-items:center;margin:0 2px;padding:0 5px;border:1px solid #ffffff1f;border-radius:4px;background:#ffffff08;color:#ececed;font:11px 'DM Mono',monospace}
+
+  .idle-bar{display:flex;flex:none;align-items:center;gap:4px;height:38px;padding:0 10px 0 8px;border-bottom:1px solid #ffffff0c}
+  .idle-bar .icon:disabled{color:#6e6e79;cursor:default}
+  .idle-time{margin-left:auto;color:#8d8d97;font:11px 'DM Mono',monospace;letter-spacing:.02em}
+  .idle-ruler{position:relative;flex:none;height:26px;margin:0 14px;border-bottom:1px solid #ffffff0c}
+  .idle-ruler span{position:absolute;top:7px;transform:translateX(-50%);color:#6e6e79;font:10px 'DM Mono',monospace}
+  .idle-ruler span:first-child{transform:none}.idle-ruler span:last-child{transform:translateX(-100%)}
 
   .popover-dismiss{position:fixed;inset:0;z-index:58;border:0;background:transparent;cursor:default}
   .property-menu{position:fixed;z-index:59;display:grid;width:236px;max-height:420px;overflow:auto;padding:4px;border:1px solid #ffffff1a;border-radius:9px;background:#18181b;box-shadow:0 10px 28px #0009;font:11px 'DM Sans',sans-serif;animation:pop .12s cubic-bezier(.2,.9,.1,1)}

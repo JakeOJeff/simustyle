@@ -30,7 +30,7 @@
   import {
     BookOpen, Bot, Box, Camera, Circle, ClipboardPaste, Clapperboard, Cone, Copy, CopyPlus, Cylinder, FileCode, FileCode2, Flashlight, FolderPlus,
     Group, Lightbulb, ListTree, Magnet, MousePointer2, Move, PencilLine, Pill, Plus, RotateCw, Scaling, Scissors, SlidersHorizontal, Sparkles, Square,
-    Sun, Terminal, Trash, Ungroup, ArrowUpFromLine, X, ChevronDown, FolderInput, FolderOpen, History
+    Sun, Terminal, Trash, Ungroup, ArrowUpFromLine, X, ChevronDown, FolderInput, FolderOpen, History, GripVertical, Ban
   } from "@lucide/svelte";
   import { applyOps } from "./scene/applyOps";
   import { describeChanges } from "./scene/describeChanges";
@@ -127,15 +127,18 @@
     const index = peers.indexOf(panel);
     const left = panelDockInset("left");
     const right = panelDockInset("right");
+    // Docked panels are separate cards with an even gap on every side.
     if (layout.dock === "left" || layout.dock === "right") {
-      const height = stageHeight / peers.length;
-      const width = panelDockInset(layout.dock);
-      return `${layout.dock}:0;top:${index * height}px;width:${width}px;height:${height}px;z-index:${zIndex}`;
+      const slot = Math.max(0, stageHeight - PANEL_GAP) / peers.length;
+      const width = panelDockInset(layout.dock) - PANEL_GAP * 2;
+      return `${layout.dock}:${PANEL_GAP}px;top:${PANEL_GAP + index * slot}px;width:${width}px;height:${slot - PANEL_GAP}px;z-index:${zIndex}`;
     }
-    const width = Math.max(0, stageWidth - left - right) / peers.length;
-    const height = panelDockInset(layout.dock);
-    return `${layout.dock}:0;left:${left + index * width}px;width:${width}px;height:${height}px;z-index:${zIndex}`;
+    const slot = Math.max(0, stageWidth - left - right - PANEL_GAP) / peers.length;
+    const height = panelDockInset(layout.dock) - PANEL_GAP * 2;
+    return `${layout.dock}:${PANEL_GAP}px;left:${left + PANEL_GAP + index * slot}px;width:${slot - PANEL_GAP}px;height:${height}px;z-index:${zIndex}`;
   }
+
+  const PANEL_GAP = 6;
 
   function panelDockInset(side: PanelDock): number {
     const peers = (Object.keys(panelLayouts) as EditorPanel[]).filter((panel) => panelOpen[panel] && panelLayouts[panel].dock === side);
@@ -271,7 +274,7 @@
     const dy = event.clientY - resize.startY;
     if (resize.dock !== "floating") {
       const delta = resize.dock === "left" ? dx : resize.dock === "right" ? -dx : resize.dock === "top" ? dy : -dy;
-      const size = resize.dock === "left" || resize.dock === "right" ? resize.width : resize.height;
+      const size = (resize.dock === "left" || resize.dock === "right" ? resize.width : resize.height) + PANEL_GAP * 2;
       updateDockSize(resize.dock, Math.max(180, size + delta));
       return;
     }
@@ -895,6 +898,11 @@
       event.preventDefault();
       for (const id of [...selectedIds]) if (scene.entities.some((entity) => entity.id === id)) deleteEntity(id);
     } else if (event.key === "F2" && selectedEntity) { event.preventDefault(); renameTarget = { id: selectedEntity.id, name: selectedEntity.name }; }
+    else if (!ctrl && !event.altKey && key === "k" && selectedEntity?.components.Transform) {
+      event.preventDefault();
+      addKeyframe("Transform", "position");
+      message = `Keyed ${selectedEntity.name} position at ${timelineTime.toFixed(2)}s`;
+    }
   }
 
   function windowKeyUp(event: KeyboardEvent) {
@@ -1110,6 +1118,15 @@ when clicked
       consoleLog = [];
       commandText = "";
       message = "Console cleared";
+      return;
+    }
+    if (quickCommand === "help") {
+      log("info", `> ${text}`);
+      log("print", "Scene commands are plain sentences: move the box up 2, paint the sphere red, spin the cube.");
+      log("print", "Quick commands: play (or run), pause, stop, clear, help.");
+      log("print", "Up/Down recalls earlier commands · Tab selects the newest object · / focuses the Console.");
+      log("info", playState === "stopped" ? "Scene commands are undoable. Use the Script button to make actions run on Play." : "Scene commands change the live simulation and are discarded when you Stop.");
+      commandText = "";
       return;
     }
     if (["play", "run", "start"].includes(quickCommand)) {
@@ -1411,7 +1428,7 @@ when clicked
   }
 
   const panelNames: EditorPanel[] =["hierarchy", "inspector", "console", "ai", "timeline", "docs", "sceneLoader"];
-  const panelLabels: Record<EditorPanel, string> = { hierarchy: "Hierarchy", inspector: "Inspector", console: "Console", ai: "AI", timeline: "Timeline", docs: "Docs", sceneLoader: "Scene Loader" };
+  const panelLabels: Record<EditorPanel, string> = { hierarchy: "Scene", inspector: "Inspector", console: "Console", ai: "Assistant", timeline: "Timeline", docs: "Docs", sceneLoader: "Scene Loader" };
 
   function togglePanel(name: string) {
     if (!(name in panelOpen)) return;
@@ -1597,31 +1614,34 @@ when clicked
         <div class="panel-workspace" aria-label="Editor panels">
           {#if panelOpen.hierarchy}
             <section class="panel-window" class:floating-panel={panelLayouts.hierarchy.dock === "floating"} style={panelWindowStyle("hierarchy")} use:rememberPanelSize={"hierarchy"}>
-              <header class="panel-window-title"><button class="panel-drag-handle" data-tutorial-target="panel-title" type="button" aria-label="Drag Hierarchy panel to move or snap" onpointerdown={(event) => startPanelDrag(event, "hierarchy")}><strong>Hierarchy</strong><span>Drag to move or snap</span></button><button class="panel-close" type="button" aria-label="Close Hierarchy" onclick={() => panelOpen.hierarchy = false}><X size={13} /></button></header>
-              <div class="panel-window-body sidebar-panel-body"><Hierarchy scene={scene} {selectedIds} onSelect={selectEntity} onSelectMany={selectEntities} onGroup={groupSelection} onRename={(id, name) => apply([{ op: "update", id, components: {}, name }])} onDelete={deleteEntity} onReparent={reparentEntity} onOpenScript={openScript} onContextMenu={openEntityMenu} onContextMenuEmpty={(x, y) => openEntityMenu(null, x, y, null, "hierarchy")} /></div>
+              {@render panelTitle("hierarchy", "Scene", `${scene.entities.length} ${scene.entities.length === 1 ? "object" : "objects"}${selectedIds.length > 1 ? ` · ${selectedIds.length} selected` : ""}`)}
+              <div class="panel-window-body sidebar-panel-body"><Hierarchy scene={scene} {selectedIds} onSelect={selectEntity} onSelectMany={selectEntities} onAdd={() => createPrimitive(shelfShape)} onRename={(id, name) => apply([{ op: "update", id, components: {}, name }])} onDelete={deleteEntity} onReparent={reparentEntity} onOpenScript={openScript} onContextMenu={openEntityMenu} onContextMenuEmpty={(x, y) => openEntityMenu(null, x, y, null, "hierarchy")} /></div>
               <PanelResizeHandles panelName="Hierarchy" dock={panelLayouts.hierarchy.dock} onResizeStart={(event, edge) => startPanelResize(event, "hierarchy", edge)} />
             </section>
           {/if}
           {#if panelOpen.inspector}
             <section class="panel-window" class:floating-panel={panelLayouts.inspector.dock === "floating"} style={panelWindowStyle("inspector")} use:rememberPanelSize={"inspector"}>
-              <header class="panel-window-title"><button class="panel-drag-handle" data-tutorial-target="panel-title" type="button" aria-label="Drag Inspector panel to move or snap" onpointerdown={(event) => startPanelDrag(event, "inspector")}><strong>Inspector</strong><span>Drag to move or snap</span></button><button class="panel-close" type="button" aria-label="Close Inspector" onclick={() => panelOpen.inspector = false}><X size={13} /></button></header>
-              <div class="panel-window-body sidebar-panel-body"><Inspector {scene} entity={selectedEntity} onUpdate={updateComponent} onRemove={(component) => selectedId && apply([{ op: "update", id: selectedId, components: { [component]: null } }])} onAdd={addComponent} onKeyframe={addKeyframe} onOpenScript={() => selectedId && openScript(selectedId)} onRename={(name) => selectedId && apply([{ op: "update", id: selectedId, components: {}, name }])} onReparent={(parent) => selectedId && reparentEntity(selectedId, parent)} onSettings={(settings) => { updateSettings(settings); emitTutorial("scene-settings"); }} onPhysics={(enabled) => selectedId && setPhysics(selectedId, enabled)} onCollision={(enabled) => selectedId && setCollision(selectedId, enabled)} playhead={timelineTime} onOpenTimeline={() => { if (!panelOpen.timeline) togglePanel("timeline"); else focusedPanel = "timeline"; }} onAnimate={(anchor) => openPresetGallery(selectedId, anchor)} /></div>
+              {@render panelTitle("inspector", "Inspector", "")}
+              <div class="panel-window-body sidebar-panel-body"><Inspector {scene} entity={selectedEntity} onUpdate={updateComponent} onRemove={(component) => selectedId && apply([{ op: "update", id: selectedId, components: { [component]: null } }])} onAdd={addComponent} onKeyframe={addKeyframe} onOpenScript={() => selectedId && openScript(selectedId)} onRename={(name) => selectedId && apply([{ op: "update", id: selectedId, components: {}, name }])} onReparent={(parent) => selectedId && reparentEntity(selectedId, parent)} onSettings={(settings) => { updateSettings(settings); emitTutorial("scene-settings"); }} onPhysics={(enabled) => selectedId && setPhysics(selectedId, enabled)} onCollision={(enabled) => selectedId && setCollision(selectedId, enabled)} playhead={timelineTime} onOpenTimeline={() => { if (!panelOpen.timeline) togglePanel("timeline"); else focusedPanel = "timeline"; }} onAnimate={(anchor) => openPresetGallery(selectedId, anchor)} {snap} onSnap={(enabled) => snap = enabled} /></div>
               <PanelResizeHandles panelName="Inspector" dock={panelLayouts.inspector.dock} onResizeStart={(event, edge) => startPanelResize(event, "inspector", edge)} />
             </section>
           {/if}
           {#if panelOpen.console}
             <section class="panel-window" class:floating-panel={panelLayouts.console.dock === "floating"} style={panelWindowStyle("console")} use:rememberPanelSize={"console"}>
-              <header class="panel-window-title"><button class="panel-drag-handle" data-tutorial-target="panel-title" type="button" aria-label="Drag Console panel to move or snap" onpointerdown={(event) => startPanelDrag(event, "console")}><strong>Console</strong><span>Drag to move or snap</span></button><button class="panel-close" type="button" aria-label="Close Console" onclick={() => panelOpen.console = false}><X size={13} /></button></header>
+              {@render panelTitle("console", "Console", "")}
               <div class="panel-window-body console-body">
-                <div class="console-line"><span class="console-dot">●</span>{message}{#if simulationWarnings.length}<span> · {simulationWarnings.join(" · ")}</span>{/if}</div>
+                {#if simulationWarnings.length}<div class="console-warning">{simulationWarnings.join(" · ")}</div>{/if}
                 <div class="console-log" data-tutorial-target="console-log" aria-live="polite" use:followLog={consoleLog.length}>
-                  {#if !consoleLog.length}<div class="console-hint">Type a command to change the scene, for example <code>move the box up 2</code> or <code>paint the sphere red</code>. Quick commands: <code>play</code>/<code>run</code>, <code>pause</code>, <code>stop</code>, <code>clear</code>. {playState === "stopped" ? "Scene commands are undoable; use the Script button to make actions run on Play." : "Scene commands affect the live simulation and are discarded when you Stop."}</div>{/if}
+                  {#if !consoleLog.length}<div class="console-hint">Type a command, or "help" for the list.</div>{/if}
                   {#each consoleLog as entry}<div class="log-{entry.kind}">{entry.text}</div>{/each}
+                </div>
+                <div class="console-quick" role="toolbar" aria-label="Quick commands">
+                  {#each ["play", "pause", "stop", "help"] as quick (quick)}<button type="button" onclick={() => { commandText = quick; runCommandBar(); }}>{quick}</button>{/each}
                 </div>
                 <form class="command-bar" onsubmit={(event) => { event.preventDefault(); runCommandBar(); }}>
                   <span aria-hidden="true">›</span>
-                  <input bind:this={commandInput} data-tutorial-target="console-input" aria-label="Run a script command" placeholder="move the red ball above the box" bind:value={commandText} onkeydown={commandKey} spellcheck="false" autocomplete="off" />
-                  <button type="submit" disabled={!commandText.trim()}>Run</button>
+                  <input bind:this={commandInput} data-tutorial-target="console-input" aria-label="Run a script command" placeholder="move box up 2" bind:value={commandText} onkeydown={commandKey} spellcheck="false" autocomplete="off" />
+                  <button type="submit" disabled={!commandText.trim()}>↵ Run</button>
                 </form>
               </div>
               <PanelResizeHandles panelName="Console" dock={panelLayouts.console.dock} onResizeStart={(event, edge) => startPanelResize(event, "console", edge)} />
@@ -1629,28 +1649,28 @@ when clicked
           {/if}
           {#if panelOpen.ai}
             <section class="panel-window" class:floating-panel={panelLayouts.ai.dock === "floating"} style={panelWindowStyle("ai")} use:rememberPanelSize={"ai"}>
-              <header class="panel-window-title"><button class="panel-drag-handle" data-tutorial-target="panel-title" type="button" aria-label="Drag AI panel to move or snap" onpointerdown={(event) => startPanelDrag(event, "ai")}><strong>AI</strong><span>Drag to move or snap</span></button><button class="panel-close" type="button" aria-label="Close AI" onclick={() => panelOpen.ai = false}><X size={13} /></button></header>
+              {@render panelTitle("ai", "Assistant", "")}
               <div class="panel-window-body"><AIPanel messages={aiMessages} loading={aiLoading} {aiProgress} prompt={aiPrompt} onPromptChange={(value) => aiPrompt = value} onSubmit={submitAI} onUndo={undoAIChange} onApplyDraft={applyAIFallback} /></div>
               <PanelResizeHandles panelName="AI" dock={panelLayouts.ai.dock} onResizeStart={(event, edge) => startPanelResize(event, "ai", edge)} />
             </section>
           {/if}
           {#if panelOpen.timeline}
             <section class="panel-window" class:floating-panel={panelLayouts.timeline.dock === "floating"} style={panelWindowStyle("timeline")} use:rememberPanelSize={"timeline"}>
-              <header class="panel-window-title"><button class="panel-drag-handle" data-tutorial-target="panel-title" type="button" aria-label="Drag Timeline panel to move or snap" onpointerdown={(event) => startPanelDrag(event, "timeline")}><strong>Timeline</strong><span>Drag to move or snap</span></button><button class="panel-close" type="button" aria-label="Close Timeline" onclick={() => panelOpen.timeline = false}><X size={13} /></button></header>
+              {@render panelTitle("timeline", "Timeline", "")}
               <div class="panel-window-body"><Timeline {scene} {selectedId} playhead={timelineTime} onPlayheadChange={(value) => timelineTime = value} onTrackChange={(tracks) => selectedId && changeTracks(selectedId, tracks)} onAnimatorChange={(fields) => selectedId && changeAnimator(selectedId, fields)} onApplyPreset={(presetId) => selectedId && applyAnimationPreset(selectedId, presetId)} /></div>
               <PanelResizeHandles panelName="Timeline" dock={panelLayouts.timeline.dock} onResizeStart={(event, edge) => startPanelResize(event, "timeline", edge)} />
             </section>
           {/if}
           {#if panelOpen.docs}
             <section class="panel-window" class:floating-panel={panelLayouts.docs.dock === "floating"} style={panelWindowStyle("docs")} use:rememberPanelSize={"docs"}>
-              <header class="panel-window-title"><button class="panel-drag-handle" data-tutorial-target="panel-title" type="button" aria-label="Drag Docs panel to move or snap" onpointerdown={(event) => startPanelDrag(event, "docs")}><strong>Docs</strong><span>Drag to move or snap</span></button><button class="panel-close" type="button" aria-label="Close Docs" onclick={() => panelOpen.docs = false}><X size={13} /></button></header>
+              {@render panelTitle("docs", "Docs", "")}
               <div class="panel-window-body"><DocsPanel /></div>
               <PanelResizeHandles panelName="Docs" dock={panelLayouts.docs.dock} onResizeStart={(event, edge) => startPanelResize(event, "docs", edge)} />
             </section>
           {/if}
           {#if panelOpen.sceneLoader}
             <section class="panel-window floating-panel scene-loader-window" style={panelWindowStyle("sceneLoader")} use:rememberPanelSize={"sceneLoader"}>
-              <header class="panel-window-title"><button class="panel-drag-handle" data-tutorial-target="panel-title" type="button" aria-label="Drag Scene Loader panel to move" onpointerdown={(event) => startPanelDrag(event, "sceneLoader")}><strong>Scene Loader</strong><span>Open and save scene files</span></button><button class="panel-close" type="button" aria-label="Close Scene Loader" onclick={() => panelOpen.sceneLoader = false}><X size={13} /></button></header>
+              {@render panelTitle("sceneLoader", "Scene Loader", "Open and save scene files")}
               <div class="panel-window-body scene-loader-body">
                 <div class="scene-loader-actions">
                   <button type="button" onclick={openScenePicker}>Open scene…</button>
@@ -1678,10 +1698,10 @@ when clicked
         </div>
       </div>
       <div class="bottom-tabs" data-tutorial-target="panel-tabs" role="toolbar" aria-label="Show or hide editor panels">
-        <button class:selected={panelOpen.hierarchy} aria-pressed={panelOpen.hierarchy} onclick={() => panelOpen.hierarchy = !panelOpen.hierarchy}><ListTree size={12} /> Hierarchy</button>
+        <button class:selected={panelOpen.hierarchy} aria-pressed={panelOpen.hierarchy} onclick={() => panelOpen.hierarchy = !panelOpen.hierarchy}><ListTree size={12} /> Scene</button>
         <button class:selected={panelOpen.inspector} aria-pressed={panelOpen.inspector} onclick={() => panelOpen.inspector = !panelOpen.inspector}><SlidersHorizontal size={12} /> Inspector</button>
         <button class:selected={panelOpen.console} data-tutorial-target="panel-tab-console" aria-pressed={panelOpen.console} onclick={() => panelOpen.console = !panelOpen.console}><Terminal size={12} /> Console</button>
-        <button class:selected={panelOpen.ai} data-tutorial-target="panel-tab-ai" aria-pressed={panelOpen.ai} onclick={() => panelOpen.ai = !panelOpen.ai}><Bot size={12} /> AI</button>
+        <button class:selected={panelOpen.ai} data-tutorial-target="panel-tab-ai" aria-pressed={panelOpen.ai} onclick={() => panelOpen.ai = !panelOpen.ai}><Bot size={12} /> Assistant</button>
         <button class:selected={panelOpen.timeline} data-tutorial-target="panel-tab-timeline" aria-pressed={panelOpen.timeline} onclick={() => panelOpen.timeline = !panelOpen.timeline}><Clapperboard size={12} /> Timeline</button>
         <button class:selected={panelOpen.docs} aria-pressed={panelOpen.docs} onclick={() => togglePanel("docs")}><BookOpen size={12} /> Docs</button>
       </div>
@@ -1761,28 +1781,58 @@ when clicked
   <TutorialOverlay />
 </main>
 
+{#snippet panelTitle(panel: EditorPanel, title: string, meta: string)}
+  <header class="panel-window-title">
+    <button class="panel-drag-handle" data-tutorial-target="panel-title" type="button" aria-label="Drag {title} panel to move or snap" onpointerdown={(event) => startPanelDrag(event, panel)}>
+      <span class="panel-grip" aria-hidden="true"><GripVertical size={14} /></span>
+      {#if panel === "ai"}<span class="panel-title-icon" aria-hidden="true"><Sparkles size={13} /></span>{/if}
+      <strong>{title}</strong>
+      {#if panel === "console"}
+        <span class="panel-meta panel-status" class:live={playState !== "stopped"} title={message}><i></i>{message}</span>
+      {:else if meta}
+        <span class="panel-meta">{meta}</span>
+      {/if}
+    </button>
+    {#if panel === "hierarchy"}
+      <button class="panel-action" data-tutorial-target="hierarchy-group" type="button" aria-label="New group" title={selectedIds.length ? "Group the selected objects (Ctrl+G)" : "Add an empty group (Ctrl+G)"} onclick={groupSelection}><FolderPlus size={14} /></button>
+    {:else if panel === "console"}
+      <button class="panel-action" type="button" aria-label="Clear console" title="Clear console" disabled={!consoleLog.length} onclick={() => { consoleLog = []; message = "Console cleared"; }}><Ban size={14} /></button>
+    {/if}
+    <button class="panel-close" type="button" aria-label="Close {title}" onclick={() => panelOpen[panel] = false}><X size={14} /></button>
+  </header>
+{/snippet}
+
 <style>
   .stage{position:relative;z-index:0;isolation:isolate;box-sizing:border-box;flex:1;min-height:0;display:flex}
   .scene-content-window{position:absolute;z-index:3;min-width:0;min-height:0}
   .panel-workspace{position:absolute;inset:0;z-index:5;overflow:hidden;pointer-events:none}
-  .panel-window{position:absolute;display:flex;min-width:220px;min-height:140px;flex-direction:column;overflow:hidden;pointer-events:auto;border:1px solid #46464e;border-radius:0;background:#1b1b1f;box-shadow:none}
-  .panel-window.floating-panel{overflow:hidden;min-width:220px;min-height:140px}
-  .panel-window-title{display:flex;flex:0 0 32px;align-items:center;gap:10px;padding:0 8px 0 12px;border-bottom:1px solid #ffffff12;background:#25252a;color:#e1e1e3;cursor:grab;user-select:none}
+  .panel-window{position:absolute;display:flex;min-width:220px;min-height:140px;flex-direction:column;overflow:hidden;pointer-events:auto;border:1px solid var(--window-border);border-radius:10px;background:var(--window-bg);box-shadow:0 1px 2px #0000004d}
+  .panel-window.floating-panel{overflow:hidden;min-width:220px;min-height:140px;box-shadow:0 18px 44px #00000080,0 0 0 1px #00000040}
+  .panel-window-title{display:flex;flex:0 0 38px;align-items:center;gap:4px;padding:0 7px 0 6px;border-bottom:1px solid var(--window-line);background:transparent;color:var(--text-primary);cursor:grab;user-select:none}
   .panel-window-title:active{cursor:grabbing}
-  .panel-window-title strong{font-size:11px;font-weight:600}
-  .panel-window-title span{flex:1;color:#767682;font-size:9px}
-  .panel-drag-handle{display:flex;height:100%;min-width:0;flex:1;align-items:center;gap:10px;padding:0;border:0;background:transparent;text-align:left;cursor:grab;user-select:none}
+  .panel-drag-handle{display:flex;height:100%;min-width:0;flex:1;align-items:center;gap:7px;padding:0;border:0;background:transparent;color:inherit;text-align:left;cursor:grab;user-select:none}
   .panel-drag-handle:active{cursor:grabbing}
-  .panel-close{display:grid;width:22px;height:22px;flex:none;place-items:center;border:0;border-radius:4px;background:transparent;color:#9797a1;cursor:pointer}
-  .panel-close:hover{background:#ffffff12;color:#fff}
+  .panel-drag-handle:focus-visible{outline:2px solid var(--accent);outline-offset:-2px;border-radius:6px}
+  .panel-grip{display:grid;place-items:center;color:#5c5c66;transition:color .12s}
+  .panel-drag-handle:hover .panel-grip{color:#9a9aa4}
+  .panel-title-icon{display:grid;place-items:center;margin-right:-2px;color:var(--accent)}
+  .panel-window-title strong{flex:none;font-size:12px;font-weight:600;letter-spacing:-.005em}
+  .panel-meta{min-width:0;overflow:hidden;color:var(--text-muted);font-size:11px;text-overflow:ellipsis;white-space:nowrap}
+  .panel-status{display:flex;align-items:center;gap:5px}
+  .panel-status i{width:6px;height:6px;flex:none;border-radius:50%;background:#5fcf8a}
+  .panel-status.live i{background:#f0b45a;box-shadow:0 0 6px #f0b45a99}
+  .panel-action,.panel-close{display:grid;width:24px;height:24px;flex:none;place-items:center;padding:0;border:0;border-radius:6px;background:transparent;color:#8d8d97;cursor:pointer;transition:background .12s,color .12s}
+  .panel-action:hover:not(:disabled),.panel-close:hover{background:#ffffff10;color:#f2f2f3}
+  .panel-action:disabled{opacity:.4;cursor:default}
+  .panel-action:focus-visible,.panel-close:focus-visible{outline:2px solid var(--accent);outline-offset:-1px}
   .panel-window-body{display:flex;min-width:0;min-height:0;flex:1;flex-direction:column;overflow:hidden}
   .panel-window-body :global(.ai-panel){flex:1}
   .panel-window-body :global(.timeline){min-height:0;flex:1;border-top:0}
   .sidebar-panel-body :global(.hierarchy),.sidebar-panel-body :global(.inspector){width:100%;min-width:0;min-height:0;flex:1;flex-basis:auto;border-right:0;border-left:0}
-  .console-body .console-line{flex:none;padding:6px 10px}
   .console-body .console-log{flex:1;min-height:30px}
   .console-body .command-bar{flex:none}
-  .panel-snap-preview{position:absolute;z-index:10;border:1px solid #a99bff;background:#8b7cf622;pointer-events:none}
+  .console-warning{flex:none;margin:8px 10px 0;padding:6px 9px;border:1px solid #f0b45a33;border-radius:6px;background:#f0b45a0f;color:#e7c48c;font-size:11px;line-height:1.4}
+  .panel-snap-preview{position:absolute;z-index:10;border:1px solid #a99bff;border-radius:10px;background:#8b7cf622;pointer-events:none}
   .panel-snap-preview.snap-left{top:0;bottom:0;left:0;width:38%}
   .panel-snap-preview.snap-right{top:0;right:0;bottom:0;width:38%}
   .panel-snap-preview.snap-top{top:0;right:0;left:0;height:42%}
@@ -1795,14 +1845,19 @@ when clicked
   .dirty-dot{font-style:normal;color:#ffd479;font-size:8px}
   .close-tab{display:grid;place-items:center;width:18px;height:18px;border:0;border-radius:4px;background:none;color:#767682;cursor:pointer}
   .close-tab:hover{background:#ffffff12;color:#fff}
-  .console-log{flex:1;min-height:0;overflow:auto;padding:0 15px 4px;font:10.5px/17px 'DM Mono',monospace;color:#aaaab2}
-  .console-hint{color:#747480;font-family:'DM Sans',sans-serif;font-size:10.5px}.console-hint code{color:#7fd1ff;font-family:'DM Mono',monospace}
+  .console-log{flex:1;min-height:0;overflow:auto;padding:12px 12px 6px;font:11px/18px 'DM Mono',monospace;color:#aaaab2}
+  .console-hint{color:#6e6e79}
+  .console-quick{display:flex;flex:none;flex-wrap:wrap;gap:5px;padding:8px 10px 0;border-top:1px solid var(--window-line)}
+  .console-quick button{height:24px;padding:0 8px;border:1px solid var(--window-border);border-radius:5px;background:var(--field-bg);color:#b4b4bc;font:11px 'DM Mono',monospace;cursor:pointer;transition:background .12s,color .12s,border-color .12s}
+  .console-quick button:hover{border-color:#ffffff26;background:#ffffff0a;color:#f2f2f3}
   .log-info{color:#898995}.log-print{color:#dbdbde}.log-error{color:#ff8992}
-  .command-bar{display:flex;align-items:center;gap:8px;margin:0 10px 8px;padding:0 4px 0 10px;height:32px;border:1px solid #ffffff14;border-radius:8px;background:#131315}
-  .command-bar:focus-within{border-color:#7fd1ff66}
-  .command-bar span{color:#7fd1ff;font:13px 'DM Mono',monospace}
-  .command-bar input{flex:1;min-width:0;height:100%;border:0;outline:none;background:transparent;color:#e9e9eb;font:11px 'DM Mono',monospace}
-  .command-bar button{height:24px;padding:0 10px;border:0;border-radius:5px;background:#1f2f3a;color:#a9def7;font-size:10px;cursor:pointer}.command-bar button:disabled{opacity:.4;cursor:default}
+  .command-bar{display:flex;align-items:center;gap:8px;margin:8px 10px 10px;padding:0 4px 0 11px;height:34px;border:1px solid var(--window-border);border-radius:8px;background:var(--field-bg)}
+  .command-bar:focus-within{border-color:#a99bff80}
+  .command-bar span{color:var(--accent);font:13px 'DM Mono',monospace}
+  .command-bar input{flex:1;min-width:0;height:100%;border:0;outline:none;background:transparent;color:#e9e9eb;font:11.5px 'DM Mono',monospace}
+  .command-bar input::placeholder{color:#6e6e79}
+  .command-bar button{height:26px;padding:0 8px;border:0;border-radius:5px;background:transparent;color:#9a9aa4;font-size:11px;cursor:pointer}
+  .command-bar button:hover:not(:disabled){background:#ffffff0d;color:#f2f2f3}.command-bar button:disabled{opacity:.45;cursor:default}
   .settings-overlay{position:fixed;inset:0;z-index:20;display:grid;place-items:center;padding:20px;background:#0a0a0cc9;backdrop-filter:blur(5px)}
   .scene-loader-body{padding:10px;gap:10px}
   .scene-loader-actions{display:flex;flex-wrap:wrap;gap:6px}
