@@ -24,6 +24,10 @@ Statements (prefer these; most commands default to "me" when the object is left 
 Objects: me, it, a name or id, a "quoted name", a variable, my children, my parent, all <description>, or a description: the [nearest|biggest|smallest|highest|lowest] [color] <ball|box|cube|cylinder|cone|plane|light|group|name word|one> [above|below|beside|... <obj>].
 Values: numbers, "text", colors, true/false, variables, my x|y|z|size|color|name, x of <obj>, distance to <obj>, random 1 to 10, key <name> is pressed, time. Combine with + - * / and compare with: is, is not, is more than, is less than, is at least, is at most, and, or, not.
 Coordinates are separated by spaces or commas; wrap arithmetic in parentheses: move to (my x + 1) 0 0. Comments start with --.
+Only the commands listed above exist; there is no kill, respawn, reset, teleport, or warp. To send something back to a start point (a kill brick, a checkpoint), move it to fixed coordinates, for example:
+  when I touch player
+    move it to 0 2 0
+After "if <condition> then" the statements go on the next, more indented lines, never on the same line.
 Older syntax (param, let, on start:, every frame:, on collide(other):, self.<component>.<field>, self.rigidbody.applyImpulse(x,y,z), self.rigidbody.setVelocity(x,y,z), print(...)) still works but prefer the sentences above.
 Scripts are compiled from this language to a restricted runtime API. Do not put JavaScript, HTML, or any unsupported syntax in source.`;
 

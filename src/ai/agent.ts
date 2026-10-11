@@ -46,6 +46,14 @@ function replyFrom(value: unknown): SceneAgentReply | null {
   return { summary: candidate.summary, ops: candidate.ops as SceneOp[] };
 }
 
+/** Quotes the failing source line so the model (and the user) can see exactly what was rejected. */
+function scriptErrorText(scene: Scene, issue: { entityId: string; line: number; column: number; message: string }): string {
+  const source = scene.entities.find((entity) => entity.id === issue.entityId)?.components.Script?.source;
+  const lineText = typeof source === "string" ? source.split("\n")[issue.line - 1]?.trim() : undefined;
+  const quoted = lineText ? ` in "${lineText}"` : "";
+  return `Entity '${issue.entityId}', line ${issue.line}, column ${issue.column}${quoted}: ${issue.message}`;
+}
+
 /** Generates, dry-runs, and validates a scene edit with at most three correction retries. */
 export async function runSceneAgent(scene: Scene, userPrompt: string, dependencies: SceneAgentDependencies): Promise<SceneAgentResult> {
   const systemPrompt = dependencies.buildSystemPrompt(scene);
@@ -68,7 +76,7 @@ export async function runSceneAgent(scene: Scene, userPrompt: string, dependenci
       reply.ops = tidy.ops;
       if (tidy.notes.length) reply.summary = `${reply.summary.trim()} (Adjusted: ${tidy.notes.join("; ")}.)`;
       const result = applyOps(scene, reply.ops);
-      const scriptErrors = result.errors.length ? [] : validateScripts(result.scene).map((issue) => `Entity '${issue.entityId}', line ${issue.line}, column ${issue.column}: ${issue.message}`);
+      const scriptErrors = result.errors.length ? [] : validateScripts(result.scene).map((issue) => scriptErrorText(result.scene, issue));
       correctionErrors = [...result.errors, ...scriptErrors];
       if (!correctionErrors.length) {
         return { ok: true, summary: reply.summary, ops: reply.ops, scene: result.scene, inverseOps: result.inverseOps, errors: [], attempts: attempt };

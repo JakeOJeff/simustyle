@@ -44,4 +44,21 @@ describe("scene agent validation loop", () => {
     expect(result.ok).toBe(false);
     expect(result.errors.join(" ")).toContain("Did you mean RigidBody?");
   });
+
+  it("quotes the rejected script line in the correction error", async () => {
+    const result = await runSceneAgent(createEmptyScene(), "add a kill brick", {
+      ...dependencies([
+      { summary: "Kill brick", ops: [{ op: "create", id: "killbrick_1", name: "KillBrick1", parent: null, components: { Transform: {}, Script: { source: "when I touch\n  kill it\n" } } }] }
+      ]), maxRetries: 0
+    });
+    expect(result.ok).toBe(false);
+    expect(result.errors.join(" ")).toContain(`Entity 'killbrick_1', line 2, column 8 in "kill it"`);
+  });
+
+  it("documents the kill-brick reset idiom in the script spec", async () => {
+    const { SCRIPT_AGENT_SPEC } = await import("../../src/ai/prompt");
+    const { diagnose } = await import("../../src/lang/autocorrect");
+    expect(SCRIPT_AGENT_SPEC).toContain("there is no kill");
+    expect(diagnose("when I touch player\n  move it to 0 2 0")).toEqual([]);
+  });
 });
