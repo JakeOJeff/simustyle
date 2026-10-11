@@ -4,6 +4,13 @@ Record meaningful project changes during the event, newest first.
 
 ## Event build log
 
+### 2026-10-12T01:40:00+05:30 — Fix Play doing nothing on a fresh dev server
+
+- Changed: Added `@dimforge/rapier3d-compat` to Vite's `optimizeDeps.include`. Files: `vite.config.ts`.
+- Why: Physics loads lazily on the first Play. Without a cached pre-bundle, Vite discovered the library during that click, re-optimized it, and reloaded the page, so Play appeared to do nothing.
+- Validation: In headless Chrome against a dev server with an empty dependency cache, the first Play click switches to Pause with no page reload; Stop restores the scene and Play works again. Repeated warm runs also start every time.
+- Limitations: Only affects the dev server; production builds were not affected.
+
 ### 2026-10-12T00:40:00+05:30 — Unify editor UI styles and restyle sliders
 
 - Changed: Moved older panels from purple-tinted greys onto the neutral palette used by the viewport menus and create shelf, and collapsed about 25 accent shades into one set (`#a99bff` text, `#7c6cf0` fill, `#8b7cf6` hover, `#3b3566` selected). Menus and popovers now share one surface, primary actions are solid accent buttons, secondary buttons and inputs share one style, and the purple gradient banners and buttons are flat. Added shared color tokens and a global range-slider style (slim filled track, white thumb, hover and drag halo, focus ring); the Inspector sets the fill through `--fill`. Files: `src/app.css`, `src/App.svelte`, all panels under `src/editor/`.

@@ -11,6 +11,9 @@ export default defineConfig(({ mode }) => {
   const env = loadEnv(mode, ".", "");
   return {
     plugins: [svelte(), standaloneRuntime(), aiProxy(env)],
+    // Physics is imported lazily on first Play. Pre-bundling it stops the dev server from
+    // discovering it mid-click and reloading the page, which made Play appear to do nothing.
+    optimizeDeps: { include: ["@dimforge/rapier3d-compat"] },
     test: {
       environment: "node",
       include: ["tests/**/*.test.ts"]
