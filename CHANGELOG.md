@@ -4,6 +4,20 @@ Record meaningful project changes during the event, newest first.
 
 ## Event build log
 
+### 2026-10-11T22:12:11+05:30 — Restore and streamline the README
+
+- Changed: Restored the root `README.md` with concise project, setup, AI configuration, desktop, documentation, checks, and limitation sections.
+- Why: Make project setup and demo information easy to find after the previous root Markdown cleanup.
+- Validation: Checked referenced local documentation paths and ran `git diff --check`. No tests were run because this was a documentation change.
+- Limitations: The Windows desktop installer and live AI provider calls still depend on external prerequisites and credentials.
+
+### 2026-10-11T21:58:41+05:30 — Remove root Markdown files
+
+- Changed: Removed the root `AGENTS.md`, `AI_USAGE.md`, `app-build-prompt.md`, `README.md`, `RULES.md`, and `SUBMISSION.md`. Kept `CHANGELOG.md` and `DECISIONS.md` as requested.
+- Why: Reduce the root Markdown files to the two requested files.
+- Validation: Confirmed the root Markdown file list contains only `CHANGELOG.md` and `DECISIONS.md`; checked `git diff --check`.
+- Limitations: Project setup, event rules, submission details, and AI usage notes formerly documented in the removed files are no longer available in the repository.
+
 ### 2026-10-11T08:30:00+05:30 — Add a script-focused demo runbook
 
 - Changed: Added `docs/DEMO_SCRIPTS.md` with a click-to-animate example, a playable coin-collection scene, a back-and-forth patrol, setup steps, presenter cues, and recovery tips. Linked it from `docs/DEMO.md` and README.
