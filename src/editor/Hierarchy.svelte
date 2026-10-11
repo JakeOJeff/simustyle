@@ -127,7 +127,7 @@
   function focusAndSelect(node: HTMLInputElement) { node.focus(); node.select(); }
 </script>
 
-<section class="hierarchy" aria-label="Scene hierarchy"
+<section class="hierarchy" data-tutorial-target="hierarchy-list" aria-label="Scene hierarchy"
   ondragover={(event) => { if (dragging) { event.preventDefault(); if (!(event.target as HTMLElement).closest(".entity-row")) dropZone = { id: null, mode: "beside" }; } }}
   ondrop={(event) => { event.preventDefault(); finishDrop(dropZone ?? { id: null, mode: "beside" }); }}
   oncontextmenu={(event) => {
@@ -140,7 +140,7 @@
       <h2>Scene</h2>
       <span class="entity-count">{scene.entities.length} {scene.entities.length === 1 ? "object" : "objects"}{selectedIds.length > 1 ? ` · ${selectedIds.length} selected` : ""}</span>
     </div>
-    <button class="add-button" type="button" onclick={onGroup} aria-label="New group" title={selectedIds.length ? "Group the selected objects (Ctrl+G)" : "Add an empty group (Ctrl+G)"}>
+    <button class="add-button" data-tutorial-target="hierarchy-group" type="button" onclick={onGroup} aria-label="New group" title={selectedIds.length ? "Group the selected objects (Ctrl+G)" : "Add an empty group (Ctrl+G)"}>
       <FolderPlus size={14} />
     </button>
   </header>
@@ -157,7 +157,7 @@
         {@const kind = kindOf(row.entity, row.childCount)}
         {@const Icon = kind.icon}
         {@const selected = selectedIds.includes(row.entity.id)}
-        <li class="entity-row" role="treeitem" aria-level={row.depth + 1} aria-selected={selected} aria-expanded={row.childCount ? !collapsed[row.entity.id] : undefined}
+        <li class="entity-row" data-tutorial-target="hierarchy-row" role="treeitem" aria-level={row.depth + 1} aria-selected={selected} aria-expanded={row.childCount ? !collapsed[row.entity.id] : undefined}
           class:selected
           class:primary={selectedIds[0] === row.entity.id}
           class:drop-inside={dropZone?.mode === "inside" && dropZone.id === row.entity.id}
@@ -227,9 +227,9 @@
     flex: 0 0 236px;
     flex-direction: column;
     overflow: hidden;
-    color: var(--text-primary, #e9e9f0);
-    background: var(--panel-bg, #171820);
-    border-right: 1px solid var(--border, #292a35);
+    color: var(--text-primary, #ececed);
+    background: var(--panel-bg, #1a1a1d);
+    border-right: 1px solid var(--border, #2c2c32);
   }
 
   .panel-header {
@@ -238,24 +238,24 @@
     align-items: center;
     justify-content: space-between;
     padding: 0 12px 0 14px;
-    border-bottom: 1px solid var(--border, #292a35);
+    border-bottom: 1px solid var(--border, #2c2c32);
   }
 
   .panel-header h2 { margin: 0; font-size: 12px; font-weight: 650; letter-spacing: 0.02em; }
-  .entity-count { display: block; margin-top: 3px; color: var(--text-muted, #858694); font-size: 10px; }
+  .entity-count { display: block; margin-top: 3px; color: var(--text-muted, #878792); font-size: 10px; }
 
   .add-button {
     display: grid;
     width: 28px;
     height: 28px;
     place-items: center;
-    border: 1px solid var(--border, #323340);
+    border: 1px solid var(--border, #36363c);
     border-radius: 6px;
-    color: var(--text-muted, #a9a8b6);
-    background: #262631;
+    color: var(--text-muted, #ababb3);
+    background: #29292e;
     cursor: pointer;
   }
-  .add-button:hover { color: var(--accent, #a995ff); border-color: var(--accent, #a995ff); }
+  .add-button:hover { color: var(--accent, #a99bff); border-color: var(--accent, #a99bff); }
 
   .filter {
     display: flex;
@@ -266,11 +266,11 @@
     height: 26px;
     border: 1px solid #ffffff12;
     border-radius: 5px;
-    background: #111217;
-    color: #77757f;
+    background: #131315;
+    color: #747480;
   }
-  .filter input { flex: 1; min-width: 0; border: 0; outline: none; background: transparent; color: #e6e3f1; font-size: 10.5px; }
-  .filter:focus-within { border-color: #a99aff66; }
+  .filter input { flex: 1; min-width: 0; border: 0; outline: none; background: transparent; color: #e9e9eb; font-size: 10.5px; }
+  .filter:focus-within { border-color: #a99bff66; }
 
   .entity-list {
     flex: 1;
@@ -284,7 +284,7 @@
     list-style: none;
     border: 1px dashed transparent;
   }
-  .entity-list.drop-root { border-color: #a99aff55; background: #a99aff08; }
+  .entity-list.drop-root { border-color: #a99bff55; background: #a99bff08; }
 
   .entity-row {
     position: relative;
@@ -309,10 +309,10 @@
   }
   .entity-row[aria-level="1"]::before { display: none; }
   .entity-row:hover { background: #ffffff07; }
-  .entity-row.selected { background: #39344f; box-shadow: inset 2px 0 #a99aff; }
-  .entity-row.selected:not(.primary) { background: #2d2b3d; box-shadow: inset 2px 0 #70d8ff; }
-  .entity-row.drop-inside { background: #a99aff2a; box-shadow: inset 0 0 0 1px #b9adff; }
-  .entity-row.drop-sibling { background: #a99aff12; }
+  .entity-row.selected { background: #3b3566; box-shadow: inset 2px 0 #a99bff; }
+  .entity-row.selected:not(.primary) { background: #313137; box-shadow: inset 2px 0 #70d8ff; }
+  .entity-row.drop-inside { background: #a99bff2a; box-shadow: inset 0 0 0 1px #b9adff; }
+  .entity-row.drop-sibling { background: #a99bff12; }
   .entity-row.dragging { opacity: 0.45; }
 
   .twisty {
@@ -324,7 +324,7 @@
     padding: 0;
     border: 0;
     background: none;
-    color: #8a8896;
+    color: #898995;
     cursor: pointer;
   }
   .twisty:hover { color: #fff; }
@@ -339,16 +339,16 @@
     padding: 0 4px;
     overflow: hidden;
     border: 0;
-    color: var(--text-secondary, #c4c3cf);
+    color: var(--text-secondary, #c6c6cc);
     background: transparent;
     text-align: left;
     cursor: pointer;
   }
   .entity-row.selected .select-button { color: #fff; }
-  .entity-icon { display: grid; flex: none; place-items: center; color: #8e8b9c; }
+  .entity-icon { display: grid; flex: none; place-items: center; color: #8e8e99; }
   .entity-row.selected .entity-icon { color: var(--accent, #b9adff); }
   .entity-name { overflow: hidden; font-size: 11px; text-overflow: ellipsis; white-space: nowrap; }
-  .child-count { margin-left: auto; padding: 1px 6px; border-radius: 8px; background: #ffffff10; color: #a9a7b5; font: 9px 'DM Mono', monospace; }
+  .child-count { margin-left: auto; padding: 1px 6px; border-radius: 8px; background: #ffffff10; color: #aaaab2; font: 9px 'DM Mono', monospace; }
 
   .rename {
     flex: 1;
@@ -356,10 +356,10 @@
     height: 24px;
     margin: 2px 4px;
     padding: 0 6px;
-    border: 1px solid #a99aff;
+    border: 1px solid #a99bff;
     border-radius: 4px;
     outline: none;
-    background: #111217;
+    background: #131315;
     color: #fff;
     font-size: 11px;
   }
@@ -375,7 +375,7 @@
     border: 0;
     border-radius: 4px;
     background: transparent;
-    color: #8a8896;
+    color: #898995;
     cursor: pointer;
     opacity: 0;
   }
@@ -388,15 +388,15 @@
   .script-button:hover { background: #1f2f3a; color: #a9def7; }
   .delete-button:hover { color: #ff858d; background: #39252b; }
 
-  .empty-state { margin: 0; padding: 18px 14px; color: var(--text-muted, #858694); font-size: 11px; line-height: 1.5; }
+  .empty-state { margin: 0; padding: 18px 14px; color: var(--text-muted, #878792); font-size: 11px; line-height: 1.5; }
 
   .tips {
     padding: 8px 12px;
-    border-top: 1px solid var(--border, #292a35);
-    color: #77757f;
+    border-top: 1px solid var(--border, #2c2c32);
+    color: #747480;
     font-size: 9.5px;
     line-height: 1.45;
   }
   .tips b { color: #b9adff; font-weight: 600; }
-  .tips kbd { font: 9px 'DM Mono', monospace; color: #a9a7b5; }
+  .tips kbd { font: 9px 'DM Mono', monospace; color: #aaaab2; }
 </style>

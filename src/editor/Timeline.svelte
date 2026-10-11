@@ -10,6 +10,7 @@
   import PresetGallery from "./animation/PresetGallery.svelte";
   import { fieldIcon, fieldLabel } from "./animation/fieldIcons";
   import { anchoredPosition, portal } from "./animation/portal";
+  import { emitTutorial } from "./tutorial/tutorialState.svelte";
 
   interface Props {
     scene: Scene;
@@ -163,6 +164,7 @@
     if (interpolation === "bezier" && bezier) key.bezier = [...bezier] as BezierPoints;
     else delete key.bezier;
     emitTracks(next);
+    emitTutorial("easing", { interpolation });
   }
 
   function applyEasingToTrack(ref: KeyRef) {
@@ -176,6 +178,7 @@
       else delete key.bezier;
     }
     emitTracks(next);
+    emitTutorial("easing", { interpolation: source.interpolation ?? "linear" });
   }
 
   function removeKey(ref: KeyRef) {
@@ -196,6 +199,7 @@
   }
 
   function setKeyTime(ref: KeyRef, raw: number) {
+    emitTutorial("key-retime");
     const next = cloneTracks();
     const track = next.find((item) => trackId(item) === ref.track);
     const key = track?.keys[ref.index];
@@ -433,7 +437,7 @@
             <span class="tick" class:major={tick.major} style={`left:${percent(tick.time)}`}><i></i>{#if tick.major}<small>{formatTick(tick.time)}</small>{/if}</span>
           {/each}
           <div class="playhead" style={`left:${percent(currentTime)}`} aria-hidden="true"><b>{currentTime.toFixed(2)}</b></div>
-          <input class="scrubber" type="range" aria-label="Scrub timeline playhead" min="0" max={duration} step="0.01" value={currentTime} oninput={(event) => onPlayheadChange(clampTime(Number(event.currentTarget.value)))} />
+          <input class="scrubber" data-tutorial-target="timeline-scrubber" type="range" aria-label="Scrub timeline playhead" min="0" max={duration} step="0.01" value={currentTime} oninput={(event) => onPlayheadChange(clampTime(Number(event.currentTarget.value)))} />
         </div>
       </div>
 
@@ -465,7 +469,7 @@
                       </button>
                     </div>
                   {/if}
-                  <button class="key glyph {keyShape(key, !next)}" class:at-playhead={Math.abs(keyTime - currentTime) < 0.001} class:selected={selection?.trackIndex === trackIndex && selection.index === keyIndex} class:dragging={dragged}
+                  <button class="key glyph {keyShape(key, !next)}" data-tutorial-target="timeline-key" class:at-playhead={Math.abs(keyTime - currentTime) < 0.001} class:selected={selection?.trackIndex === trackIndex && selection.index === keyIndex} class:dragging={dragged}
                     style={`left:${percent(keyTime)}`} aria-label={`Keyframe at ${key.time.toFixed(2)} seconds, ${interpolationLabel(key.interpolation)}. Drag to move, Delete to remove, Enter to change easing`} title={`${keyTime.toFixed(2)}s · ${formatValue(key.value)}`}
                     onpointerdown={(event) => beginKeyDrag(event, trackIndex, keyIndex)} onpointermove={moveKeyDrag} onpointerup={finishKeyDrag} onpointercancel={finishKeyDrag}
                     onclick={(event) => event.stopPropagation()} ondblclick={(event) => { event.stopPropagation(); if (next) openEasing({ track: trackId(track), index: keyIndex }, event.currentTarget.getBoundingClientRect()); }}
@@ -508,7 +512,7 @@
           {#if typeof selection.key.value === "string"}<i class="swatch" style={`background:${selection.key.value}`}></i>{/if}{formatValue(selection.key.value)}
         </span>
         {#if selection.next}
-          <button class="ease-button" aria-haspopup="dialog" title="Easing toward the next key" onclick={(event) => openEasing(selection!.ref, event.currentTarget.getBoundingClientRect())}>
+          <button class="ease-button" data-tutorial-target="timeline-ease" aria-haspopup="dialog" title="Easing toward the next key" onclick={(event) => openEasing(selection!.ref, event.currentTarget.getBoundingClientRect())}>
             <EasingCurve interpolation={selection.key.interpolation ?? "linear"} bezier={selection.key.bezier} width={22} height={16} />
             <span>{interpolationLabel(selection.key.interpolation)}</span><ChevronDown size={11} />
           </button>
@@ -564,61 +568,61 @@
 {/if}
 
 <style>
-  .timeline{display:flex;flex-direction:column;min-height:190px;background:#17181f;color:#d7d5df;font:11px 'DM Sans',sans-serif;overflow:hidden}
+  .timeline{display:flex;flex-direction:column;min-height:190px;background:#19191d;color:#d8d8dc;font:11px 'DM Sans',sans-serif;overflow:hidden}
   .timeline-heading{display:flex;flex:none;flex-wrap:wrap;align-items:center;gap:8px 12px;min-height:44px;padding:6px 12px;border-bottom:1px solid #ffffff0c}
   .heading-title{display:flex;align-items:center;gap:8px;min-width:0;margin-right:auto}
   .heading-title>div{display:grid;gap:1px;min-width:0}
   .heading-title strong{overflow:hidden;font-size:12px;font-weight:600;text-overflow:ellipsis;white-space:nowrap;max-width:180px}
-  .title-icon{display:grid;width:26px;height:26px;flex:none;place-items:center;border-radius:7px;background:#2a2540;color:#b9adff}
+  .title-icon{display:grid;width:26px;height:26px;flex:none;place-items:center;border-radius:7px;background:#3b3566;color:#e1dbff}
   .eyebrow{font:8.5px 'DM Mono',monospace;letter-spacing:.12em;color:#8b84b5}
   .transport,.clip-settings,.actions{display:flex;align-items:center;gap:3px}
-  .transport{padding:2px;border:1px solid #ffffff10;border-radius:8px;background:#111217}
+  .transport{padding:2px;border:1px solid #ffffff10;border-radius:8px;background:#131315}
   button{font:inherit;cursor:pointer}
-  .icon{display:grid;width:26px;height:24px;place-items:center;padding:0;border:1px solid transparent;border-radius:5px;background:transparent;color:#aaa7b4;transition:background .12s,color .12s}
+  .icon{display:grid;width:26px;height:24px;place-items:center;padding:0;border:1px solid transparent;border-radius:5px;background:transparent;color:#a9a9b2;transition:background .12s,color .12s}
   .icon:hover:not(:disabled){background:#ffffff10;color:#fff}
-  .icon.play{width:30px;background:#6d5ce7;color:#fff}
-  .icon.play:hover{background:#7d6df0}
-  .icon.toggle{border-color:#ffffff10;background:#111217}
-  .icon.toggle.active{border-color:#7d6ff066;background:#3b3566;color:#d4cdff}
+  .icon.play{width:30px;background:#7c6cf0;color:#fff}
+  .icon.play:hover{background:#8b7cf6}
+  .icon.toggle{border-color:#ffffff10;background:#131315}
+  .icon.toggle.active{border-color:#7c6cf066;background:#3b3566;color:#d4cdff}
   .icon.mini{width:22px;height:22px}
   .icon.danger:hover{background:#ff7a8720;color:#ff9ba2}
-  .number-field{display:flex;align-items:center;gap:4px;height:24px;padding:0 6px;border:1px solid #ffffff12;border-radius:5px;background:#111217}
-  .number-field span{color:#7d7a8b;font:8.5px 'DM Mono',monospace;letter-spacing:.06em}
-  .number-field input{width:44px;height:100%;padding:0;border:0;outline:none;background:transparent;color:#e2e0ea;text-align:right;font:10px 'DM Mono',monospace}
-  .number-field em{color:#6f6d7a;font:normal 9px 'DM Mono',monospace}
+  .number-field{display:flex;align-items:center;gap:4px;height:24px;padding:0 6px;border:1px solid #ffffff12;border-radius:5px;background:#131315}
+  .number-field span{color:#7c7c89;font:8.5px 'DM Mono',monospace;letter-spacing:.06em}
+  .number-field input{width:44px;height:100%;padding:0;border:0;outline:none;background:transparent;color:#e4e4e6;text-align:right;font:10px 'DM Mono',monospace}
+  .number-field em{color:#6e6e79;font:normal 9px 'DM Mono',monospace}
   .number-field:focus-within{border-color:#a99bff88}
-  .action{display:flex;align-items:center;gap:5px;height:26px;padding:0 9px;border:1px solid #ffffff12;border-radius:6px;background:#1f2029;color:#cfcbe0;font-size:10px;transition:background .12s,border-color .12s}
-  .action:hover:not(:disabled){background:#2a2838;border-color:#a99bff44;color:#fff}
+  .action{display:flex;align-items:center;gap:5px;height:26px;padding:0 9px;border:1px solid #ffffff12;border-radius:6px;background:#222226;color:#cfcbe0;font-size:10px;transition:background .12s,border-color .12s}
+  .action:hover:not(:disabled){background:#2d2d33;border-color:#a99bff44;color:#fff}
   .action:disabled{opacity:.4;cursor:default}
-  .action.accent{border-color:#8b7cff55;background:linear-gradient(135deg,#3a3166,#2d2950);color:#e2dcff}
-  .action.accent:hover{background:linear-gradient(135deg,#4a3f80,#3a3366)}
+  .action.accent{border-color:#7c6cf066;background:#3b3566;color:#e1dbff}
+  .action.accent:hover{background:#463f78;border-color:#a99bff88}
   .action :global(svg){flex:none}
 
   .timeline-content{flex:1;min-height:0;overflow:auto}
   .ruler-row,.track-row{display:grid;grid-template-columns:190px minmax(0,1fr)}
-  .ruler-row{position:sticky;top:0;z-index:4;background:#17181f;border-bottom:1px solid #ffffff0c}
+  .ruler-row{position:sticky;top:0;z-index:4;background:#19191d;border-bottom:1px solid #ffffff0c}
   .ruler-gutter{display:flex;align-items:flex-end;padding:0 10px 6px 12px;border-right:1px solid #ffffff0b}
-  .legend{display:flex;align-items:center;gap:4px;color:#6f6c7c;font-size:8.5px}
+  .legend{display:flex;align-items:center;gap:4px;color:#6e6e7a;font-size:8.5px}
   .legend .glyph.glyph{position:static;flex:none;width:7px;height:7px;margin-left:3px;transform:none;cursor:default}
   .legend .glyph.glyph.diamond{transform:rotate(45deg)}
   .ruler{position:relative;height:30px;margin-right:12px}
   .tick{position:absolute;top:0;height:100%;pointer-events:none}
-  .tick i{position:absolute;bottom:0;width:1px;height:5px;background:#55535f}
-  .tick.major i{height:9px;background:#7a7887}
-  .tick small{position:absolute;top:5px;left:3px;color:#7a7887;font:9px 'DM Mono',monospace;white-space:nowrap}
+  .tick i{position:absolute;bottom:0;width:1px;height:5px;background:#55555d}
+  .tick.major i{height:9px;background:#797986}
+  .tick small{position:absolute;top:5px;left:3px;color:#797986;font:9px 'DM Mono',monospace;white-space:nowrap}
   .playhead{position:absolute;z-index:2;top:0;bottom:0;width:1px;background:#a99bff;pointer-events:none}
-  .playhead b{position:absolute;top:3px;left:50%;padding:1px 4px;transform:translateX(-50%);border-radius:3px;background:#a99bff;color:#17181f;font:600 8.5px 'DM Mono',monospace}
+  .playhead b{position:absolute;top:3px;left:50%;padding:1px 4px;transform:translateX(-50%);border-radius:3px;background:#a99bff;color:#19191d;font:600 8.5px 'DM Mono',monospace}
   .scrubber{position:absolute;inset:0;z-index:3;width:100%;height:100%;margin:0;opacity:0;cursor:ew-resize}
   .scrubber:focus-visible{opacity:.16;outline:2px solid #a99bff;outline-offset:-2px}
 
   .track-row{border-bottom:1px solid #ffffff09}
-  .track-row.has-selection .track-info{background:#1d1c29}
-  .track-info{position:sticky;left:0;z-index:3;display:flex;align-items:center;gap:6px;min-width:0;height:36px;padding:0 6px 0 12px;border-right:1px solid #ffffff0b;background:#17181f}
-  .track-icon{display:grid;width:22px;height:22px;flex:none;place-items:center;border-radius:5px;background:#24233200;color:#a99bff}
+  .track-row.has-selection .track-info{background:#202025}
+  .track-info{position:sticky;left:0;z-index:3;display:flex;align-items:center;gap:6px;min-width:0;height:36px;padding:0 6px 0 12px;border-right:1px solid #ffffff0b;background:#19191d}
+  .track-icon{display:grid;width:22px;height:22px;flex:none;place-items:center;border-radius:5px;background:#28282d00;color:#a99bff}
   .track-name{display:grid;min-width:0;flex:1}
-  .track-name b{overflow:hidden;color:#e0dde9;font-size:10.5px;font-weight:600;text-overflow:ellipsis;white-space:nowrap}
-  .track-name small{color:#77748380;color:#777483;font:8.5px 'DM Mono',monospace}
-  .key-here{color:#7d7a8b}
+  .track-name b{overflow:hidden;color:#e2e2e4;font-size:10.5px;font-weight:600;text-overflow:ellipsis;white-space:nowrap}
+  .track-name small{color:#75758280;color:#757582;font:8.5px 'DM Mono',monospace}
+  .key-here{color:#7c7c89}
   .key-here.keyed{color:#c5b9ff}
   .remove{opacity:0}
   .track-info:hover .remove,.remove:focus-visible{opacity:1}
@@ -628,18 +632,18 @@
   .current-line{position:absolute;z-index:1;top:0;bottom:0;width:1px;background:#a99bff70;pointer-events:none}
 
   .segment{position:absolute;top:5px;bottom:5px;container-type:inline-size;pointer-events:none}
-  .segment-curve{position:absolute;inset:0;color:#8b7cff;opacity:.55}
+  .segment-curve{position:absolute;inset:0;color:#8b7cf6;opacity:.55}
   .segment.falling .segment-curve{transform:scaleY(-1)}
   .segment.selected-segment .segment-curve{color:#c5b9ff;opacity:.9}
-  .segment::before{content:"";position:absolute;inset:0;border-radius:3px;background:linear-gradient(90deg,#7562da14,#7562da08)}
-  .segment.selected-segment::before{background:linear-gradient(90deg,#7562da38,#7562da18)}
-  .segment-hold{position:absolute;left:0;right:0;top:50%;border-top:1px dashed #8b7cff70}
-  .ease-chip{position:absolute;top:50%;left:50%;z-index:2;display:grid;width:24px;height:18px;place-items:center;padding:0;transform:translate(-50%,-50%);border:1px solid #ffffff1c;border-radius:5px;background:#1d1c2a;color:#b9adff;pointer-events:auto;opacity:0;transition:opacity .12s,background .12s}
+  .segment::before{content:"";position:absolute;inset:0;border-radius:3px;background:linear-gradient(90deg,#7c6cf014,#7c6cf008)}
+  .segment.selected-segment::before{background:linear-gradient(90deg,#7c6cf038,#7c6cf018)}
+  .segment-hold{position:absolute;left:0;right:0;top:50%;border-top:1px dashed #8b7cf670}
+  .ease-chip{position:absolute;top:50%;left:50%;z-index:2;display:grid;width:24px;height:18px;place-items:center;padding:0;transform:translate(-50%,-50%);border:1px solid #ffffff1c;border-radius:5px;background:#212125;color:#b9adff;pointer-events:auto;opacity:0;transition:opacity .12s,background .12s}
   .key-lane:hover .ease-chip,.selected-segment .ease-chip,.ease-chip:focus-visible{opacity:1}
   .ease-chip:hover{background:#3b3566;border-color:#a99bff88}
   @container (max-width: 40px){.ease-chip{display:none}}
 
-  .glyph{position:absolute;z-index:3;top:50%;width:11px;height:11px;padding:0;border:1px solid #d0c7ff;background:#7868d4;cursor:grab;touch-action:none;transition:box-shadow .12s,background .12s}
+  .glyph{position:absolute;z-index:3;top:50%;width:11px;height:11px;padding:0;border:1px solid #d0c7ff;background:#7c6cf0;cursor:grab;touch-action:none;transition:box-shadow .12s,background .12s}
   .glyph.diamond{transform:translate(-50%,-50%) rotate(45deg)}
   .glyph.circle{border-radius:50%;transform:translate(-50%,-50%);width:12px;height:12px}
   .glyph.square{border-radius:1px;transform:translate(-50%,-50%);width:10px;height:10px;background:#5a6bd1}
@@ -650,38 +654,38 @@
   .drag-time{position:absolute;bottom:calc(100% + 8px);left:50%;padding:1px 5px;border-radius:3px;background:#000c;color:#fff;font:9px 'DM Mono',monospace;white-space:nowrap;transform:translateX(-50%)}
   .glyph.diamond .drag-time{transform:rotate(-45deg) translate(-30%,-60%)}
 
-  .start-card{display:grid;grid-template-columns:auto 1fr auto;align-items:center;gap:14px;margin:14px 12px;padding:14px;border:1px dashed #8b7cff40;border-radius:10px;background:linear-gradient(135deg,#1d1b2c,#16171e)}
-  .start-art{display:grid;grid-template-columns:repeat(2,auto);gap:4px;padding:6px;border-radius:8px;background:#0f1015;color:#a99bff}
-  .start-copy strong{font-size:12px;color:#f0edff}
-  .start-copy p{margin:4px 0 0;color:#a6a3b3;font-size:10.5px;line-height:1.5}
+  .start-card{display:grid;grid-template-columns:auto 1fr auto;align-items:center;gap:14px;margin:14px 12px;padding:14px;border:1px dashed #8b7cf640;border-radius:10px;background:#1c1c20}
+  .start-art{display:grid;grid-template-columns:repeat(2,auto);gap:4px;padding:6px;border-radius:8px;background:#111113;color:#a99bff}
+  .start-copy strong{font-size:12px;color:#f6f6f6}
+  .start-copy p{margin:4px 0 0;color:#a7a7af;font-size:10.5px;line-height:1.5}
   .start-copy p :global(svg){vertical-align:-1px;color:#b9adff}
   .start-copy b{color:#e0dbff;font-weight:600}
   .start-actions{display:grid;gap:5px}
 
-  .key-detail{display:flex;flex:none;flex-wrap:wrap;align-items:center;gap:8px;min-height:38px;padding:5px 12px;border-top:1px solid #ffffff10;background:#1b1b25}
-  .detail-name{display:flex;align-items:center;gap:6px;color:#e0dde9;font-size:10.5px;font-weight:600}
+  .key-detail{display:flex;flex:none;flex-wrap:wrap;align-items:center;gap:8px;min-height:38px;padding:5px 12px;border-top:1px solid #ffffff10;background:#1e1e22}
+  .detail-name{display:flex;align-items:center;gap:6px;color:#e2e2e4;font-size:10.5px;font-weight:600}
   .detail-name :global(svg){color:#a99bff}
   .detail-name small{color:#77748a;font:9px 'DM Mono',monospace;font-weight:400}
-  .detail-value{display:flex;align-items:center;gap:5px;max-width:200px;overflow:hidden;color:#b5b2c2;font:10px 'DM Mono',monospace;text-overflow:ellipsis;white-space:nowrap}
+  .detail-value{display:flex;align-items:center;gap:5px;max-width:200px;overflow:hidden;color:#b7b7bd;font:10px 'DM Mono',monospace;text-overflow:ellipsis;white-space:nowrap}
   .swatch{width:11px;height:11px;flex:none;border:1px solid #ffffff30;border-radius:3px}
-  .ease-button{display:flex;align-items:center;gap:6px;height:26px;padding:0 8px 0 5px;border:1px solid #8b7cff55;border-radius:6px;background:#26233a;color:#b9adff;font-size:10px}
+  .ease-button{display:flex;align-items:center;gap:6px;height:26px;padding:0 8px 0 5px;border:1px solid #8b7cf655;border-radius:6px;background:#3b3566;color:#b9adff;font-size:10px}
   .ease-button span{color:#e6e1ff}
-  .ease-button:hover{background:#332e50;border-color:#a99bff99}
+  .ease-button:hover{background:#463f78;border-color:#a99bff99}
   .detail-hint{color:#77748a;font-size:9.5px}
   .spacer{flex:1}
-  .empty-state{display:grid;flex:1;place-items:center;align-content:center;gap:8px;padding:24px 16px;color:#6f6c7c;text-align:center}
-  .empty-state p{max-width:300px;margin:0;font-size:10.5px;line-height:1.5;color:#7f7c8c}
+  .empty-state{display:grid;flex:1;place-items:center;align-content:center;gap:8px;padding:24px 16px;color:#6e6e7a;text-align:center}
+  .empty-state p{max-width:300px;margin:0;font-size:10.5px;line-height:1.5;color:#7e7e8a}
 
   .popover-dismiss{position:fixed;inset:0;z-index:58;border:0;background:transparent;cursor:default}
-  .property-menu{position:fixed;z-index:59;display:grid;width:236px;max-height:420px;overflow:auto;padding:5px;border:1px solid #3c3a4b;border-radius:9px;background:#1b1b23;box-shadow:0 14px 40px #000a;font:11px 'DM Sans',sans-serif;animation:pop .12s cubic-bezier(.2,.9,.1,1)}
+  .property-menu{position:fixed;z-index:59;display:grid;width:236px;max-height:420px;overflow:auto;padding:4px;border:1px solid #ffffff1a;border-radius:9px;background:#18181b;box-shadow:0 10px 28px #0009;font:11px 'DM Sans',sans-serif;animation:pop .12s cubic-bezier(.2,.9,.1,1)}
   @keyframes pop{from{opacity:0;transform:translateY(-4px)}}
-  .menu-heading{display:grid;gap:2px;padding:6px 8px 7px;border-bottom:1px solid #ffffff10;color:#e6e3f1;font-weight:600}
-  .menu-heading small{color:#7d7a8b;font-size:9.5px;font-weight:400}
+  .menu-heading{display:grid;gap:2px;padding:6px 8px 7px;border-bottom:1px solid #ffffff10;color:#e9e9eb;font-weight:600}
+  .menu-heading small{color:#7c7c89;font-size:9.5px;font-weight:400}
   .menu-group{padding:7px 8px 3px;color:#8b84b5;font:8.5px 'DM Mono',monospace;letter-spacing:.1em;text-transform:uppercase}
-  .property-menu button{display:flex;align-items:center;gap:8px;height:28px;padding:0 8px;border:0;border-radius:5px;background:transparent;color:#dedce8;text-align:left;font-size:10.5px}
+  .property-menu button{display:flex;align-items:center;gap:8px;height:28px;padding:0 8px;border:0;border-radius:5px;background:transparent;color:#e1e1e3;text-align:left;font-size:10.5px}
   .property-menu button span{flex:1}
   .property-menu button :global(svg){color:#a99bff}
-  .property-menu button:hover{background:#302d40}
+  .property-menu button:hover{background:#ffffff12;color:#fff}
   .property-menu :global(.tracked){color:#c5b9ff}
   button:focus-visible,input:focus-visible{outline:2px solid #a99bff;outline-offset:1px}
   /* Compact layout when the panel is narrow, such as docked beside the Console. */

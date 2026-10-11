@@ -125,23 +125,23 @@
   .diagonal{stroke:#ffffff26;stroke-width:.4;stroke-dasharray:1.5 1.5}
   .arm{stroke:#8f84c8;stroke-width:.5}
   .curve{fill:none;stroke:#c3b8ff;stroke-width:1.4;stroke-linecap:round}
-  .anchor{fill:#2a2838;stroke:#8f84c8;stroke-width:.6}
+  .anchor{fill:#2d2d33;stroke:#8f84c8;stroke-width:.6}
   .handle{stroke:#fff;stroke-width:.8;cursor:grab;outline:none;transition:r .12s}
   .handle-0{fill:#ff8fb8}.handle-1{fill:#7fd1ff}
   .handle:hover,.handle:focus-visible,.handle.active{r:5.8}
   .handle:focus-visible{stroke:#ffe27a;stroke-width:1.2}
   svg.dragging,.handle.active{cursor:grabbing}
   .bezier-values{display:grid;grid-template-columns:repeat(4,1fr);gap:4px}
-  .bezier-values label{display:flex;align-items:center;gap:3px;padding-left:5px;border:1px solid #ffffff12;border-radius:4px;background:#111217;overflow:hidden}
-  .bezier-values span{font:9px 'DM Mono',monospace;color:#86838f}
+  .bezier-values label{display:flex;align-items:center;gap:3px;padding-left:5px;border:1px solid #ffffff12;border-radius:6px;background:#131315;overflow:hidden}
+  .bezier-values span{font:9px 'DM Mono',monospace;color:#83838f}
   .bezier-values .handle-a span{color:#ff8fb8}.bezier-values .handle-b span{color:#7fd1ff}
-  .bezier-values input{width:100%;min-width:0;height:23px;padding:0 4px;border:0;outline:none;background:transparent;color:#dedce7;text-align:right;font:10px 'DM Mono',monospace}
-  .css-readout{justify-self:center;color:#86838f;font:9px 'DM Mono',monospace;user-select:all}
+  .bezier-values input{width:100%;min-width:0;height:23px;padding:0 4px;border:0;outline:none;background:transparent;color:#e0e0e3;text-align:right;font:10px 'DM Mono',monospace}
+  .css-readout{justify-self:center;color:#83838f;font:9px 'DM Mono',monospace;user-select:all}
   .bezier-presets{display:grid;grid-template-columns:repeat(4,1fr);gap:4px}
-  .bezier-presets button{display:grid;justify-items:center;gap:2px;padding:5px 2px 4px;border:1px solid #ffffff0e;border-radius:5px;background:#16171d;color:#9d93dc;cursor:pointer}
-  .bezier-presets button span{color:#9b99a6;font-size:8.5px;white-space:nowrap}
-  .bezier-presets button:hover{background:#25233a;border-color:#7d6ff044}
-  .bezier-presets button.active{background:#2f2a4a;border-color:#a99bff88;color:#d2c9ff}
+  .bezier-presets button{display:grid;justify-items:center;gap:2px;padding:5px 2px 4px;border:1px solid #ffffff0e;border-radius:5px;background:#18181b;color:#9d93dc;cursor:pointer}
+  .bezier-presets button span{color:#9b9ba4;font-size:8.5px;white-space:nowrap}
+  .bezier-presets button:hover{background:#ffffff0d;border-color:#7c6cf044}
+  .bezier-presets button.active{background:#3b3566;border-color:#a99bff88;color:#d2c9ff}
   .bezier-presets button.active span{color:#e6e1ff}
   button:focus-visible,input:focus-visible{outline:2px solid #a99bff;outline-offset:1px}
 </style>

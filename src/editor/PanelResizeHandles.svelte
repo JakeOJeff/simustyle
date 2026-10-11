@@ -21,6 +21,7 @@
     <button
       type="button"
       class="resize-handle edge-{edge}"
+      data-tutorial-target="panel-edge"
       aria-label="Resize {panelName} window from {edgeNames[edge]} edge"
       title="Resize window"
       onpointerdown={(event) => onResizeStart(event, edge)}
@@ -31,7 +32,7 @@
 <style>
   .resize-handles{position:absolute;z-index:4;inset:0;pointer-events:none}
   .resize-handle{position:absolute;display:block;margin:0;padding:0;border:0;background:transparent;pointer-events:auto;touch-action:none}
-  .resize-handle:hover{background:#a99aff35}
+  .resize-handle:hover{background:#a99bff35}
   .edge-n,.edge-s{right:10px;left:10px;height:7px;cursor:ns-resize}
   .edge-n{top:0}.edge-s{bottom:0}
   .edge-e,.edge-w{top:10px;bottom:10px;width:7px;cursor:ew-resize}

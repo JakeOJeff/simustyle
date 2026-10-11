@@ -24,6 +24,8 @@
   import { AnimatorRuntime } from "./runtime/animator";
   import { ANIMATION_PRESETS, presetOp } from "./runtime/animationPresets";
   import PresetGallery from "./editor/animation/PresetGallery.svelte";
+  import TutorialOverlay from "./editor/tutorial/TutorialOverlay.svelte";
+  import { emitTutorial, publishEditorSnapshot } from "./editor/tutorial/tutorialState.svelte";
   import { componentSchemas } from "./registry";
   import {
     BookOpen, Bot, Box, Camera, Circle, ClipboardPaste, Clapperboard, Cone, Copy, CopyPlus, Cylinder, FileCode, FileCode2, Flashlight, FolderPlus,
@@ -311,8 +313,10 @@
   }
 
   function endPanelDrag() {
+    if (resizingPanel) emitTutorial("panel-resize", { panel: resizingPanel.panel });
     resizingPanel = null;
     if (!draggingPanel) return;
+    emitTutorial("panel-move", { panel: draggingPanel.panel, dock: snapTarget ?? panelLayouts[draggingPanel.panel].dock });
     if (snapTarget) panelLayouts[draggingPanel.panel] = { ...panelLayouts[draggingPanel.panel], dock: snapTarget };
     draggingPanel = null;
     snapTarget = null;
@@ -342,6 +346,21 @@
     if (panelWorkspaceReady) localStorage.setItem("simustyle.panelWorkspace", JSON.stringify({ open: panelOpen, layouts: panelLayouts }));
   });
 
+  // Interactive tutorials compare these snapshots to notice when a step's action has been done.
+  $effect(() => {
+    publishEditorSnapshot({
+      mode, space, snap, gridVisible, playState, scene, timelineTime, activeTab,
+      selectedIds: [...selectedIds],
+      panelOpen: { ...panelOpen },
+      desktop: isDesktopRuntime()
+    });
+  });
+
+  function setMode(next: ToolMode, source: "click" | "key") {
+    mode = next;
+    emitTutorial("tool", { mode: next, source });
+  }
+
   let selectedEntity = $derived(scene.entities.find((entity) => entity.id === selectedId) ?? null);
   let viewportScene = $derived(panelOpen.timeline && playState === "stopped" ? animatorPreview.evaluate(scene, timelineTime).scene : scene);
 
@@ -359,6 +378,7 @@
     const entity = scene.entities.find((candidate) => candidate.id === selectedId);
     const fieldSchema = componentSchemas[component]?.fields[field];
     if (!entity || !fieldSchema) return;
+    emitTutorial("keyframe", { component, field });
     const value = (entity.components[component]?.[field] ?? fieldSchema.default) as AnimationValue;
     const tracks = tracksFor(selectedId).map((track) => structuredClone(track));
     let track = tracks.find((candidate) => candidate.component === component && candidate.field === field);
@@ -403,6 +423,7 @@
     if (aiLoading || !prompt.trim()) return;
     if (playState !== "stopped") { message = "Stop the simulation before asking the scene agent to edit."; return; }
     pushAIMessage({ id: `ai_${nextAIId++}`, role: "user", content: prompt });
+    emitTutorial("ai-request");
     aiPrompt = "";
     aiLoading = true;
     aiProgress = "Building the first pass…";
@@ -436,6 +457,7 @@
       message = reason;
     } finally {
       aiLoading = false;
+      emitTutorial("ai-response");
     }
   }
 
@@ -450,6 +472,7 @@
     const { [messageId]: _removed, ...remaining } = aiUndoRecords;
     aiUndoRecords = remaining;
     message = "Undid AI change";
+    emitTutorial("ai-undo");
   }
 
   function applyAIFallback(messageId: string) {
@@ -511,6 +534,7 @@
 
   function contextPlacement(height: number): { parent: string | null; position: Vec3 } {
     const parent = contextMenu?.id ?? null;
+    emitTutorial("context-add", { source: contextMenu?.source ?? null, parent });
     if (contextMenu?.source === "viewport" && contextMenu.position) {
       const point: Vec3 = [contextMenu.position[0], contextMenu.position[1] + height, contextMenu.position[2]];
       return { parent, position: localPosition(scene, parent, point) };
@@ -629,6 +653,7 @@
       if (ids.includes(selectedId ?? "") || ids.some((entityId) => selectedIds.includes(entityId))) {
         selectEntities(selectedIds.filter((entityId) => !ids.includes(entityId)));
       }
+      emitTutorial("delete");
       return true;
     }
     return false;
@@ -639,6 +664,7 @@
     // Right-clicking inside a multi-selection keeps it, so "Group" can wrap all of it.
     if (id && !selectedIds.includes(id)) selectEntity(id);
     contextAddOpen = false;
+    emitTutorial("context-menu", { id, source });
     contextMenu = { id, position, source, x: Math.max(8, Math.min(x, window.innerWidth - 210)), y: Math.max(8, Math.min(y, window.innerHeight - 360)) };
   }
 
@@ -646,6 +672,7 @@
     const entity = scene.entities.find((candidate) => candidate.id === id);
     if (!entity) return;
     entityClipboard = descendantsInDeleteOrder(id).reverse().map((entityId) => structuredClone(scene.entities.find((candidate) => candidate.id === entityId)!));
+    emitTutorial("copy");
     message = `Copied ${entity.name}`;
     contextMenu = null;
   }
@@ -656,6 +683,7 @@
     const copied = descendantsInDeleteOrder(id).reverse().map((entityId) => structuredClone(scene.entities.find((candidate) => candidate.id === entityId)!));
     if (!deleteEntity(id)) return;
     entityClipboard = copied;
+    emitTutorial("cut");
     message = `Cut ${entity.name}`;
     contextMenu = null;
   }
@@ -690,7 +718,7 @@
         : (source.parent ? idMap.get(source.parent) ?? source.parent : null);
       return { op: "create", id: idMap.get(source.id)!, name: index === 0 ? `${root.name} Copy` : source.name, parent, components };
     });
-    if (apply(operations)) selectEntity(rootId);
+    if (apply(operations)) { selectEntity(rootId); emitTutorial("paste"); }
     contextMenu = null;
   }
 
@@ -701,6 +729,7 @@
     entityClipboard = descendantsInDeleteOrder(id).reverse().map((entityId) => structuredClone(scene.entities.find((candidate) => candidate.id === entityId)!));
     pasteEntity();
     entityClipboard = previousClipboard;
+    emitTutorial("duplicate");
   }
 
   function commitRename() {
@@ -709,6 +738,7 @@
     if (!name) { message = "Entity name cannot be empty"; return; }
     if (apply([{ op: "update", id: renameTarget.id, components: {}, name }])) {
       message = `Renamed entity to ${name}`;
+      emitTutorial("rename");
       renameTarget = null;
       contextMenu = null;
     }
@@ -721,6 +751,7 @@
     scene = { ...scene, name };
     sceneRenameTarget = null;
     message = `Renamed scene to ${name}`;
+    emitTutorial("scene-rename");
   }
 
   function sceneNameFromFile(fileName: string): string {
@@ -759,6 +790,7 @@
     redoStack = [];
     savedHistory = undoStack;
     savedSceneName = nextScene.name;
+    emitTutorial("scene-open");
   }
 
   async function openRecentScene(key: string) {
@@ -774,6 +806,7 @@
       recentScenes = [entry, ...recentScenes.filter((candidate) => candidate.key !== key)];
       saveRecentScenes(recentScenes);
       message = `Opened ${sceneName}`;
+      emitTutorial("open-recent");
     } catch (error) {
       message = error instanceof Error ? error.message : "Unable to open recent scene";
     }
@@ -785,6 +818,7 @@
     const { ops, error } = reparentOps(scene, id, parent);
     if (error) { message = error; return; }
     if (ops.length && apply(ops)) {
+      emitTutorial("reparent", { parent });
       const name = (entityId: string | null) => scene.entities.find((entity) => entity.id === entityId)?.name ?? entityId;
       message = parent ? `Put ${name(id)} inside ${name(parent)}` : `Moved ${name(id)} to the top level`;
     }
@@ -802,7 +836,7 @@
     }
     const { ops, error } = groupOps(scene, ids, id, name);
     if (error) { message = error; return; }
-    if (apply(ops)) { selectEntity(id); message = `Grouped ${ids.length} object${ids.length === 1 ? "" : "s"} into ${name}`; }
+    if (apply(ops)) { selectEntity(id); emitTutorial("group", { count: ids.length }); message = `Grouped ${ids.length} object${ids.length === 1 ? "" : "s"} into ${name}`; }
     contextMenu = null;
   }
 
@@ -812,7 +846,7 @@
     const children = scene.entities.filter((entity) => entity.parent === id).map((entity) => entity.id);
     const { ops, error } = ungroupOps(scene, id);
     if (error) { message = error; return; }
-    if (apply(ops)) { selectEntities(children); message = "Ungrouped"; }
+    if (apply(ops)) { selectEntities(children); emitTutorial("ungroup"); message = "Ungrouped"; }
     contextMenu = null;
   }
 
@@ -828,6 +862,7 @@
       event.preventDefault();
       panelOpen.console = true;
       requestAnimationFrame(() => commandInput?.focus());
+      emitTutorial("console-focus");
       return;
     }
     if (event.code === "Space" && !event.repeat && playState === "stopped") {
@@ -881,6 +916,7 @@
     redoStack = [...redoStack, result.inverseOps];
     scene = result.scene;
     message = "Undid last change";
+    emitTutorial("undo");
   }
 
   function redo() {
@@ -892,6 +928,7 @@
     undoStack = [...undoStack, result.inverseOps];
     scene = result.scene;
     message = "Redid last change";
+    emitTutorial("redo");
   }
 
   function preview(ops: SceneOp[]) {
@@ -930,9 +967,10 @@
     if (phase === "end" && activeGesture?.id === id) {
       activeGesture.operation = operation;
       finishGesture();
+      emitTutorial("inspector-edit", { component });
       return;
     }
-    apply([operation]);
+    if (apply([operation])) emitTutorial("inspector-edit", { component });
   }
 
   function updateTransform(id: string, fields: Record<string, unknown>, phase: "start" | "change" | "end") {
@@ -945,6 +983,7 @@
     } else if (phase === "end" && activeGesture?.id === id) {
       activeGesture.operation = operation;
       finishGesture();
+      emitTutorial("gizmo-drag", { mode, snap });
     } else if (phase === "change") {
       apply([operation]);
     }
@@ -952,6 +991,7 @@
 
   function addComponent(component: string) {
     if (!selectedId) return;
+    emitTutorial("add-component", { component });
     if (component === "Script") { openScript(selectedId); return; }
     apply([{ op: "update", id: selectedId, components: { [component]: {} } }]);
   }
@@ -1029,6 +1069,7 @@ when clicked
     if (draft === undefined) return;
     const { [id]: _done, ...rest } = scriptDrafts;
     scriptDrafts = rest;
+    emitTutorial("script-apply", { source: draft });
     if (draft !== storedSource(id) && apply([{ op: "update", id, components: { Script: { source: draft } } }])) message = "Script saved";
   }
 
@@ -1061,6 +1102,7 @@ when clicked
   function runCommandBar() {
     const text = commandText.trim();
     if (!text) return;
+    emitTutorial("console-command", { text });
     commandHistory = [text, ...commandHistory.filter((entry) => entry !== text)].slice(0, 30);
     commandHistoryIndex = -1;
     const quickCommand = text.toLowerCase();
@@ -1117,6 +1159,7 @@ when clicked
       event.preventDefault();
       commandHistoryIndex = Math.min(commandHistory.length - 1, commandHistoryIndex + 1);
       commandText = commandHistory[commandHistoryIndex]!;
+      emitTutorial("console-history");
     } else if (event.key === "ArrowDown" && commandHistoryIndex >= 0) {
       event.preventDefault();
       commandHistoryIndex -= 1;
@@ -1136,6 +1179,7 @@ when clicked
     scenePath = null;
     savedSceneName = scene.name;
     message = "New scene";
+    emitTutorial("new-scene");
   }
 
   async function saveScene() {
@@ -1151,6 +1195,7 @@ when clicked
         savedSceneName = scene.name;
         await rememberOpenedScene(sceneName, path, contents);
         message = `Saved ${path.split(/[\\/]/).at(-1) ?? "scene"}`;
+        emitTutorial("save");
       } catch (error) {
         message = error instanceof Error ? error.message : "Unable to save scene file";
       }
@@ -1169,6 +1214,7 @@ when clicked
     savedSceneName = scene.name;
     scenePath = fileName;
     const recentCached = await rememberOpenedScene(sceneName, null, contents, fileName);
+    emitTutorial("save");
     message = recentCached ? "Scene saved as JSON" : "Scene saved as JSON, but browser storage could not cache it for Open Recent.";
   }
 
@@ -1188,6 +1234,7 @@ when clicked
       savedSceneName = scene.name;
       await rememberOpenedScene(sceneName, path, contents);
       message = `Saved ${path.split(/[\\/]/).at(-1) ?? "scene"}`;
+      emitTutorial("save");
     } catch (error) {
       message = error instanceof Error ? error.message : "Unable to save scene file";
     }
@@ -1226,6 +1273,7 @@ when clicked
 
   async function saveAiSettings(settings: { model: string; baseUrl: string; apiKey: string }): Promise<void> {
     aiSettings = await saveDesktopAiSettings({ model: settings.model, baseUrl: settings.baseUrl, ...(settings.apiKey ? { apiKey: settings.apiKey } : {}) });
+    emitTutorial("ai-settings");
   }
 
   async function removeAiKey(): Promise<void> {
@@ -1333,6 +1381,7 @@ when clicked
     timelineTime += frame;
     logScriptMessages();
     message = "Stepped one frame";
+    emitTutorial("step");
   }
 
   const railTools: { mode: ToolMode; label: string; key: string; icon: typeof Move }[] = [
@@ -1409,7 +1458,7 @@ when clicked
     togglePanel,
     frameSelected: () => focusToken += 1,
     openSettings: () => settingsOpen = true,
-    setTool: (tool) => mode = tool,
+    setTool: (tool) => setMode(tool, "click"),
     toggleSpace: () => space = space === "world" ? "local" : "world",
     toggleSnap: () => snap = !snap,
     toggleGrid: () => gridVisible = !gridVisible,
@@ -1473,11 +1522,11 @@ when clicked
         </div>
       {/if}
       <div class="stage" bind:this={stageHost} style={stageContentStyle()} use:observeStageSize>
-        <Viewport scene={viewportScene} {selectedId} {selectedIds} {mode} {frameToken} {focusToken} {gridVisible} {space} {snap} onSelect={viewportSelect} onSelectMany={selectEntities} onTransform={updateTransform} onModeChange={(nextMode) => mode = nextMode} onContextMenu={(id, x, y, position) => openEntityMenu(id, x, y, position, id ? "object" : "viewport")}>
+        <Viewport scene={viewportScene} {selectedId} {selectedIds} {mode} {frameToken} {focusToken} {gridVisible} {space} {snap} onSelect={viewportSelect} onSelectMany={selectEntities} onTransform={updateTransform} onModeChange={(nextMode) => setMode(nextMode, "key")} onContextMenu={(id, x, y, position) => openEntityMenu(id, x, y, position, id ? "object" : "viewport")}>
           {#snippet overlay()}
             <div class="tool-rail" role="toolbar" aria-label="Transform tools" aria-orientation="vertical">
               {#each railTools as item (item.mode)}
-                <button class:active={mode === item.mode} aria-pressed={mode === item.mode} aria-label="{item.label} tool" data-tip="{item.label} ({item.key})" onclick={() => mode = item.mode}><item.icon size={15} /></button>
+                <button class:active={mode === item.mode} aria-pressed={mode === item.mode} aria-label="{item.label} tool" data-tip="{item.label} ({item.key})" onclick={() => setMode(item.mode, "click")}><item.icon size={15} /></button>
               {/each}
               <span class="rail-sep"></span>
               <button class:active={snap} aria-pressed={snap} aria-label="Snap" data-tip="Snap: 0.5 m, 15°, 0.1" onclick={() => snap = !snap}><Magnet size={14} /></button>
@@ -1499,7 +1548,7 @@ when clicked
                   {/if}
                 </div>
                 <div class="shelf-group">
-                  <button class="shelf-main" aria-label="Add {activeShelfLight.label}" onclick={() => addLight(activeShelfLight.kind)}><activeShelfLight.icon size={16} /><span>{activeShelfLight.label}</span></button>
+                  <button class="shelf-main" data-tutorial-target="shelf-light" aria-label="Add {activeShelfLight.label}" onclick={() => addLight(activeShelfLight.kind)}><activeShelfLight.icon size={16} /><span>{activeShelfLight.label}</span></button>
                   <button class="shelf-caret" aria-label="More lights" aria-haspopup="menu" aria-expanded={shelfMenu === "light"} onclick={() => shelfMenu = shelfMenu === "light" ? null : "light"}><ChevronDown size={13} /></button>
                   {#if shelfMenu === "light"}
                     <div class="shelf-menu" role="menu" aria-label="Add light">
@@ -1509,7 +1558,7 @@ when clicked
                     </div>
                   {/if}
                 </div>
-                <button class="shelf-main" aria-label="Add camera" onclick={addCamera}><Camera size={16} /><span>Camera</span></button>
+                <button class="shelf-main" data-tutorial-target="shelf-camera" aria-label="Add camera" onclick={addCamera}><Camera size={16} /><span>Camera</span></button>
                 <div class="shelf-group">
                   <button class="shelf-main" aria-label="Import" aria-haspopup="menu" aria-expanded={shelfMenu === "import"} onclick={() => shelfMenu = shelfMenu === "import" ? null : "import"}><FolderInput size={16} /><span>Import</span><ChevronDown size={13} /></button>
                   {#if shelfMenu === "import"}
@@ -1520,7 +1569,7 @@ when clicked
                   {/if}
                 </div>
                 <span class="shelf-sep"></span>
-                <button class="shelf-generate" aria-label="Generate with AI" onclick={openAIPanel}><Sparkles size={16} /><span>Generate</span></button>
+                <button class="shelf-generate" data-tutorial-target="shelf-generate" aria-label="Generate with AI" onclick={openAIPanel}><Sparkles size={16} /><span>Generate</span></button>
               </div>
             {/if}
           {/snippet}
@@ -1548,30 +1597,30 @@ when clicked
         <div class="panel-workspace" aria-label="Editor panels">
           {#if panelOpen.hierarchy}
             <section class="panel-window" class:floating-panel={panelLayouts.hierarchy.dock === "floating"} style={panelWindowStyle("hierarchy")} use:rememberPanelSize={"hierarchy"}>
-              <header class="panel-window-title"><button class="panel-drag-handle" type="button" aria-label="Drag Hierarchy panel to move or snap" onpointerdown={(event) => startPanelDrag(event, "hierarchy")}><strong>Hierarchy</strong><span>Drag to move or snap</span></button><button class="panel-close" type="button" aria-label="Close Hierarchy" onclick={() => panelOpen.hierarchy = false}><X size={13} /></button></header>
+              <header class="panel-window-title"><button class="panel-drag-handle" data-tutorial-target="panel-title" type="button" aria-label="Drag Hierarchy panel to move or snap" onpointerdown={(event) => startPanelDrag(event, "hierarchy")}><strong>Hierarchy</strong><span>Drag to move or snap</span></button><button class="panel-close" type="button" aria-label="Close Hierarchy" onclick={() => panelOpen.hierarchy = false}><X size={13} /></button></header>
               <div class="panel-window-body sidebar-panel-body"><Hierarchy scene={scene} {selectedIds} onSelect={selectEntity} onSelectMany={selectEntities} onGroup={groupSelection} onRename={(id, name) => apply([{ op: "update", id, components: {}, name }])} onDelete={deleteEntity} onReparent={reparentEntity} onOpenScript={openScript} onContextMenu={openEntityMenu} onContextMenuEmpty={(x, y) => openEntityMenu(null, x, y, null, "hierarchy")} /></div>
               <PanelResizeHandles panelName="Hierarchy" dock={panelLayouts.hierarchy.dock} onResizeStart={(event, edge) => startPanelResize(event, "hierarchy", edge)} />
             </section>
           {/if}
           {#if panelOpen.inspector}
             <section class="panel-window" class:floating-panel={panelLayouts.inspector.dock === "floating"} style={panelWindowStyle("inspector")} use:rememberPanelSize={"inspector"}>
-              <header class="panel-window-title"><button class="panel-drag-handle" type="button" aria-label="Drag Inspector panel to move or snap" onpointerdown={(event) => startPanelDrag(event, "inspector")}><strong>Inspector</strong><span>Drag to move or snap</span></button><button class="panel-close" type="button" aria-label="Close Inspector" onclick={() => panelOpen.inspector = false}><X size={13} /></button></header>
-              <div class="panel-window-body sidebar-panel-body"><Inspector {scene} entity={selectedEntity} onUpdate={updateComponent} onRemove={(component) => selectedId && apply([{ op: "update", id: selectedId, components: { [component]: null } }])} onAdd={addComponent} onKeyframe={addKeyframe} onOpenScript={() => selectedId && openScript(selectedId)} onRename={(name) => selectedId && apply([{ op: "update", id: selectedId, components: {}, name }])} onReparent={(parent) => selectedId && reparentEntity(selectedId, parent)} onSettings={updateSettings} onPhysics={(enabled) => selectedId && setPhysics(selectedId, enabled)} onCollision={(enabled) => selectedId && setCollision(selectedId, enabled)} playhead={timelineTime} onOpenTimeline={() => { if (!panelOpen.timeline) togglePanel("timeline"); else focusedPanel = "timeline"; }} onAnimate={(anchor) => openPresetGallery(selectedId, anchor)} /></div>
+              <header class="panel-window-title"><button class="panel-drag-handle" data-tutorial-target="panel-title" type="button" aria-label="Drag Inspector panel to move or snap" onpointerdown={(event) => startPanelDrag(event, "inspector")}><strong>Inspector</strong><span>Drag to move or snap</span></button><button class="panel-close" type="button" aria-label="Close Inspector" onclick={() => panelOpen.inspector = false}><X size={13} /></button></header>
+              <div class="panel-window-body sidebar-panel-body"><Inspector {scene} entity={selectedEntity} onUpdate={updateComponent} onRemove={(component) => selectedId && apply([{ op: "update", id: selectedId, components: { [component]: null } }])} onAdd={addComponent} onKeyframe={addKeyframe} onOpenScript={() => selectedId && openScript(selectedId)} onRename={(name) => selectedId && apply([{ op: "update", id: selectedId, components: {}, name }])} onReparent={(parent) => selectedId && reparentEntity(selectedId, parent)} onSettings={(settings) => { updateSettings(settings); emitTutorial("scene-settings"); }} onPhysics={(enabled) => selectedId && setPhysics(selectedId, enabled)} onCollision={(enabled) => selectedId && setCollision(selectedId, enabled)} playhead={timelineTime} onOpenTimeline={() => { if (!panelOpen.timeline) togglePanel("timeline"); else focusedPanel = "timeline"; }} onAnimate={(anchor) => openPresetGallery(selectedId, anchor)} /></div>
               <PanelResizeHandles panelName="Inspector" dock={panelLayouts.inspector.dock} onResizeStart={(event, edge) => startPanelResize(event, "inspector", edge)} />
             </section>
           {/if}
           {#if panelOpen.console}
             <section class="panel-window" class:floating-panel={panelLayouts.console.dock === "floating"} style={panelWindowStyle("console")} use:rememberPanelSize={"console"}>
-              <header class="panel-window-title"><button class="panel-drag-handle" type="button" aria-label="Drag Console panel to move or snap" onpointerdown={(event) => startPanelDrag(event, "console")}><strong>Console</strong><span>Drag to move or snap</span></button><button class="panel-close" type="button" aria-label="Close Console" onclick={() => panelOpen.console = false}><X size={13} /></button></header>
+              <header class="panel-window-title"><button class="panel-drag-handle" data-tutorial-target="panel-title" type="button" aria-label="Drag Console panel to move or snap" onpointerdown={(event) => startPanelDrag(event, "console")}><strong>Console</strong><span>Drag to move or snap</span></button><button class="panel-close" type="button" aria-label="Close Console" onclick={() => panelOpen.console = false}><X size={13} /></button></header>
               <div class="panel-window-body console-body">
                 <div class="console-line"><span class="console-dot">●</span>{message}{#if simulationWarnings.length}<span> · {simulationWarnings.join(" · ")}</span>{/if}</div>
-                <div class="console-log" aria-live="polite" use:followLog={consoleLog.length}>
+                <div class="console-log" data-tutorial-target="console-log" aria-live="polite" use:followLog={consoleLog.length}>
                   {#if !consoleLog.length}<div class="console-hint">Type a command to change the scene, for example <code>move the box up 2</code> or <code>paint the sphere red</code>. Quick commands: <code>play</code>/<code>run</code>, <code>pause</code>, <code>stop</code>, <code>clear</code>. {playState === "stopped" ? "Scene commands are undoable; use the Script button to make actions run on Play." : "Scene commands affect the live simulation and are discarded when you Stop."}</div>{/if}
                   {#each consoleLog as entry}<div class="log-{entry.kind}">{entry.text}</div>{/each}
                 </div>
                 <form class="command-bar" onsubmit={(event) => { event.preventDefault(); runCommandBar(); }}>
                   <span aria-hidden="true">›</span>
-                  <input bind:this={commandInput} aria-label="Run a script command" placeholder="move the red ball above the box" bind:value={commandText} onkeydown={commandKey} spellcheck="false" autocomplete="off" />
+                  <input bind:this={commandInput} data-tutorial-target="console-input" aria-label="Run a script command" placeholder="move the red ball above the box" bind:value={commandText} onkeydown={commandKey} spellcheck="false" autocomplete="off" />
                   <button type="submit" disabled={!commandText.trim()}>Run</button>
                 </form>
               </div>
@@ -1580,28 +1629,28 @@ when clicked
           {/if}
           {#if panelOpen.ai}
             <section class="panel-window" class:floating-panel={panelLayouts.ai.dock === "floating"} style={panelWindowStyle("ai")} use:rememberPanelSize={"ai"}>
-              <header class="panel-window-title"><button class="panel-drag-handle" type="button" aria-label="Drag AI panel to move or snap" onpointerdown={(event) => startPanelDrag(event, "ai")}><strong>AI</strong><span>Drag to move or snap</span></button><button class="panel-close" type="button" aria-label="Close AI" onclick={() => panelOpen.ai = false}><X size={13} /></button></header>
+              <header class="panel-window-title"><button class="panel-drag-handle" data-tutorial-target="panel-title" type="button" aria-label="Drag AI panel to move or snap" onpointerdown={(event) => startPanelDrag(event, "ai")}><strong>AI</strong><span>Drag to move or snap</span></button><button class="panel-close" type="button" aria-label="Close AI" onclick={() => panelOpen.ai = false}><X size={13} /></button></header>
               <div class="panel-window-body"><AIPanel messages={aiMessages} loading={aiLoading} {aiProgress} prompt={aiPrompt} onPromptChange={(value) => aiPrompt = value} onSubmit={submitAI} onUndo={undoAIChange} onApplyDraft={applyAIFallback} /></div>
               <PanelResizeHandles panelName="AI" dock={panelLayouts.ai.dock} onResizeStart={(event, edge) => startPanelResize(event, "ai", edge)} />
             </section>
           {/if}
           {#if panelOpen.timeline}
             <section class="panel-window" class:floating-panel={panelLayouts.timeline.dock === "floating"} style={panelWindowStyle("timeline")} use:rememberPanelSize={"timeline"}>
-              <header class="panel-window-title"><button class="panel-drag-handle" type="button" aria-label="Drag Timeline panel to move or snap" onpointerdown={(event) => startPanelDrag(event, "timeline")}><strong>Timeline</strong><span>Drag to move or snap</span></button><button class="panel-close" type="button" aria-label="Close Timeline" onclick={() => panelOpen.timeline = false}><X size={13} /></button></header>
+              <header class="panel-window-title"><button class="panel-drag-handle" data-tutorial-target="panel-title" type="button" aria-label="Drag Timeline panel to move or snap" onpointerdown={(event) => startPanelDrag(event, "timeline")}><strong>Timeline</strong><span>Drag to move or snap</span></button><button class="panel-close" type="button" aria-label="Close Timeline" onclick={() => panelOpen.timeline = false}><X size={13} /></button></header>
               <div class="panel-window-body"><Timeline {scene} {selectedId} playhead={timelineTime} onPlayheadChange={(value) => timelineTime = value} onTrackChange={(tracks) => selectedId && changeTracks(selectedId, tracks)} onAnimatorChange={(fields) => selectedId && changeAnimator(selectedId, fields)} onApplyPreset={(presetId) => selectedId && applyAnimationPreset(selectedId, presetId)} /></div>
               <PanelResizeHandles panelName="Timeline" dock={panelLayouts.timeline.dock} onResizeStart={(event, edge) => startPanelResize(event, "timeline", edge)} />
             </section>
           {/if}
           {#if panelOpen.docs}
             <section class="panel-window" class:floating-panel={panelLayouts.docs.dock === "floating"} style={panelWindowStyle("docs")} use:rememberPanelSize={"docs"}>
-              <header class="panel-window-title"><button class="panel-drag-handle" type="button" aria-label="Drag Docs panel to move or snap" onpointerdown={(event) => startPanelDrag(event, "docs")}><strong>Docs</strong><span>Drag to move or snap</span></button><button class="panel-close" type="button" aria-label="Close Docs" onclick={() => panelOpen.docs = false}><X size={13} /></button></header>
+              <header class="panel-window-title"><button class="panel-drag-handle" data-tutorial-target="panel-title" type="button" aria-label="Drag Docs panel to move or snap" onpointerdown={(event) => startPanelDrag(event, "docs")}><strong>Docs</strong><span>Drag to move or snap</span></button><button class="panel-close" type="button" aria-label="Close Docs" onclick={() => panelOpen.docs = false}><X size={13} /></button></header>
               <div class="panel-window-body"><DocsPanel /></div>
               <PanelResizeHandles panelName="Docs" dock={panelLayouts.docs.dock} onResizeStart={(event, edge) => startPanelResize(event, "docs", edge)} />
             </section>
           {/if}
           {#if panelOpen.sceneLoader}
             <section class="panel-window floating-panel scene-loader-window" style={panelWindowStyle("sceneLoader")} use:rememberPanelSize={"sceneLoader"}>
-              <header class="panel-window-title"><button class="panel-drag-handle" type="button" aria-label="Drag Scene Loader panel to move" onpointerdown={(event) => startPanelDrag(event, "sceneLoader")}><strong>Scene Loader</strong><span>Open and save scene files</span></button><button class="panel-close" type="button" aria-label="Close Scene Loader" onclick={() => panelOpen.sceneLoader = false}><X size={13} /></button></header>
+              <header class="panel-window-title"><button class="panel-drag-handle" data-tutorial-target="panel-title" type="button" aria-label="Drag Scene Loader panel to move" onpointerdown={(event) => startPanelDrag(event, "sceneLoader")}><strong>Scene Loader</strong><span>Open and save scene files</span></button><button class="panel-close" type="button" aria-label="Close Scene Loader" onclick={() => panelOpen.sceneLoader = false}><X size={13} /></button></header>
               <div class="panel-window-body scene-loader-body">
                 <div class="scene-loader-actions">
                   <button type="button" onclick={openScenePicker}>Open scene…</button>
@@ -1611,7 +1660,7 @@ when clicked
                 {#if recentScenes.length}
                   <div class="scene-loader-list">
                     {#each recentScenes as entry (entry.key)}
-                      <button type="button" class:current-scene={entry.key === (scenePath && isDesktopRuntime() ? `desktop:${scenePath}` : `browser:${scenePath?.toLocaleLowerCase() ?? ""}`)} onclick={() => void openRecentScene(entry.key)}>
+                      <button type="button" data-tutorial-target="recent-scene" class:current-scene={entry.key === (scenePath && isDesktopRuntime() ? `desktop:${scenePath}` : `browser:${scenePath?.toLocaleLowerCase() ?? ""}`)} onclick={() => void openRecentScene(entry.key)}>
                         <strong>{entry.name}</strong><small>{entry.path ?? "Saved in this browser"}</small>
                       </button>
                     {/each}
@@ -1628,12 +1677,12 @@ when clicked
           {/if}
         </div>
       </div>
-      <div class="bottom-tabs" role="toolbar" aria-label="Show or hide editor panels">
+      <div class="bottom-tabs" data-tutorial-target="panel-tabs" role="toolbar" aria-label="Show or hide editor panels">
         <button class:selected={panelOpen.hierarchy} aria-pressed={panelOpen.hierarchy} onclick={() => panelOpen.hierarchy = !panelOpen.hierarchy}><ListTree size={12} /> Hierarchy</button>
         <button class:selected={panelOpen.inspector} aria-pressed={panelOpen.inspector} onclick={() => panelOpen.inspector = !panelOpen.inspector}><SlidersHorizontal size={12} /> Inspector</button>
-        <button class:selected={panelOpen.console} aria-pressed={panelOpen.console} onclick={() => panelOpen.console = !panelOpen.console}><Terminal size={12} /> Console</button>
-        <button class:selected={panelOpen.ai} aria-pressed={panelOpen.ai} onclick={() => panelOpen.ai = !panelOpen.ai}><Bot size={12} /> AI</button>
-        <button class:selected={panelOpen.timeline} aria-pressed={panelOpen.timeline} onclick={() => panelOpen.timeline = !panelOpen.timeline}><Clapperboard size={12} /> Timeline</button>
+        <button class:selected={panelOpen.console} data-tutorial-target="panel-tab-console" aria-pressed={panelOpen.console} onclick={() => panelOpen.console = !panelOpen.console}><Terminal size={12} /> Console</button>
+        <button class:selected={panelOpen.ai} data-tutorial-target="panel-tab-ai" aria-pressed={panelOpen.ai} onclick={() => panelOpen.ai = !panelOpen.ai}><Bot size={12} /> AI</button>
+        <button class:selected={panelOpen.timeline} data-tutorial-target="panel-tab-timeline" aria-pressed={panelOpen.timeline} onclick={() => panelOpen.timeline = !panelOpen.timeline}><Clapperboard size={12} /> Timeline</button>
         <button class:selected={panelOpen.docs} aria-pressed={panelOpen.docs} onclick={() => togglePanel("docs")}><BookOpen size={12} /> Docs</button>
       </div>
     </section>
@@ -1649,7 +1698,7 @@ when clicked
       <div class="rename-dialog" role="dialog" aria-modal="true" aria-labelledby="rename-scene-title">
         <h2 id="rename-scene-title">Rename scene</h2>
         <form onsubmit={(event) => { event.preventDefault(); commitSceneRename(); }}>
-          <input aria-label="Scene name" bind:value={sceneRenameTarget} maxlength="100" />
+          <input data-tutorial-target="scene-name-input" aria-label="Scene name" bind:value={sceneRenameTarget} maxlength="100" />
           <div class="rename-actions"><button type="button" onclick={() => sceneRenameTarget = null}>Cancel</button><button type="submit" disabled={!sceneRenameTarget.trim()}>Rename</button></div>
         </form>
       </div>
@@ -1657,10 +1706,10 @@ when clicked
   {/if}
   {#if contextMenu}
     <button class="context-dismiss" type="button" aria-label="Close entity menu" onclick={() => contextMenu = null}></button>
-    <div class="entity-context-menu" style={`left:${contextMenu.x}px;top:${contextMenu.y}px`} role="menu" aria-label="Entity actions" tabindex="-1" oncontextmenu={(event) => event.preventDefault()}>
-      <button role="menuitem" aria-expanded={contextAddOpen} onclick={() => contextAddOpen = !contextAddOpen}><Plus size={13} /> Add <span class="context-chevron">{contextAddOpen ? "−" : "›"}</span></button>
+    <div class="entity-context-menu" data-tutorial-target="context-menu" style={`left:${contextMenu.x}px;top:${contextMenu.y}px`} role="menu" aria-label="Entity actions" tabindex="-1" oncontextmenu={(event) => event.preventDefault()}>
+      <button role="menuitem" data-tutorial-target="context-add" aria-expanded={contextAddOpen} onclick={() => contextAddOpen = !contextAddOpen}><Plus size={13} /> Add <span class="context-chevron">{contextAddOpen ? "−" : "›"}</span></button>
       {#if contextAddOpen}
-        <div class="context-add-grid" aria-label="Add object">
+        <div class="context-add-grid" data-tutorial-target="context-add-grid" aria-label="Add object">
           {#each shelfPrimitives as item (item.shape)}
             <button role="menuitem" title="Add {item.label}" onclick={() => addContextPrimitive(item.shape)}><item.icon size={15} /><span>{item.label}</span></button>
           {/each}
@@ -1684,7 +1733,7 @@ when clicked
         <div class="context-separator"></div>
         <button role="menuitem" onclick={() => duplicateEntity(contextMenu!.id!)} disabled={playState !== "stopped"}><CopyPlus size={13} /> Duplicate <kbd>Ctrl+D</kbd></button>
         <button role="menuitem" onclick={groupSelection} disabled={playState !== "stopped"}><Group size={13} /> Group{selectedIds.length > 1 ? ` ${selectedIds.length}` : ""} <kbd>Ctrl+G</kbd></button>
-        {#if scene.entities.some((entity) => entity.parent === contextMenu!.id)}<button role="menuitem" onclick={() => ungroupEntity(contextMenu!.id!)} disabled={playState !== "stopped"}><Ungroup size={13} /> Ungroup <kbd>Ctrl+Shift+G</kbd></button>{/if}
+        {#if scene.entities.some((entity) => entity.parent === contextMenu!.id)}<button role="menuitem" data-tutorial-target="context-ungroup" onclick={() => ungroupEntity(contextMenu!.id!)} disabled={playState !== "stopped"}><Ungroup size={13} /> Ungroup <kbd>Ctrl+Shift+G</kbd></button>{/if}
         {#if scene.entities.find((entity) => entity.id === contextMenu!.id)?.parent}<button role="menuitem" onclick={() => { reparentEntity(contextMenu!.id!, null); contextMenu = null; }} disabled={playState !== "stopped"}><ArrowUpFromLine size={13} /> Move out to top level</button>{/if}
         <button role="menuitem" onclick={() => { const entity = scene.entities.find((candidate) => candidate.id === contextMenu!.id); if (entity) renameTarget = { id: entity.id, name: entity.name }; contextMenu = null; }} disabled={playState !== "stopped"}><PencilLine size={13} /> Rename <kbd>F2</kbd></button>
         <div class="context-separator"></div>
@@ -1709,21 +1758,22 @@ when clicked
       </div>
     </div>
   {/if}
+  <TutorialOverlay />
 </main>
 
 <style>
   .stage{position:relative;z-index:0;isolation:isolate;box-sizing:border-box;flex:1;min-height:0;display:flex}
   .scene-content-window{position:absolute;z-index:3;min-width:0;min-height:0}
   .panel-workspace{position:absolute;inset:0;z-index:5;overflow:hidden;pointer-events:none}
-  .panel-window{position:absolute;display:flex;min-width:220px;min-height:140px;flex-direction:column;overflow:hidden;pointer-events:auto;border:1px solid #454450;border-radius:0;background:#191a21;box-shadow:none}
+  .panel-window{position:absolute;display:flex;min-width:220px;min-height:140px;flex-direction:column;overflow:hidden;pointer-events:auto;border:1px solid #46464e;border-radius:0;background:#1b1b1f;box-shadow:none}
   .panel-window.floating-panel{overflow:hidden;min-width:220px;min-height:140px}
-  .panel-window-title{display:flex;flex:0 0 32px;align-items:center;gap:10px;padding:0 8px 0 12px;border-bottom:1px solid #ffffff12;background:#22232d;color:#dedce8;cursor:grab;user-select:none}
+  .panel-window-title{display:flex;flex:0 0 32px;align-items:center;gap:10px;padding:0 8px 0 12px;border-bottom:1px solid #ffffff12;background:#25252a;color:#e1e1e3;cursor:grab;user-select:none}
   .panel-window-title:active{cursor:grabbing}
-  .panel-window-title strong{font-size:10px;font-weight:600}
-  .panel-window-title span{flex:1;color:#777583;font-size:9px}
+  .panel-window-title strong{font-size:11px;font-weight:600}
+  .panel-window-title span{flex:1;color:#767682;font-size:9px}
   .panel-drag-handle{display:flex;height:100%;min-width:0;flex:1;align-items:center;gap:10px;padding:0;border:0;background:transparent;text-align:left;cursor:grab;user-select:none}
   .panel-drag-handle:active{cursor:grabbing}
-  .panel-close{display:grid;width:22px;height:22px;flex:none;place-items:center;border:0;border-radius:4px;background:transparent;color:#9795a3;cursor:pointer}
+  .panel-close{display:grid;width:22px;height:22px;flex:none;place-items:center;border:0;border-radius:4px;background:transparent;color:#9797a1;cursor:pointer}
   .panel-close:hover{background:#ffffff12;color:#fff}
   .panel-window-body{display:flex;min-width:0;min-height:0;flex:1;flex-direction:column;overflow:hidden}
   .panel-window-body :global(.ai-panel){flex:1}
@@ -1732,66 +1782,66 @@ when clicked
   .console-body .console-line{flex:none;padding:6px 10px}
   .console-body .console-log{flex:1;min-height:30px}
   .console-body .command-bar{flex:none}
-  .panel-snap-preview{position:absolute;z-index:10;border:1px solid #a99aff;background:#9b8cff22;pointer-events:none}
+  .panel-snap-preview{position:absolute;z-index:10;border:1px solid #a99bff;background:#8b7cf622;pointer-events:none}
   .panel-snap-preview.snap-left{top:0;bottom:0;left:0;width:38%}
   .panel-snap-preview.snap-right{top:0;right:0;bottom:0;width:38%}
   .panel-snap-preview.snap-top{top:0;right:0;left:0;height:42%}
   .panel-snap-preview.snap-bottom{right:0;bottom:0;left:0;height:42%}
-  .stage-tabs{height:32px;display:flex;align-items:stretch;gap:1px;padding:0 6px;background:#15161c;border-bottom:1px solid #ffffff0e;overflow-x:auto}
-  .stage-tab{display:flex;align-items:center;gap:6px;padding:0 6px 0 10px;border:0;border-top:2px solid transparent;background:transparent;color:#8a8896;font-size:10.5px;white-space:nowrap;cursor:pointer}
+  .stage-tabs{height:32px;display:flex;align-items:stretch;gap:1px;padding:0 6px;background:#17171a;border-bottom:1px solid #ffffff0e;overflow-x:auto}
+  .stage-tab{display:flex;align-items:center;gap:6px;padding:0 6px 0 10px;border:0;border-top:2px solid transparent;background:transparent;color:#898995;font-size:10.5px;white-space:nowrap;cursor:pointer}
   button.stage-tab{padding-right:12px}
-  .stage-tab[aria-selected="true"]{background:#1d1e26;color:#e6e3f1;border-top-color:#9585fa}
-  .stage-tab:hover{color:#d6d3e0}
+  .stage-tab[aria-selected="true"]{background:#1f1f24;color:#e9e9eb;border-top-color:#8b7cf6}
+  .stage-tab:hover{color:#d8d8db}
   .dirty-dot{font-style:normal;color:#ffd479;font-size:8px}
-  .close-tab{display:grid;place-items:center;width:18px;height:18px;border:0;border-radius:4px;background:none;color:#777583;cursor:pointer}
+  .close-tab{display:grid;place-items:center;width:18px;height:18px;border:0;border-radius:4px;background:none;color:#767682;cursor:pointer}
   .close-tab:hover{background:#ffffff12;color:#fff}
-  .console-log{flex:1;min-height:0;overflow:auto;padding:0 15px 4px;font:10.5px/17px 'DM Mono',monospace;color:#a9a7b5}
-  .console-hint{color:#77757f;font-family:'DM Sans',sans-serif;font-size:10.5px}.console-hint code{color:#7fd1ff;font-family:'DM Mono',monospace}
-  .log-info{color:#8a8896}.log-print{color:#d9d7e2}.log-error{color:#ff8992}
-  .command-bar{display:flex;align-items:center;gap:8px;margin:0 10px 8px;padding:0 4px 0 10px;height:30px;border:1px solid #ffffff14;border-radius:6px;background:#111217}
+  .console-log{flex:1;min-height:0;overflow:auto;padding:0 15px 4px;font:10.5px/17px 'DM Mono',monospace;color:#aaaab2}
+  .console-hint{color:#747480;font-family:'DM Sans',sans-serif;font-size:10.5px}.console-hint code{color:#7fd1ff;font-family:'DM Mono',monospace}
+  .log-info{color:#898995}.log-print{color:#dbdbde}.log-error{color:#ff8992}
+  .command-bar{display:flex;align-items:center;gap:8px;margin:0 10px 8px;padding:0 4px 0 10px;height:32px;border:1px solid #ffffff14;border-radius:8px;background:#131315}
   .command-bar:focus-within{border-color:#7fd1ff66}
   .command-bar span{color:#7fd1ff;font:13px 'DM Mono',monospace}
-  .command-bar input{flex:1;min-width:0;height:100%;border:0;outline:none;background:transparent;color:#e6e3f1;font:11px 'DM Mono',monospace}
-  .command-bar button{height:22px;padding:0 10px;border:0;border-radius:4px;background:#1f2f3a;color:#a9def7;font-size:10px;cursor:pointer}.command-bar button:disabled{opacity:.4;cursor:default}
-  .settings-overlay{position:fixed;inset:0;z-index:20;display:grid;place-items:center;padding:20px;background:#09090dc9;backdrop-filter:blur(5px)}
+  .command-bar input{flex:1;min-width:0;height:100%;border:0;outline:none;background:transparent;color:#e9e9eb;font:11px 'DM Mono',monospace}
+  .command-bar button{height:24px;padding:0 10px;border:0;border-radius:5px;background:#1f2f3a;color:#a9def7;font-size:10px;cursor:pointer}.command-bar button:disabled{opacity:.4;cursor:default}
+  .settings-overlay{position:fixed;inset:0;z-index:20;display:grid;place-items:center;padding:20px;background:#0a0a0cc9;backdrop-filter:blur(5px)}
   .scene-loader-body{padding:10px;gap:10px}
   .scene-loader-actions{display:flex;flex-wrap:wrap;gap:6px}
-  .scene-loader-actions button{height:27px;padding:0 9px;border:1px solid #ffffff16;border-radius:5px;background:#25252f;color:#d6d3e0;font-size:10px}
-  .scene-loader-actions button:hover{background:#302d40;color:#fff}
-  .scene-loader-heading{color:#aaa8b5;font-size:10px;font-weight:600}
+  .scene-loader-actions button{height:28px;padding:0 10px;border:1px solid #ffffff12;border-radius:6px;background:#222226;color:#d4d4d8;font-size:11px;cursor:pointer}
+  .scene-loader-actions button:hover{background:#2d2d33;color:#fff}
+  .scene-loader-heading{color:#aaaab3;font-size:10px;font-weight:600}
   .scene-loader-list{display:grid;min-height:0;gap:3px;overflow:auto}
   .scene-loader-list button{display:flex;height:auto;min-height:42px;flex-direction:column;align-items:flex-start;justify-content:center;gap:3px;padding:6px 9px;border:0;border-radius:5px;background:transparent;text-align:left}
   .scene-loader-list button:hover,.scene-loader-list button.current-scene{background:#ffffff0c}
-  .scene-loader-list strong{max-width:100%;overflow:hidden;color:#e6e3f1;font-size:10.5px;text-overflow:ellipsis}
-  .scene-loader-list small{max-width:100%;overflow:hidden;color:#777583;font-size:9px;text-overflow:ellipsis}
-  .scene-loader-empty{margin:0;color:#777583;font-size:10px;line-height:1.5}
+  .scene-loader-list strong{max-width:100%;overflow:hidden;color:#e9e9eb;font-size:10.5px;text-overflow:ellipsis}
+  .scene-loader-list small{max-width:100%;overflow:hidden;color:#767682;font-size:9px;text-overflow:ellipsis}
+  .scene-loader-empty{margin:0;color:#767682;font-size:10px;line-height:1.5}
   .context-dismiss{position:fixed;inset:0;z-index:30;border:0;background:transparent}
-  .entity-context-menu{position:fixed;z-index:31;width:194px;max-height:75vh;overflow:auto;padding:5px;border:1px solid #383845;border-radius:8px;background:#1b1b23;box-shadow:0 12px 36px #0009}
-  .entity-context-menu button{display:flex;align-items:center;gap:8px;width:100%;height:30px;padding:0 10px;border:0;border-radius:4px;background:transparent;color:#e6e3f1;text-align:left;font-size:11px;cursor:pointer}
-  .entity-context-menu button :global(svg){flex:none;color:#a99aff}
-  .entity-context-menu button:hover:not(:disabled){background:#302d40}
+  .entity-context-menu{position:fixed;z-index:31;width:194px;max-height:75vh;overflow:auto;padding:4px;border:1px solid #ffffff1a;border-radius:9px;background:#18181b;box-shadow:0 10px 28px #0009}
+  .entity-context-menu button{display:flex;align-items:center;gap:8px;width:100%;height:30px;padding:0 10px;border:0;border-radius:5px;background:transparent;color:#c5c5cb;text-align:left;font-size:12px;cursor:pointer}
+  .entity-context-menu button :global(svg){flex:none;color:#a99bff}
+  .entity-context-menu button:hover:not(:disabled){background:#ffffff12;color:#fff}
   .context-add-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:3px;margin:3px 0 4px}
-  .entity-context-menu .context-add-grid button{display:grid;justify-items:center;gap:3px;height:auto;padding:7px 2px 5px;border:1px solid #ffffff0b;border-radius:6px;background:#15161c}
-  .entity-context-menu .context-add-grid button:hover{border-color:#a99bff55;background:#2a2740}
-  .context-add-grid span{max-width:100%;overflow:hidden;color:#a7a4b3;font-size:8.5px;text-overflow:ellipsis;white-space:nowrap}
-  .context-chevron{margin-left:auto;color:#9995a9}
+  .entity-context-menu .context-add-grid button{display:grid;justify-items:center;gap:3px;height:auto;padding:7px 2px 5px;border:1px solid #ffffff0b;border-radius:6px;background:#17171a}
+  .entity-context-menu .context-add-grid button:hover{border-color:#7c6cf044;background:#ffffff0d}
+  .context-add-grid span{max-width:100%;overflow:hidden;color:#a7a7b0;font-size:8.5px;text-overflow:ellipsis;white-space:nowrap}
+  .context-chevron{margin-left:auto;color:#9a9aa4}
   .entity-context-menu .context-animate{color:#e2dcff}
   .entity-context-menu .context-animate :global(svg){color:#d8b4fe}
   .entity-context-menu button:disabled{opacity:.4;cursor:default}
-  .entity-context-menu kbd{margin-left:auto;color:#7d7a8a;font:9px 'DM Mono',monospace}
+  .entity-context-menu kbd{margin-left:auto;color:#7c7c88;font:9px 'DM Mono',monospace}
   .entity-context-menu .context-delete :global(svg){color:#ff9ba2}
   .bottom-tabs button{gap:6px}
   .bottom-tabs button :global(svg){opacity:.7}
   .bottom-tabs button.selected :global(svg){opacity:1;color:#b9adff}
   /* Viewport overlays: a Unity-style tool rail and a one-click create shelf. */
-  .tool-rail{position:absolute;z-index:2;top:10px;left:10px;display:flex;flex-direction:column;gap:2px;padding:3px;border:1px solid #ffffff14;border-radius:9px;background:#15161cd9;backdrop-filter:blur(6px);box-shadow:0 6px 18px #0006}
-  .tool-rail button{position:relative;display:grid;width:30px;height:30px;place-items:center;padding:0;border:1px solid transparent;border-radius:6px;background:transparent;color:#b6b3c2;cursor:pointer;transition:background .12s,color .12s}
+  .tool-rail{position:absolute;z-index:2;top:10px;left:10px;display:flex;flex-direction:column;gap:2px;padding:3px;border:1px solid #ffffff14;border-radius:9px;background:#17171ad9;backdrop-filter:blur(6px);box-shadow:0 6px 18px #0006}
+  .tool-rail button{position:relative;display:grid;width:30px;height:30px;place-items:center;padding:0;border:1px solid transparent;border-radius:6px;background:transparent;color:#b7b7be;cursor:pointer;transition:background .12s,color .12s}
   .tool-rail button:hover:not(:disabled){background:#ffffff12;color:#fff}
-  .tool-rail button.active{border-color:#7d6ff066;background:#3b3566;color:#e1dbff}
+  .tool-rail button.active{border-color:#7c6cf066;background:#3b3566;color:#e1dbff}
   .rail-sep{height:1px;margin:3px 4px;background:#ffffff18}
   .tool-rail button:focus-visible{outline:2px solid #a99bff;outline-offset:1px}
   /* Hover labels for icon-only rail buttons. */
-  .tool-rail button[data-tip]:hover::after,.tool-rail button[data-tip]:focus-visible::after{content:attr(data-tip);position:absolute;z-index:3;left:calc(100% + 8px);top:50%;transform:translateY(-50%);padding:3px 7px;border:1px solid #ffffff18;border-radius:5px;background:#0d0d12;color:#ecebf3;font:10px 'DM Sans',sans-serif;white-space:nowrap;pointer-events:none}
+  .tool-rail button[data-tip]:hover::after,.tool-rail button[data-tip]:focus-visible::after{content:attr(data-tip);position:absolute;z-index:3;left:calc(100% + 8px);top:50%;transform:translateY(-50%);padding:3px 7px;border:1px solid #ffffff18;border-radius:5px;background:#0f0f10;color:#eeeef0;font:10px 'DM Sans',sans-serif;white-space:nowrap;pointer-events:none}
   .create-shelf{position:absolute;z-index:3;bottom:12px;left:50%;transform:translateX(-50%);display:flex;align-items:center;gap:4px;max-width:calc(100% - 24px);padding:5px;border:1px solid #ffffff14;border-radius:12px;background:#18181be6;backdrop-filter:blur(8px);box-shadow:0 8px 22px #0007}
   .shelf-group{position:relative;display:flex;align-items:center}
   .create-shelf button{display:flex;height:34px;align-items:center;gap:8px;padding:0 12px;border:0;border-radius:8px;background:transparent;color:#d4d4d8;font:13px 'DM Sans',sans-serif;white-space:nowrap;cursor:pointer;transition:background .12s,color .12s}
@@ -1805,7 +1855,7 @@ when clicked
   .create-shelf .shelf-generate:hover{background:#8b7cf6}
   .create-shelf button:focus-visible{outline:2px solid #a99bff;outline-offset:1px}
   .shelf-menu{position:absolute;bottom:calc(100% + 8px);left:0;display:flex;min-width:160px;flex-direction:column;padding:4px;border:1px solid #ffffff1a;border-radius:9px;background:#18181b;box-shadow:0 10px 24px #0009}
-  .create-shelf .shelf-menu button{height:30px;gap:9px;padding:0 10px;color:#c4c4cc;font-size:12px}
+  .create-shelf .shelf-menu button{height:30px;gap:9px;padding:0 10px;color:#c5c5cb;font-size:12px}
   .create-shelf .shelf-menu button.active{background:#3b3566;color:#e1dbff}
   .shelf-menu-sep{height:1px;margin:4px 3px;background:#ffffff18}
   /* Narrow stages keep the shelf on one row by dropping the text labels. */
@@ -1814,13 +1864,13 @@ when clicked
   .menu-separator{height:1px;margin:4px 3px;background:#ffffff18}
   .entity-context-menu .context-delete{color:#ff9ba2}
   .context-separator{height:1px;margin:4px 3px;background:#ffffff18}
-  .rename-overlay{position:fixed;inset:0;z-index:40;display:grid;place-items:center;padding:20px;background:#09090dc9;backdrop-filter:blur(4px)}
-  .rename-dialog{width:min(360px,100%);padding:20px;border:1px solid #383845;border-radius:10px;background:#1b1b23;box-shadow:0 18px 50px #0009}
-  .rename-dialog h2{margin:0 0 14px;color:#e6e3f1;font-size:14px}
-  .rename-dialog input{box-sizing:border-box;width:100%;height:34px;padding:0 10px;border:1px solid #454451;border-radius:5px;background:#111217;color:#e6e3f1;font:12px 'DM Sans',sans-serif;outline:none}
-  .rename-dialog input:focus{border-color:#9585fa}
+  .rename-overlay{position:fixed;inset:0;z-index:40;display:grid;place-items:center;padding:20px;background:#0a0a0cc9;backdrop-filter:blur(4px)}
+  .rename-dialog{width:min(360px,100%);padding:20px;border:1px solid #ffffff1a;border-radius:12px;background:#18181b;box-shadow:0 18px 50px #0009}
+  .rename-dialog h2{margin:0 0 14px;color:#e9e9eb;font-size:14px}
+  .rename-dialog input{box-sizing:border-box;width:100%;height:34px;padding:0 10px;border:1px solid #ffffff14;border-radius:6px;background:#131315;color:#e9e9eb;font:12px 'DM Sans',sans-serif;outline:none}
+  .rename-dialog input:focus{border-color:#a99bff88}
   .rename-actions{display:flex;justify-content:flex-end;gap:8px;margin-top:16px}
-  .rename-actions button{height:28px;padding:0 12px;border:1px solid #454451;border-radius:5px;background:#25252f;color:#d6d3e0;font-size:10px;cursor:pointer}
-  .rename-actions button[type="submit"]{border-color:#7d6be6;background:#7562da;color:#fff}
+  .rename-actions button{height:30px;padding:0 14px;border:1px solid #ffffff12;border-radius:6px;background:#222226;color:#d4d4d8;font-size:12px;cursor:pointer}.rename-actions button:hover:not(:disabled){background:#2d2d33;color:#fff}
+  .rename-actions button[type="submit"]{border-color:transparent;background:#7c6cf0;color:#fff;font-weight:600}.rename-actions button[type="submit"]:hover:not(:disabled){background:#8b7cf6}
   .rename-actions button:disabled{opacity:.45;cursor:default}
 </style>

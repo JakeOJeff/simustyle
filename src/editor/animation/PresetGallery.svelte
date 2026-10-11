@@ -113,31 +113,31 @@
 </div>
 
 <style>
-  .preset-gallery{position:fixed;z-index:60;display:grid;gap:10px;max-height:calc(100vh - 16px);overflow:auto;padding:12px;border:1px solid #3c3a4b;border-radius:10px;background:#1b1b23;box-shadow:0 18px 50px #000a;color:#dedce8;font:11px 'DM Sans',sans-serif;outline:none;animation:pop .14s cubic-bezier(.2,.9,.1,1)}
+  .preset-gallery{position:fixed;z-index:60;display:grid;gap:10px;max-height:calc(100vh - 16px);overflow:auto;padding:12px;border:1px solid #ffffff1a;border-radius:10px;background:#18181b;box-shadow:0 18px 50px #000a;color:#e1e1e3;font:11px 'DM Sans',sans-serif;outline:none;animation:pop .14s cubic-bezier(.2,.9,.1,1)}
   @keyframes pop{from{opacity:0;transform:translateY(-4px) scale(.98)}}
   header{display:grid;grid-template-columns:auto 1fr auto;align-items:start;gap:9px}
-  .badge{display:grid;width:26px;height:26px;place-items:center;border-radius:7px;background:linear-gradient(135deg,#7562da,#c084fc);color:#fff}
+  .badge{display:grid;width:26px;height:26px;place-items:center;border-radius:7px;background:#7c6cf0;color:#fff}
   header div{display:grid;gap:3px}
-  header strong{font-size:12.5px;font-weight:600;color:#f0edff}
-  header small{color:#9a97a7;font-size:10px;line-height:1.4}
-  header b{color:#e6e3f1;font-weight:600}
-  .close{display:grid;width:22px;height:22px;place-items:center;padding:0;border:0;border-radius:4px;background:transparent;color:#8d8a9a;cursor:pointer}
+  header strong{font-size:12.5px;font-weight:600;color:#f6f6f6}
+  header small{color:#9a9aa4;font-size:10px;line-height:1.4}
+  header b{color:#e9e9eb;font-weight:600}
+  .close{display:grid;width:22px;height:22px;place-items:center;padding:0;border:0;border-radius:4px;background:transparent;color:#8d8d97;cursor:pointer}
   .close:hover{background:#ffffff12;color:#fff}
   section{display:grid;gap:6px}
   .category{display:flex;align-items:baseline;gap:6px;color:#8b84b5;font:9px 'DM Mono',monospace;letter-spacing:.1em;text-transform:uppercase}
-  .category small{color:#6f6c7c;letter-spacing:0;text-transform:none;font-family:'DM Sans',sans-serif}
+  .category small{color:#6e6e7a;letter-spacing:0;text-transform:none;font-family:'DM Sans',sans-serif}
   .cards{display:grid;grid-template-columns:repeat(4,1fr);gap:5px}
-  .card{display:grid;gap:4px;padding:5px 5px 6px;border:1px solid #ffffff0d;border-radius:7px;background:#15161c;color:#cfcbe0;text-align:left;cursor:pointer;transition:background .12s,border-color .12s,transform .12s}
-  .card:hover:not(:disabled){background:#22203a;border-color:#a99bff66;transform:translateY(-1px)}
+  .card{display:grid;gap:4px;padding:5px 5px 6px;border:1px solid #ffffff0d;border-radius:7px;background:#17171a;color:#cfcbe0;text-align:left;cursor:pointer;transition:background .12s,border-color .12s,transform .12s}
+  .card:hover:not(:disabled){background:#ffffff0d;border-color:#a99bff66;transform:translateY(-1px)}
   .card:disabled{opacity:.42;cursor:not-allowed}
-  .stage{position:relative;display:grid;height:52px;place-items:center;overflow:hidden;border-radius:5px;background:radial-gradient(circle at 50% 120%,#2a2545 0,#0f1015 75%)}
+  .stage{position:relative;display:grid;height:52px;place-items:center;overflow:hidden;border-radius:5px;background:radial-gradient(circle at 50% 120%,#26262c 0,#111113 75%)}
   .floor{position:absolute;left:10%;right:10%;bottom:9px;height:1px;background:#ffffff18}
   .actor{width:15px;height:15px;margin-top:8px;border-radius:3px;will-change:transform}
   .actor.light{border-radius:50%}
-  .card-label{display:flex;align-items:center;gap:4px;font-size:10px;font-weight:600;color:#e6e3f1}
+  .card-label{display:flex;align-items:center;gap:4px;font-size:10px;font-weight:600;color:#e9e9eb}
   .card-label :global(svg){color:#a99bff}
-  .card small{overflow:hidden;color:#7f7c8c;font-size:8.5px;text-overflow:ellipsis;white-space:nowrap}
-  .note{display:flex;align-items:center;gap:5px;margin:0;color:#8a8796;font-size:9.5px}
+  .card small{overflow:hidden;color:#7e7e8a;font-size:8.5px;text-overflow:ellipsis;white-space:nowrap}
+  .note{display:flex;align-items:center;gap:5px;margin:0;color:#898994;font-size:9.5px}
   button:focus-visible{outline:2px solid #a99bff;outline-offset:1px}
   @media (prefers-reduced-motion: reduce){.preset-gallery{animation:none}.card{transition:none}}
 </style>

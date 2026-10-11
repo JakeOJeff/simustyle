@@ -4,6 +4,13 @@ Record meaningful project changes during the event, newest first.
 
 ## Event build log
 
+### 2026-10-12T00:40:00+05:30 — Unify editor UI styles and restyle sliders
+
+- Changed: Moved older panels from purple-tinted greys onto the neutral palette used by the viewport menus and create shelf, and collapsed about 25 accent shades into one set (`#a99bff` text, `#7c6cf0` fill, `#8b7cf6` hover, `#3b3566` selected). Menus and popovers now share one surface, primary actions are solid accent buttons, secondary buttons and inputs share one style, and the purple gradient banners and buttons are flat. Added shared color tokens and a global range-slider style (slim filled track, white thumb, hover and drag halo, focus ring); the Inspector sets the fill through `--fill`. Files: `src/app.css`, `src/App.svelte`, all panels under `src/editor/`.
+- Why: Remove style drift between older panels and the recently redesigned viewport UI.
+- Validation: `tsc --noEmit`, `svelte-check`, and `vite build` pass. `tests/lang/sentences.test.ts` fails on the README scripting example, which this change does not touch.
+- Limitations: Sliders outside the Inspector need `--fill` set to show progress; without it the fill sits at 50%.
+
 ### 2026-10-12T00:05:00+05:30 — Redesign the viewport create shelf
 
 - Changed: Replaced the icon-only create shelf with labelled controls: a shape split button (last-used shape; menu adds other shapes, empty groups, and script objects), a light split button (point, sun, spot), Camera, an Import menu (scene file, recent scenes), and a Generate button that opens the AI panel. Removed the shelf's Animate button; presets stay in the timeline, Inspector header, and right-click menu. Files: `src/App.svelte`, `src/editor/DocsPanel.svelte`, `docs/USER_GUIDE.md`.

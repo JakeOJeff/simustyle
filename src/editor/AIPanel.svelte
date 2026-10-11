@@ -121,7 +121,7 @@
     {/if}
   </div>
 
-  <form class="prompt-form" onsubmit={submit}>
+  <form class="prompt-form" data-tutorial-target="ai-prompt" onsubmit={submit}>
     <textarea
       aria-label="Describe a scene change"
       placeholder="What would you like to build or change?"
@@ -144,39 +144,39 @@
 </section>
 
 <style>
-  .ai-panel{height:100%;min-height:0;display:flex;flex-direction:column;background:#17181f;color:#e9e8ef;font-family:'DM Sans',Inter,Segoe UI,sans-serif}
+  .ai-panel{height:100%;min-height:0;display:flex;flex-direction:column;background:#19191d;color:#ebebec;font-family:'DM Sans',Inter,Segoe UI,sans-serif}
   .ai-header{height:34px;min-height:34px;display:flex;align-items:center;gap:12px;padding:0 12px;border-bottom:1px solid #ffffff0c}
-  .ai-title{display:flex;align-items:center;gap:7px;color:#d7d5df;font:9px 'DM Mono',monospace;letter-spacing:.1em}
-  .ai-mark{font-size:13px;color:#a99cff}.ai-caption{color:#777583;font-size:10px}
+  .ai-title{display:flex;align-items:center;gap:7px;color:#d8d8dc;font:9px 'DM Mono',monospace;letter-spacing:.1em}
+  .ai-mark{font-size:13px;color:#a99bff}.ai-caption{color:#767682;font-size:10px}
   .conversation{flex:1;min-height:0;overflow:auto;padding:9px 12px;display:flex;flex-direction:column;gap:8px}
-  .empty-state,.loading-state{display:flex;align-items:center;gap:7px;color:#858391;font:10px 'DM Mono',monospace}
+  .empty-state,.loading-state{display:flex;align-items:center;gap:7px;color:#848490;font:10px 'DM Mono',monospace}
   .empty-state{min-height:30px}.loading-state{padding:4px 0;color:#b0a6e8}
-  .spinner{width:11px;height:11px;border:1px solid #655b94;border-top-color:#b5a6ff;border-radius:50%;animation:spin .8s linear infinite}
+  .spinner{width:11px;height:11px;border:1px solid #655b94;border-top-color:#a99bff;border-radius:50%;animation:spin .8s linear infinite}
   @keyframes spin{to{transform:rotate(360deg)}}
   .message{max-width:min(760px,100%);display:grid;grid-template-columns:62px minmax(0,1fr);align-items:baseline;column-gap:8px;row-gap:3px}
-  .message-role{color:#8e87bd;font:8px 'DM Mono',monospace;letter-spacing:.08em}.user-message .message-role{color:#777583}
-  .message-content,.summary{grid-column:2;margin:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:#c6c4cf;font-size:11px;line-height:1.5}
-  .summary{color:#e0deea;font-weight:500}
-  .operation-details{grid-column:2;color:#92909e;font-size:9px}
-  .preflight-details{grid-column:2;color:#92909e;font-size:9px}
-  .preflight-details>summary{cursor:pointer;list-style:none;min-height:19px;color:#aaa3d8}.preflight-details>summary::-webkit-details-marker{display:none}.preflight-details>summary:before{content:'›';display:inline-block;margin-right:6px;color:#9a8bf0;font-size:14px}.preflight-details[open]>summary:before{transform:rotate(90deg)}
-  .preflight-output{display:grid;gap:4px;margin:2px 0 5px 5px;padding-left:8px;border-left:1px solid #ffffff14}.preflight-output strong{margin-top:3px;color:#c6c2d4;font-size:8px}.preflight-output code{overflow-wrap:anywhere;color:#bdb9cc;font:8px/1.4 'DM Mono',monospace}.preflight-output span{color:#777583;font-size:8px}
+  .message-role{color:#8e87bd;font:8px 'DM Mono',monospace;letter-spacing:.08em}.user-message .message-role{color:#767682}
+  .message-content,.summary{grid-column:2;margin:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:#c7c7cc;font-size:11px;line-height:1.5}
+  .summary{color:#e3e3e5;font-weight:500}
+  .operation-details{grid-column:2;color:#92929c;font-size:9px}
+  .preflight-details{grid-column:2;color:#92929c;font-size:9px}
+  .preflight-details>summary{cursor:pointer;list-style:none;min-height:19px;color:#aaa3d8}.preflight-details>summary::-webkit-details-marker{display:none}.preflight-details>summary:before{content:'›';display:inline-block;margin-right:6px;color:#8b7cf6;font-size:14px}.preflight-details[open]>summary:before{transform:rotate(90deg)}
+  .preflight-output{display:grid;gap:4px;margin:2px 0 5px 5px;padding-left:8px;border-left:1px solid #ffffff14}.preflight-output strong{margin-top:3px;color:#c8c8ce;font-size:8px}.preflight-output code{overflow-wrap:anywhere;color:#bfbfc6;font:8px/1.4 'DM Mono',monospace}.preflight-output span{color:#767682;font-size:8px}
   .operation-details>summary,.operation>summary{cursor:pointer;list-style:none;display:flex;align-items:center;gap:7px;min-height:19px}
   .operation-details>summary::-webkit-details-marker,.operation>summary::-webkit-details-marker{display:none}
-  .operation-details>summary:before,.operation>summary:before{content:'›';display:inline-block;color:#9a8bf0;font-size:14px;transition:transform .12s}
+  .operation-details>summary:before,.operation>summary:before{content:'›';display:inline-block;color:#8b7cf6;font-size:14px;transition:transform .12s}
   .operation-details[open]>summary:before,.operation[open]>summary:before{transform:rotate(90deg)}
-  .operation-details>summary span{margin-left:auto;color:#777583}
+  .operation-details>summary span{margin-left:auto;color:#767682}
   .operation-list{display:grid;gap:2px;margin:2px 0 4px 5px;padding-left:8px;border-left:1px solid #ffffff14}
-  .operation{color:#aaa8b4}.operation-kind{min-width:43px;color:#a99cff;font:8px 'DM Mono',monospace}
-  pre{max-height:180px;overflow:auto;margin:2px 0 6px 19px;padding:7px;background:#111217;border:1px solid #ffffff0d;border-radius:4px;color:#c4c0d2;font:9px/1.45 'DM Mono',monospace;white-space:pre-wrap;overflow-wrap:anywhere}
-  .undo-button{margin:2px 0 4px 18px;padding:4px 7px;border:1px solid #ffffff16;border-radius:4px;background:#24232d;color:#bcb5e4;font-size:9px;cursor:pointer}
-  .undo-button:hover{background:#302d3d}
+  .operation{color:#aaaab2}.operation-kind{min-width:43px;color:#a99bff;font:8px 'DM Mono',monospace}
+  pre{max-height:180px;overflow:auto;margin:2px 0 6px 19px;padding:7px;background:#131315;border:1px solid #ffffff0d;border-radius:6px;color:#c6c6cc;font:9px/1.45 'DM Mono',monospace;white-space:pre-wrap;overflow-wrap:anywhere}
+  .undo-button{margin:2px 0 4px 18px;padding:4px 9px;border:1px solid #ffffff12;border-radius:6px;background:#222226;color:#d4d4d8;font-size:10px;cursor:pointer}
+  .undo-button:hover{background:#2d2d33;color:#fff}
   .fallback-draft{grid-column:2;display:grid;gap:5px;color:#d2b98a;font-size:9px;line-height:1.4}
-  .prompt-form{padding:7px 10px 8px;border-top:1px solid #ffffff10;background:#15161c}
-  textarea{display:block;width:100%;min-height:39px;max-height:90px;resize:vertical;padding:7px 9px;border:1px solid #ffffff14;border-radius:5px;outline:none;background:#101116;color:#e5e3ec;font:10px/1.45 'DM Sans',sans-serif}
-  textarea::placeholder{color:#696775}textarea:focus{border-color:#7768be}textarea:disabled{opacity:.55}
-  .prompt-actions{display:flex;align-items:center;justify-content:space-between;gap:8px;margin-top:5px;color:#666573;font:8px 'DM Mono',monospace}
-  .prompt-actions button{height:25px;padding:0 9px;border:1px solid #51467b;border-radius:4px;background:#29253c;color:#c4baff;font-size:9px;cursor:pointer}
-  .prompt-actions button:hover:not(:disabled){background:#37304f}.prompt-actions button:disabled{opacity:.4;cursor:default}
+  .prompt-form{padding:7px 10px 8px;border-top:1px solid #ffffff10;background:#17171a}
+  textarea{display:block;width:100%;min-height:39px;max-height:90px;resize:vertical;padding:7px 9px;border:1px solid #ffffff14;border-radius:8px;outline:none;background:#121214;color:#e6e6e9;font:10px/1.45 'DM Sans',sans-serif}
+  textarea::placeholder{color:#696974}textarea:focus{border-color:#a99bff88}textarea:disabled{opacity:.55}
+  .prompt-actions{display:flex;align-items:center;justify-content:space-between;gap:8px;margin-top:5px;color:#676771;font:8px 'DM Mono',monospace}
+  .prompt-actions button{height:26px;padding:0 12px;border:1px solid transparent;border-radius:6px;background:#7c6cf0;color:#fff;font-weight:600;font-size:10px;font-family:'DM Sans',sans-serif;cursor:pointer}
+  .prompt-actions button:hover:not(:disabled){background:#8b7cf6}.prompt-actions button:disabled{opacity:.4;cursor:default}
   @media(max-height:600px){.ai-header{height:29px;min-height:29px}.conversation{padding-top:5px;padding-bottom:5px}.prompt-form{padding:5px 8px}.prompt-form textarea{min-height:32px}}
 </style>

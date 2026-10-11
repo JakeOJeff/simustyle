@@ -5,6 +5,7 @@
   import { TransformControls } from "three/addons/controls/TransformControls.js";
   import { ChevronDown, Focus, House } from "@lucide/svelte";
   import { easeProgress } from "../runtime/easing";
+  import { emitTutorial } from "./tutorial/tutorialState.svelte";
   import type { Entity, Scene, Vec3 } from "../scene/types";
 
   /** "select" picks objects without showing a transform gizmo. */
@@ -271,6 +272,7 @@
       const entity = currentEntity();
       const object = entity && entityObjects.get(entity.id);
       if (!object) return;
+      emitTutorial("frame");
       const box = new THREE.Box3().setFromObject(object);
       const target = box.isEmpty() ? object.getWorldPosition(new THREE.Vector3()) : box.getCenter(new THREE.Vector3());
       const size = box.isEmpty() ? 1 : box.getSize(new THREE.Vector3()).length();
@@ -291,8 +293,14 @@
       activeView = view === "home" ? "perspective" : view;
     }
     viewControls = { setView, frame: focusSelected };
-    orbit.addEventListener("start", () => { cameraTween = null; activeView = null; });
+    orbit.addEventListener("start", () => { cameraTween = null; activeView = null; cameraGesture = null; });
+    // Report finished camera gestures to the tutorials: left-drag orbits, middle-drag pans, the wheel zooms.
+    let pointerButton: number | null = null;
+    let cameraGesture: string | null = null;
+    orbit.addEventListener("change", () => { cameraGesture ??= pointerButton === 0 ? "camera-orbit" : pointerButton === 1 ? "camera-pan" : pointerButton === null ? "camera-zoom" : null; });
+    orbit.addEventListener("end", () => { if (cameraGesture) emitTutorial(cameraGesture); cameraGesture = null; });
     const pointerDown = (event: PointerEvent) => {
+      pointerButton = event.button;
       downX = event.clientX;
       downY = event.clientY;
       if (event.button === 0 && event.ctrlKey && !gizmo.dragging) {
@@ -306,10 +314,12 @@
     };
     const pointerMove = (event: PointerEvent) => updateMarquee(event);
     const pointerUp = (event: PointerEvent) => {
+      pointerButton = null;
       if (marqueeStart?.pointerId === event.pointerId) { finishMarquee(event); return; }
       if (event.button === 0) pick(event);
     };
     const pointerCancel = () => {
+      pointerButton = null;
       if (!marqueeStart) return;
       marqueeStart = null;
       marquee = null;
@@ -589,7 +599,7 @@
 
 <svelte:window onpointerdown={closeMenuOutside} onkeydown={(event) => { if (event.key === "Escape") openMenu = null; }} />
 
-<div class="viewport" bind:this={host} aria-label="3D scene viewport">
+<div class="viewport" data-tutorial-target="viewport" bind:this={host} aria-label="3D scene viewport">
   {#if marquee}
     <div class="selection-marquee" style={`left:${marquee.left}px;top:${marquee.top}px;width:${marquee.width}px;height:${marquee.height}px`}></div>
   {/if}
@@ -652,7 +662,7 @@
     min-width: 0;
     min-height: 0;
     overflow: hidden;
-    background: #202124;
+    background: #202024;
     touch-action: none;
   }
 
@@ -714,7 +724,7 @@
     border: 0;
     border-radius: 5px;
     background: transparent;
-    color: #c4c4cc;
+    color: #c5c5cb;
     font: 12px 'DM Sans', sans-serif;
     text-align: left;
     white-space: nowrap;

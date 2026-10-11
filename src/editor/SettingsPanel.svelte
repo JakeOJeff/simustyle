@@ -122,26 +122,26 @@
 
     <footer class="settings-actions">
       <span class="key-status"><i class:configured={keyConfigured} aria-hidden="true"></i>{keyConfigured ? "KEY SAVED" : "NO KEY SAVED"}</span>
-      <button class="save-button" type="submit" disabled={pending}>{pending ? "Saving…" : "Save settings"}</button>
+      <button class="save-button" data-tutorial-target="ai-settings-save" type="submit" disabled={pending}>{pending ? "Saving…" : "Save settings"}</button>
     </footer>
   </form>
 </section>
 
 <style>
-  .settings-panel{width:min(460px,100%);padding:20px;background:#17181f;color:#e9e8ef;border:1px solid #ffffff12;border-radius:8px;box-shadow:0 16px 50px #0008;font-family:'DM Sans',Inter,Segoe UI,sans-serif}
+  .settings-panel{width:min(460px,100%);padding:20px;background:#18181b;color:#ebebec;border:1px solid #ffffff1a;border-radius:12px;box-shadow:0 18px 50px #0009;font-family:'DM Sans',Inter,Segoe UI,sans-serif}
   .settings-header{display:flex;justify-content:space-between;gap:16px;margin-bottom:20px}
-  .eyebrow{color:#a99cff;font:9px 'DM Mono',monospace;letter-spacing:.13em}
-  h2{margin:5px 0 4px;color:#f0eff5;font-size:16px;font-weight:600}
-  .settings-header p{margin:0;color:#898795;font-size:11px;line-height:1.5}
-  .close-button{width:26px;height:26px;border:1px solid #ffffff15;border-radius:5px;background:#20212a;color:#9f9dab;font-size:17px;cursor:pointer}
+  .eyebrow{color:#a99bff;font:9px 'DM Mono',monospace;letter-spacing:.13em}
+  h2{margin:5px 0 4px;color:#f1f1f3;font-size:16px;font-weight:600}
+  .settings-header p{margin:0;color:#888894;font-size:11px;line-height:1.5}
+  .close-button{width:28px;height:28px;border:1px solid #ffffff12;border-radius:6px;background:#222226;color:#a1a1aa;font-size:17px;cursor:pointer}.close-button:hover{background:#2d2d33;color:#fff}
   form{display:grid;gap:15px}
-  .setting-field{display:grid;gap:6px;color:#a8a6b2;font:9px 'DM Mono',monospace;letter-spacing:.05em}
-  .setting-field input{width:100%;height:34px;box-sizing:border-box;padding:0 10px;border:1px solid #ffffff18;border-radius:5px;outline:none;background:#101116;color:#e5e3ec;font:11px 'DM Sans',sans-serif;letter-spacing:normal}
-  .setting-field input::placeholder{color:#686775}.setting-field input:focus{border-color:#7768be}.setting-field input:disabled{opacity:.55}
-  .setting-field small{color:#777583;font:9px/1.45 'DM Sans',sans-serif;letter-spacing:normal}.setting-field code{color:#aaa5c6;font:9px 'DM Mono',monospace}
+  .setting-field{display:grid;gap:6px;color:#a8a8b0;font:9px 'DM Mono',monospace;letter-spacing:.05em}
+  .setting-field input{width:100%;height:34px;box-sizing:border-box;padding:0 10px;border:1px solid #ffffff14;border-radius:6px;outline:none;background:#121214;color:#e6e6e9;font:11px 'DM Sans',sans-serif;letter-spacing:normal}
+  .setting-field input::placeholder{color:#696974}.setting-field input:focus{border-color:#a99bff88}.setting-field input:disabled{opacity:.55}
+  .setting-field small{color:#767682;font:9px/1.45 'DM Sans',sans-serif;letter-spacing:normal}.setting-field code{color:#aaa5c6;font:9px 'DM Mono',monospace}
   .remove-key{justify-self:start;padding:0;border:0;background:none;color:#c18d94;font:10px 'DM Sans',sans-serif;cursor:pointer}.remove-key:hover:not(:disabled){color:#ecabb4}.remove-key:disabled{opacity:.45;cursor:default}
-  .feedback{padding:8px 9px;border-radius:4px;font-size:10px;line-height:1.45}.feedback.error{border:1px solid #a44e5b44;background:#53292f30;color:#e3a2aa}.feedback.success{border:1px solid #58967844;background:#25473530;color:#9bd1b3}
+  .feedback{padding:8px 10px;border-radius:6px;font-size:10px;line-height:1.45}.feedback.error{border:1px solid #a44e5b44;background:#53292f30;color:#e3a2aa}.feedback.success{border:1px solid #58967844;background:#25473530;color:#9bd1b3}
   .settings-actions{display:flex;align-items:center;justify-content:space-between;gap:12px;padding-top:11px;border-top:1px solid #ffffff10}
-  .key-status{display:flex;align-items:center;gap:6px;color:#767482;font:8px 'DM Mono',monospace;letter-spacing:.07em}.key-status i{width:6px;height:6px;border-radius:50%;background:#706f7b}.key-status i.configured{background:#7fc69b;box-shadow:0 0 8px #5cbb8255}
-  .save-button{height:30px;padding:0 12px;border:1px solid #51467b;border-radius:5px;background:#29253c;color:#c4baff;font-size:10px;cursor:pointer}.save-button:hover:not(:disabled){background:#37304f}.save-button:disabled{opacity:.48;cursor:default}
+  .key-status{display:flex;align-items:center;gap:6px;color:#757581;font:8px 'DM Mono',monospace;letter-spacing:.07em}.key-status i{width:6px;height:6px;border-radius:50%;background:#6f6f7b}.key-status i.configured{background:#7fc69b;box-shadow:0 0 8px #5cbb8255}
+  .save-button{height:30px;padding:0 14px;border:1px solid transparent;border-radius:6px;background:#7c6cf0;color:#fff;font-weight:600;font-size:11px;cursor:pointer}.save-button:hover:not(:disabled){background:#8b7cf6}.save-button:disabled{opacity:.48;cursor:default}
 </style>
