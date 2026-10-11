@@ -4,6 +4,13 @@ Record meaningful project changes during the event, newest first.
 
 ## Event build log
 
+### 2026-10-12T02:50:00+05:30 — Feature AI Parse on the landing page
+
+- Changed: Added an AI section after the hero with an animated AI Parse demo (a casual script on the left; on the right, typo fixes, then AI fixes, then the parser check), a three-step explanation, and an AI scene assistant block. Updated the hero text and AI feature card to lead with AI and added an "AI Parse" nav link. Removed the version pill above the headline and the purple glows under buttons, behind the screenshot, behind the code card, and behind the final call to action. Files: `index.html`, `src/landing/landing.css`, `src/landing/main.ts`.
+- Why: AI Parse is a headline feature, and the pill and glows looked cluttered.
+- Validation: The demo's fixed script parses and type-checks with no errors using `parseScript` and `typecheckScript`. `tsc --noEmit` and `vite build` pass. Checked the hero and AI section at 1440 px and 390 px wide in headless Chrome, both mid-animation and when finished.
+- Limitations: The demo shows example AI wording; real rewrites vary by model and run. With reduced motion turned on, the finished result appears without animation.
+
 ### 2026-10-12T02:35:00+05:30 — Drag objects with the mouse
 
 - Changed: Press on an object in the viewport and drag to move it, like in Roblox Studio. It slides across the floor keeping the grab offset and rests its base on whatever surface is under the pointer. Dropping onto a side face places it beside that object instead. The cursor is an open hand over draggable objects and a closed hand while dragging. Snap rounds the drop point to 0.5 m. Each drag is one undo step. Dragging is off during Play, and gizmo handles take priority. Files: `src/editor/Viewport.svelte`, `src/App.svelte`, `docs/USER_GUIDE.md`, `src/editor/DocsPanel.svelte`.

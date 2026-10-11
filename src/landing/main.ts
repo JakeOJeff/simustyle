@@ -26,7 +26,7 @@ for (const card of document.querySelectorAll<HTMLElement>(".card")) {
 }
 
 // Fade sections in as they enter the viewport.
-const revealTargets = document.querySelectorAll<HTMLElement>(".section-head, .card, .split > *, .platform, .final, .strip");
+const revealTargets = document.querySelectorAll<HTMLElement>(".section-head, .card, .split > *, .parse, .steps li, .assistant > *, .platform, .final, .strip");
 if (!reducedMotion && "IntersectionObserver" in window) {
   const observer = new IntersectionObserver((entries) => {
     for (const entry of entries) {
@@ -40,6 +40,59 @@ if (!reducedMotion && "IntersectionObserver" in window) {
     element.style.transitionDelay = element.classList.contains("card") ? `${(index % 3) * 70}ms` : "";
     observer.observe(element);
   });
+}
+
+// AI Parse demo: replays the three Parse stages whenever the demo is on screen.
+// Without motion (or JS) the HTML already shows the finished result.
+const parseDemo = document.getElementById("parse-demo");
+if (parseDemo && !reducedMotion && "IntersectionObserver" in window) {
+  const status = document.getElementById("parse-status")!;
+  const steps = [...document.querySelectorAll<HTMLElement>(".steps li")];
+  const localFixes = [...parseDemo.querySelectorAll<HTMLElement>(".fix.local")];
+  const aiFixes = [...parseDemo.querySelectorAll<HTMLElement>(".fix.ai")];
+  let timers: number[] = [];
+  let onScreen = false;
+  const at = (ms: number, action: () => void) => { timers.push(window.setTimeout(action, ms)); };
+  const setStep = (name: string | null) => steps.forEach((step) => step.classList.toggle("active", step.dataset.step === name));
+  const setStatus = (text: string, busy: boolean) => { status.textContent = text; status.classList.toggle("busy", busy); };
+
+  const play = () => {
+    timers.forEach(clearTimeout);
+    timers = [];
+    parseDemo.classList.add("playing", "pressed");
+    parseDemo.classList.remove("thinking");
+    for (const line of [...localFixes, ...aiFixes]) line.classList.remove("done");
+    setStep(null);
+    setStatus("8 lines · 8 problems", true);
+
+    at(700, () => {
+      parseDemo.classList.remove("pressed");
+      setStep("local");
+      setStatus("Fixing typos locally · no AI call", true);
+      localFixes.forEach((line, index) => at(index * 260, () => line.classList.add("done")));
+    });
+    at(1900, () => {
+      setStep("ai");
+      parseDemo.classList.add("thinking");
+      setStatus(`AI is rewriting ${aiFixes.length} broken lines…`, true);
+    });
+    at(3400, () => {
+      parseDemo.classList.remove("thinking");
+      aiFixes.forEach((line, index) => at(index * 240, () => line.classList.add("done")));
+    });
+    at(4900, () => {
+      setStep("check");
+      setStatus("✓ 8 of 8 lines valid", false);
+    });
+    // Hold the result, then replay while it stays on screen.
+    at(10500, () => { if (onScreen) play(); });
+  };
+
+  new IntersectionObserver(([entry]) => {
+    const wasOnScreen = onScreen;
+    onScreen = entry.isIntersecting;
+    if (onScreen && !wasOnScreen) play();
+  }, { threshold: 0.45 }).observe(parseDemo);
 }
 
 // The installer is Windows-only; say so plainly to visitors on other systems.

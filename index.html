@@ -19,6 +19,7 @@
           <span>SimuStyle</span>
         </a>
         <nav class="nav-links" aria-label="Primary">
+          <a href="#ai">AI Parse</a>
           <a href="#features">Features</a>
           <a href="#scripting">Scripting</a>
           <a href="#download">Download</a>
@@ -34,11 +35,10 @@
         <canvas class="hero-canvas" id="hero-canvas" aria-hidden="true"></canvas>
         <div class="hero-fade" aria-hidden="true"></div>
         <div class="hero-content">
-          <p class="eyebrow"><span class="dot"></span> Version 0.2 · Free and open source</p>
           <h1>Build worlds that<br /><span class="grad">move, collide &amp; react.</span></h1>
           <p class="lede">
-            SimuStyle is a 3D scene editor for building, scripting, animating, and simulating interactive scenes.
-            Start creating in seconds in your browser, or install it on Windows.
+            A 3D scene, physics, and animation editor with AI built in. Describe a scene and it gets built.
+            Write a script in your own words and AI Parse turns it into code that runs.
           </p>
           <div class="cta-row">
             <a class="btn btn-primary btn-lg" href="/editor/">
@@ -64,6 +64,88 @@
       <section class="strip" aria-label="Built with">
         <span>Built on</span>
         <b>Three.js</b><b>Rapier physics</b><b>Svelte</b><b>Tauri</b><b>WebGL</b>
+      </section>
+
+      <section class="section ai" id="ai">
+        <div class="section-head">
+          <p class="kicker">✦ AI Parse</p>
+          <h2>Type it how you'd say it.<br />SimuStyle makes it run.</h2>
+          <p>Misspell it, ramble, describe what you want. Press Parse and your script becomes valid code, without the AI rewriting what already worked.</p>
+        </div>
+
+        <div class="parse" id="parse-demo">
+          <div class="parse-pane">
+            <div class="pane-head"><span>You write</span><small>Player.simu</small></div>
+            <ol class="lines" aria-label="Script as typed">
+              <li>when game <u>begin</u></li>
+              <li>  <u>colour me crimson</u></li>
+              <li>  <u>wiat</u> 2 <u>secs</u></li>
+              <li>when <u>spce</u> is <u>presed</u></li>
+              <li>  <u>make me jump up kinda high</u></li>
+              <li>when <u>i bump into the coin</u></li>
+              <li>  <u>the coin should go somewhere random</u></li>
+              <li>  <u>give me a point</u></li>
+            </ol>
+          </div>
+
+          <div class="parse-arrow" aria-hidden="true">
+            <button class="parse-run" id="parse-run" type="button" tabindex="-1">✦ Parse</button>
+          </div>
+
+          <div class="parse-pane result">
+            <div class="pane-head"><span>SimuStyle runs</span><small class="parse-status" id="parse-status" aria-live="polite">✓ 8 of 8 lines valid</small></div>
+            <ol class="lines" aria-label="Script after AI Parse">
+              <li class="fix local"><s>when game begin</s><b>when game starts</b><i>typo</i></li>
+              <li class="fix ai"><s>  colour me crimson</s><b>  paint me red</b><i>AI</i></li>
+              <li class="fix local"><s>  wiat 2 secs</s><b>  wait 2 seconds</b><i>typo</i></li>
+              <li class="fix local"><s>when spce is presed</s><b>when space is pressed</b><i>typo</i></li>
+              <li class="fix ai"><s>  make me jump up kinda high</s><b>  push me up 5</b><i>AI</i></li>
+              <li class="fix ai"><s>when i bump into the coin</s><b>when I touch Coin</b><i>AI</i></li>
+              <li class="fix ai"><s>  the coin should go somewhere random</s><b>  move Coin to random -4 to 4, 0.5, random -4 to 4</b><i>AI</i></li>
+              <li class="fix ai"><s>  give me a point</s><b>  change score by 1</b><i>AI</i></li>
+            </ol>
+          </div>
+        </div>
+
+        <ol class="steps">
+          <li data-step="local">
+            <span class="step-n">1</span>
+            <h3>Typos fixed instantly</h3>
+            <p>Misspelled keywords like <code>wiat</code> and <code>presed</code> are corrected on your machine. No AI call, no waiting.</p>
+          </li>
+          <li data-step="ai">
+            <span class="step-n">2</span>
+            <h3>AI fixes only what's broken</h3>
+            <p>The model reads the whole script for context but rewrites only the failing lines. It maps loose wording to real commands and never adds actions you didn't ask for.</p>
+          </li>
+          <li data-step="check">
+            <span class="step-n">3</span>
+            <h3>Checked before you see it</h3>
+            <p>Every fix goes through the real parser and type checker. You review the highlighted changes, then choose <b>Use rewrite</b>.</p>
+          </li>
+        </ol>
+
+        <div class="assistant">
+          <div class="assistant-copy">
+            <p class="kicker">AI scene assistant</p>
+            <h3>Describe a whole scene. Get a playable one.</h3>
+            <p>One prompt builds grouped objects, materials, lights, physics bodies, and scripts. Follow-ups edit the scene you already have.</p>
+            <ul class="checks">
+              <li>Drafts the scene, then test-runs its scripts before applying anything</li>
+              <li>A second pass checks the draft against your request</li>
+              <li>Lands as one undoable edit, so a single Ctrl+Z reverts it</li>
+              <li>Works with any OpenAI-compatible model</li>
+            </ul>
+          </div>
+          <div class="prompt-card">
+            <div class="pane-head"><span>Assistant</span><small>prompt</small></div>
+            <p class="prompt-text">Build a small mini-golf hole I can play. A white ball that rolls with physics, a windmill whose red blades spin forever, and a hole with a flag. When the ball reaches the hole, say "Hole in one!"</p>
+            <div class="prompt-result">
+              <span>✓ Scene built · scripts test-run</span>
+              <span class="muted">1 undoable edit</span>
+            </div>
+          </div>
+        </div>
       </section>
 
       <section class="section" id="features">
@@ -100,8 +182,8 @@
           </article>
           <article class="card">
             <div class="icon"><svg viewBox="0 0 24 24"><path d="M12 2l2.2 5.8L20 10l-5.8 2.2L12 18l-2.2-5.8L4 10l5.8-2.2zM19 16l1 2.5 2.5 1-2.5 1L19 23l-1-2.5-2.5-1 2.5-1z" /></svg></div>
-            <h3>AI assistant</h3>
-            <p>Optional: describe a scene in words and let the assistant build or edit it for you. Works with any OpenAI-compatible model.</p>
+            <h3>AI built in</h3>
+            <p>Build scenes from a description and fix scripts with AI Parse. <a class="inline" href="#ai">See how it works →</a></p>
           </article>
         </div>
       </section>
