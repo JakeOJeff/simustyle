@@ -58,7 +58,7 @@ During Play, objects with Physics (RigidBody) or a **Collider** bump into each o
 
 ## Console
 
-Type a supported plain-English scene command in the Console command bar and press Enter. While stopped, it applies as one undoable edit. During Play or Pause, it edits the live simulation; Stop restores the scene from before Play. For example:
+Type a supported plain-English scene command in the Console command bar and press Enter. While stopped, it applies as one undoable edit. During Play or Pause, it edits the live simulation; Stop restores the scene from before Play. Quick commands are `play` (or `run`/`start`), `pause`, `stop`, and `clear` (clears the Console output). `play` resumes a paused simulation. To target one object from a matching group, use a zero-based index, for example `move all balls[2] up 1` selects the third matching ball. For example:
 
 ```text
 add a red ball named player at 0 2 0

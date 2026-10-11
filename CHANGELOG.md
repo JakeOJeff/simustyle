@@ -4,6 +4,13 @@ Record meaningful project changes during the event, newest first.
 
 ## Event build log
 
+### 2026-10-11T06:58:00+05:30 — Add Console quick commands and object indexes
+
+- Changed: The Console command bar now accepts `clear`, `play`/`run`/`start`, `pause`, and `stop`; `play` resumes a paused simulation. Script and Console object descriptions can include a zero-based index, such as `all balls[2]`, to select one ranked match. Updated the Console hint and feature documentation. Files: `src/App.svelte`, `src/lang/`, `src/runtime/`, `src/ai/prompt.ts`, `src/editor/DocsPanel.svelte`, README, `docs/USER_GUIDE.md`, and `AI_USAGE.md`.
+- Why: Make simulation controls available in Console and let commands address one object in a matching group.
+- Validation: `npm run typecheck`, `npx svelte-check --tsconfig ./tsconfig.json` (0 errors/0 warnings), `npm run build`, and `git diff --check` passed. Tests were not run.
+- Limitations: Quick commands are recognized as exact words. Object indexes are zero-based and use the existing nearest-first target ranking; general-purpose array variables and loops over object collections are not supported.
+
 ### 2026-10-11T06:43:00+05:30 — Parse fixes only broken lines and makes sense of odd wording
 
 - Changed: Removed Parse's full-script rewrite stage. After local typo fixes, the AI now gets the whole script as read-only context but may only replace the broken lines; replacements for valid lines are ignored. Each returned line is checked on its own: working fixes are kept, and failed ones are sent back with their errors on the next call (up to 4 AI calls). The prompt now tells the model to always return a valid line by working out what the user meant, mapping odd or unsupported words to the nearest supported ones, and never adding actions, events, or values the user did not write. Files: `src/ai/scriptRewrite.ts`, `src/editor/ScriptEditor.svelte`, `tests/ai/scriptRewrite.test.ts`, `README.md`, `docs/USER_GUIDE.md`, `src/editor/DocsPanel.svelte`, and `AI_USAGE.md`.

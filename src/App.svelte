@@ -861,6 +861,33 @@ when clicked
     if (!text) return;
     commandHistory = [text, ...commandHistory.filter((entry) => entry !== text)].slice(0, 30);
     commandHistoryIndex = -1;
+    const quickCommand = text.toLowerCase();
+    if (quickCommand === "clear") {
+      consoleLog = [];
+      commandText = "";
+      message = "Console cleared";
+      return;
+    }
+    if (["play", "run", "start"].includes(quickCommand)) {
+      log("info", `> ${text}`);
+      if (playState === "stopped") void startSimulation();
+      else if (playState === "paused") resumeSimulation();
+      commandText = "";
+      return;
+    }
+    if (quickCommand === "pause") {
+      log("info", `> ${text}`);
+      if (playState === "playing") pauseSimulation();
+      else if (playState === "stopped") message = "Start Play before pausing.";
+      commandText = "";
+      return;
+    }
+    if (quickCommand === "stop") {
+      log("info", `> ${text}`);
+      stopSimulation();
+      commandText = "";
+      return;
+    }
     log("info", `> ${text}`);
     const result = playState === "stopped"
       ? ScriptRuntime.runOnce(scene, text)
@@ -1227,7 +1254,7 @@ when clicked
               <div class="panel-window-body console-body">
                 <div class="console-line"><span class="console-dot">●</span>{message}{#if simulationWarnings.length}<span> · {simulationWarnings.join(" · ")}</span>{/if}</div>
                 <div class="console-log" aria-live="polite" use:followLog={consoleLog.length}>
-                  {#if !consoleLog.length}<div class="console-hint">Type a command to change the scene, for example <code>move the box up 2</code> or <code>paint the sphere red</code>. {playState === "stopped" ? "Commands are undoable; use the Script button to make actions run on Play." : "Commands affect the live simulation and are discarded when you Stop."}</div>{/if}
+                  {#if !consoleLog.length}<div class="console-hint">Type a command to change the scene, for example <code>move the box up 2</code> or <code>paint the sphere red</code>. Quick commands: <code>play</code>/<code>run</code>, <code>pause</code>, <code>stop</code>, <code>clear</code>. {playState === "stopped" ? "Scene commands are undoable; use the Script button to make actions run on Play." : "Scene commands affect the live simulation and are discarded when you Stop."}</div>{/if}
                   {#each consoleLog as entry}<div class="log-{entry.kind}">{entry.text}</div>{/each}
                 </div>
                 <form class="command-bar" onsubmit={(event) => { event.preventDefault(); runCommandBar(); }}>

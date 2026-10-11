@@ -614,6 +614,7 @@ class Parser {
     if (token.kind === "string") { this.advance(); return { kind: "name", name: token.value, quoted: true, ...at }; }
     if (token.kind === "identifier") {
       const next = this.peek(1);
+      if (next.value === "[") return { kind: "describe", description: this.parseDescription(), ...at };
       if (next.value === "." || next.value === "(") return { kind: "expression", expression: this.parsePostfix(), ...at };
       this.advance();
       return { kind: "name", name: token.value, quoted: false, ...at };
@@ -621,7 +622,7 @@ class Parser {
     this.failAt(token, "Expected an object: a name, 'me', 'it', or a description such as 'the red ball'");
   }
 
-  /** [the] [nearest|biggest...] [red|blue...] <ball|box|one|name> [above|beside|... <target>] */
+  /** [the] [nearest|biggest...] [red|blue...] <ball|box|one|name> [index] [above|beside|... <target>] */
   private parseDescription(): EntityDescription {
     const words: string[] = [];
     if (this.word("the")) words.push(this.advance().value);
@@ -637,15 +638,25 @@ class Parser {
       else { noun = word; break; }
     }
     if (!noun) this.failAt(this.peek(), "Say what kind of object you mean, for example 'the red ball' or 'the one above the box'");
+    let index: number | undefined;
+    if (this.peek().value === "[") {
+      const start = this.advance();
+      const value = this.expectKind("number", "Use a non-negative whole number inside object indexes, for example 'all balls[0]'");
+      index = Number(value.value);
+      if (!Number.isSafeInteger(index) || index < 0) this.failAt(value, "Object indexes must be non-negative whole numbers");
+      this.expectValue("]", "Expected ']' after the object index");
+      words.push(`[${index}]`);
+      if (!Number.isFinite(index)) this.failAt(start, "Object index is too large");
+    }
     const save = this.index;
     while (this.peek().kind === "identifier" && FILLER_WORDS.has(this.peek().value)) this.advance();
     const relation = this.parseRelation();
     if (!relation) {
       this.index = save;
-      return { text: words.join(" "), colors, noun, ...(superlative ? { superlative } : {}) };
+      return { text: words.join(" "), colors, noun, ...(superlative ? { superlative } : {}), ...(index === undefined ? {} : { index }) };
     }
     const target = this.parseTarget();
-    return { text: words.join(" "), colors, noun, ...(superlative ? { superlative } : {}), relation: { relation, target } };
+    return { text: words.join(" "), colors, noun, ...(superlative ? { superlative } : {}), ...(index === undefined ? {} : { index }), relation: { relation, target } };
   }
 
   /** Consumes a spatial phrase ("above", "next to", "to the left of", "in front of") if one is next. */

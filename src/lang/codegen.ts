@@ -25,8 +25,9 @@ function targetCode(target: ScriptTarget): string {
 function descriptionCode(description: EntityDescription): string {
   const relation = description.relation ? `,relation:{relation:${quote(description.relation.relation)},target:${targetCode(description.relation.target)}}` : "";
   const superlative = description.superlative ? `,superlative:${quote(description.superlative)}` : "";
+  const index = description.index === undefined ? "" : `,index:${description.index}`;
   const all = description.all ? ",all:true" : "";
-  return `{text:${quote(description.text)},colors:${JSON.stringify(description.colors)},noun:${quote(description.noun)}${superlative}${relation}${all}}`;
+  return `{text:${quote(description.text)},colors:${JSON.stringify(description.colors)},noun:${quote(description.noun)}${superlative}${index}${relation}${all}}`;
 }
 
 function destinationCode(destination: MoveDestination): string {

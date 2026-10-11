@@ -54,6 +54,8 @@ export interface EntityDescription {
   colors: string[];
   noun: string;
   superlative?: Superlative;
+  /** Zero-based position in the ranked matches, as in `all balls[2]`. */
+  index?: number;
   relation?: { relation: RelationName; target: ScriptTarget };
   /** "all the red balls", "every cube": the command acts on every match. */
   all?: boolean;

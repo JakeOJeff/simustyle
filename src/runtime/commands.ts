@@ -10,6 +10,7 @@ export interface RuntimeDescription {
   colors: string[];
   noun: string;
   superlative?: string;
+  index?: number;
   relation?: { relation: RelationName; target: unknown };
 }
 
@@ -136,7 +137,8 @@ export function describedMatches(description: RuntimeDescription, resolver: Reso
     nearest: (entity) => distance(positionOf(entity), reference)
   };
   const rank = score[description.superlative ?? "nearest"] ?? score.nearest!;
-  return [...matches].sort((first, second) => rank(first) - rank(second));
+  const ranked = [...matches].sort((first, second) => rank(first) - rank(second));
+  return description.index === undefined ? ranked : (ranked[description.index] ? [ranked[description.index]!] : []);
 }
 
 /** Find an entity by id or display name, ignoring case, spaces, and underscores. */
