@@ -90,6 +90,8 @@ The editor provides syntax highlighting, line numbers, starter examples, and inl
 
 Open the Assistant window and describe a scene change in the prompt box; Enter sends the request and Shift+Enter adds a new line. The suggestions in an empty panel send a starter request with one click. Before applying anything, the assistant builds a first draft, runs its scripts in an isolated Play-start preview, then asks for an independent second pass that checks the design against your request and the captured Console output. The second result is validated before it is applied as one undoable edit. Expand **Checked before apply** in the response to see script output and runtime issues. This preview runs game-start scripts and five short script ticks; it does not render the scene or run Rapier physics, so it cannot verify the visual appearance or physics behavior. New objects are placed on free floor space when no position is given, lifted if they would sink into the floor, and renamed if their name is already taken; the reply mentions any adjustment. AI requires a configured provider and network access.
 
+On the hosted site and the development server, AI uses daily credits: one credit per model call, and a request usually takes two or three. The balance shows under the prompt box and resets at 00:00 UTC. SimuStyle is free and its AI costs are paid by the developer, which is why the limit exists; the heart button in the top bar explains this and links to donations. The desktop app uses your own API key and has no credit limit.
+
 In the browser development server, set `AI_API_KEY` and `AI_MODEL` in the ignored `.env` file. `AI_BASE_URL` is optional and defaults to OpenAI's `/v1` API. Never expose a provider key with a `VITE_` variable. In the desktop app, configure the provider from AI Settings; the API key is stored in the operating system credential store. See [installation and desktop setup](../README.md#install-and-run).
 
 ## Animate and simulate
@@ -133,6 +135,7 @@ Choose **Export** in the top bar:
 
 ## Troubleshooting
 
+- **"You've used all … AI credits for today":** Wait for the 00:00 UTC reset, or use the desktop app with your own API key.
 - **AI requests fail:** Check the model, base URL, and API key in AI Settings or `.env`, then confirm network access. Provider errors are shown in the Assistant window.
 - **Scripts do not run:** Check inline diagnostics and Console for the line and error, then use the language examples in the [scripting reference](../README.md#scripting).
 - **An object is hidden behind a panel:** Move the panel or snap it to an edge. Snapped windows reserve space for the Scene and Script areas; floating windows may overlap them.

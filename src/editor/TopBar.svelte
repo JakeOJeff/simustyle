@@ -8,7 +8,7 @@
     newScene(): void; openScene(): void; openRecent(): void; openSceneLoader(): void; saveScene(): void; renameScene(): void;
     undo(): void; redo(): void;
     cut(): void; copy(): void; paste(): void; duplicate(): void; remove(): void; rename(): void; group(): void;
-    togglePanel(name: string): void; frameSelected(): void; openSettings(): void;
+    togglePanel(name: string): void; frameSelected(): void; openSettings(): void; openSupport(): void;
     setTool(tool: ToolMode): void; toggleSpace(): void; toggleSnap(): void; toggleGrid(): void; toggleCollisions(): void; showSceneSettings(): void;
     addPrimitive(shape: PrimitiveShape): void; addLight(kind: LightKind): void; addCamera(): void; addSceneScript(): void; addGroup(): void; openScript(): void;
     play(): void; pause(): void; resume(): void; stop(): void; step(): void;
@@ -18,7 +18,7 @@
 <script lang="ts">
   import type { Snippet } from "svelte";
   import type { PlayState } from "../runtime/physics";
-  import { BookOpen, Box, Boxes, Camera, ChevronDown, Circle, Clapperboard, Code, Cone, Cylinder, FileCode, Flashlight, FolderPlus, Globe, Grid3X3, Lightbulb, Magnet, MousePointer2, Move, Pause, Play, Plus, Redo2, RotateCw, Scaling, SkipForward, Square, Sun, Undo2 } from "@lucide/svelte";
+  import { BookOpen, Box, Heart, Boxes, Camera, ChevronDown, Circle, Clapperboard, Code, Cone, Cylinder, FileCode, Flashlight, FolderPlus, Globe, Grid3X3, Lightbulb, Magnet, MousePointer2, Move, Pause, Play, Plus, Redo2, RotateCw, Scaling, SkipForward, Square, Sun, Undo2 } from "@lucide/svelte";
 
   interface Props {
     sceneName: string;
@@ -185,6 +185,7 @@
     <button class="tb-text" data-tutorial-target="script-button" title="Open the selected object's script (or a scene script)" onclick={actions.openScript}><Code size={14} /> <span class="tb-label tb-label-secondary">Script</span></button>
     <button class="tb-text" class:active={panels.find((panel) => panel.name === "timeline")?.open ?? false} title="Animation timeline: keyframes, easing curves, and presets" aria-label="Animate" aria-pressed={panels.find((panel) => panel.name === "timeline")?.open ?? false} onclick={() => actions.togglePanel("timeline")}><Clapperboard size={14} /> <span class="tb-label tb-label-secondary">Animate</span></button>
     <button class="tb-text" title="Open the SimuStyle user guide" aria-label="Open Docs" aria-pressed={panels.find((panel) => panel.name === "docs")?.open ?? false} onclick={() => actions.togglePanel("docs")}><BookOpen size={14} /> <span class="tb-label tb-label-secondary">Docs</span></button>
+    <button class="tb-icon tb-support" title="SimuStyle is free forever. Support it" aria-label="Support SimuStyle" onclick={actions.openSupport}><Heart size={15} /></button>
     <div class="tb-transport" role="group" aria-label="Simulation">
       <span class="tb-clock" aria-label="Play time">{clock}<small>f {frame}</small></span>
       <button class="tb-icon" title="Stop and restore the scene" data-tutorial-target="stop" aria-label="Stop" disabled={playState === "stopped"} onclick={actions.stop}><Square size={12} /></button>
@@ -221,6 +222,7 @@
   .tb-menus{display:flex;gap:2px}
   .tb-text{padding:0 9px}
   .tb-icon{width:30px;padding:0}
+  .tb-support:hover:not(:disabled){color:#f472b6}
   .tb-segment{display:flex;gap:2px;padding:3px;border:1px solid #ffffff10;border-radius:8px;background:#121214}
   .tb-segment .tb-icon{height:26px;width:28px}
   .tb-icon.active,.tb-text.active{background:#3b3566;border-color:#7c6cf066;color:#e1dbff}

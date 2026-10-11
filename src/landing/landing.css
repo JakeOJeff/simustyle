@@ -169,6 +169,9 @@ h2 { font-size: clamp(32px, 4.4vw, 52px); font-weight: 700; letter-spacing: -.03
 .footer-inner { max-width: 1200px; margin: 0 auto; padding: 28px 24px; display: flex; align-items: center; justify-content: space-between; gap: 20px; flex-wrap: wrap; }
 .footer nav { display: flex; gap: 24px; flex-wrap: wrap; font-size: 14px; color: var(--text-3); }
 .footer nav a:hover { color: var(--text); }
+.footer-note { flex-basis: 100%; margin: 0; font-size: 13px; color: var(--text-3); }
+.footer-note a { color: var(--text-2); text-decoration: underline; text-underline-offset: 3px; }
+.footer-note a:hover { color: var(--text); }
 
 /* Scroll reveal */
 .reveal { opacity: 0; transform: translateY(24px); transition: opacity .7s ease, transform .7s cubic-bezier(.2, .7, .2, 1); }

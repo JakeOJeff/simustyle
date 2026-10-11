@@ -4,7 +4,8 @@
   import Hierarchy from "./editor/Hierarchy.svelte";
   import Viewport from "./editor/Viewport.svelte";
   import AIPanel, { type AIPanelMessage } from "./editor/AIPanel.svelte";
-  import { requestSceneEdit } from "./ai/client";
+  import { fetchCredits, onCreditsChange, requestSceneEdit, type CreditStatus } from "./ai/client";
+  import SupportDialog from "./editor/SupportDialog.svelte";
   import { AI_RESPONSE_JSON_SCHEMA, buildSystemPrompt } from "./ai/prompt";
   import { runSceneAgent } from "./ai/agent";
   import Timeline from "./editor/Timeline.svelte";
@@ -88,6 +89,30 @@
   let aiLoading = $state(false);
   let aiProgress = $state("Building the first pass…");
   let aiMessages: AIPanelMessage[] = $state([]);
+  /** Today's free AI credits on the hosted site; null on the desktop app or when AI is off. */
+  let aiCredits: CreditStatus | null = $state(null);
+  let supportOpen = $state(false);
+  let supportOutOfCredits = $state(false);
+  let outOfCreditsNoticeShown = false;
+
+  function openSupport(outOfCredits = false) {
+    supportOutOfCredits = outOfCredits;
+    supportOpen = true;
+  }
+
+  /** Shows the "free forever" note once per browser, after the third successful AI request. */
+  function countAISuccess() {
+    try {
+      if (localStorage.getItem("simustyle.supportShown")) return;
+      const count = Number(localStorage.getItem("simustyle.aiSuccesses") ?? 0) + 1;
+      localStorage.setItem("simustyle.aiSuccesses", String(count));
+      if (count < 3) return;
+      localStorage.setItem("simustyle.supportShown", "1");
+      openSupport();
+    } catch {
+      // Storage blocked: skip the reminder.
+    }
+  }
   let aiUndoRecords: Record<string, SceneOp[]> = $state.raw({});
   let nextAIId = 1;
   let timelineTime = $state(0);
@@ -336,6 +361,13 @@
   }
 
   onMount(() => {
+    onCreditsChange((credits) => {
+      aiCredits = credits;
+      if (credits.remaining > 0 || outOfCreditsNoticeShown) return;
+      outOfCreditsNoticeShown = true;
+      openSupport(true);
+    });
+    void fetchCredits().then((credits) => { if (credits) aiCredits = credits; });
     restorePanelWorkspace();
     recentScenes = loadRecentScenes();
     if (isDesktopRuntime()) {
@@ -454,6 +486,7 @@
       frameToken += 1;
       pushAIMessage({ id, role: "assistant", content: result.summary ?? "Scene updated.", summary: result.summary ?? "Scene updated.", operations: result.ops, ...(result.preflight ? { preflight: result.preflight } : {}) });
       message = result.summary ?? "AI changes applied";
+      countAISuccess();
     } catch (error) {
       const reason = error instanceof Error ? error.message : String(error);
       pushAIMessage({ id: `ai_${nextAIId++}`, role: "assistant", content: reason, summary: `AI request failed: ${reason}` });
@@ -1475,6 +1508,7 @@ when clicked
     togglePanel,
     frameSelected: () => focusToken += 1,
     openSettings: () => settingsOpen = true,
+    openSupport: () => openSupport(),
     setTool: (tool) => setMode(tool, "click"),
     toggleSpace: () => space = space === "world" ? "local" : "world",
     toggleSnap: () => snap = !snap,
@@ -1491,6 +1525,7 @@ when clicked
   };
 
   onDestroy(() => {
+    onCreditsChange(null);
     cancelAnimationFrame(animationFrame);
     simulation?.stop();
   });
@@ -1650,7 +1685,7 @@ when clicked
           {#if panelOpen.ai}
             <section class="panel-window" class:floating-panel={panelLayouts.ai.dock === "floating"} style={panelWindowStyle("ai")} use:rememberPanelSize={"ai"}>
               {@render panelTitle("ai", "Assistant", "")}
-              <div class="panel-window-body"><AIPanel messages={aiMessages} loading={aiLoading} {aiProgress} prompt={aiPrompt} onPromptChange={(value) => aiPrompt = value} onSubmit={submitAI} onUndo={undoAIChange} onApplyDraft={applyAIFallback} /></div>
+              <div class="panel-window-body"><AIPanel messages={aiMessages} loading={aiLoading} {aiProgress} prompt={aiPrompt} onPromptChange={(value) => aiPrompt = value} onSubmit={submitAI} onUndo={undoAIChange} onApplyDraft={applyAIFallback} credits={aiCredits} onSupport={() => openSupport()} /></div>
               <PanelResizeHandles panelName="AI" dock={panelLayouts.ai.dock} onResizeStart={(event, edge) => startPanelResize(event, "ai", edge)} />
             </section>
           {/if}
@@ -1713,6 +1748,7 @@ when clicked
       <SettingsPanel model={aiSettings.model} baseUrl={aiSettings.baseUrl} hasApiKey={aiSettings.apiKeyConfigured} onSave={saveAiSettings} onRemoveKey={removeAiKey} onClose={() => settingsOpen = false} />
     </div>
   {/if}
+  {#if supportOpen}<SupportDialog credits={aiCredits} outOfCredits={supportOutOfCredits} onClose={() => supportOpen = false} />{/if}
   {#if sceneRenameTarget !== null}
     <div class="rename-overlay" role="presentation" onclick={(event) => { if (event.target === event.currentTarget) sceneRenameTarget = null; }}>
       <div class="rename-dialog" role="dialog" aria-modal="true" aria-labelledby="rename-scene-title">

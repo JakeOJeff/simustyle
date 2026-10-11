@@ -3,6 +3,8 @@
  * It validates the browser's request and forwards it to an OpenAI-compatible provider, so the key never reaches the page.
  */
 
+import type { CreditStatus, SpendResult } from "./credits";
+
 export const MAX_CHAT_REQUEST_BYTES = 1024 * 1024;
 
 export interface ChatProxyEnv {
@@ -13,11 +15,17 @@ export interface ChatProxyEnv {
 
 export interface ChatProxyResult {
   status: number;
-  body: { content: string } | { error: string };
+  body: ({ content: string } | { error: string }) & { credits?: CreditStatus };
+}
+
+/** The calling visitor's daily credits; omitted when the server does not meter AI. */
+export interface ChatCredits {
+  spend(): Promise<SpendResult>;
+  refund(): Promise<CreditStatus>;
 }
 
 /** Parses raw request bytes and forwards a valid chat request to the configured provider. */
-export async function forwardChat(raw: Uint8Array, env: ChatProxyEnv): Promise<ChatProxyResult> {
+export async function forwardChat(raw: Uint8Array, env: ChatProxyEnv, credits?: ChatCredits): Promise<ChatProxyResult> {
   if (raw.byteLength > MAX_CHAT_REQUEST_BYTES) return fail(413, "AI request body exceeds 1 MiB.");
   let body: unknown;
   try {
@@ -32,6 +40,18 @@ export async function forwardChat(raw: Uint8Array, env: ChatProxyEnv): Promise<C
 
   const baseUrl = (env.AI_BASE_URL || "https://api.openai.com/v1").replace(/\/+$/, "");
   if (!/^https?:\/\//i.test(baseUrl)) return fail(503, "AI_BASE_URL must be an HTTP or HTTPS URL.");
+
+  let balance: CreditStatus | undefined;
+  if (credits) {
+    const spent = await credits.spend();
+    if (!spent.ok) return { status: 429, body: { error: outOfCreditsMessage(spent.status), credits: spent.status } };
+    balance = spent.status;
+  }
+  // Give the credit back when the call fails, since the provider most likely did not bill it.
+  const failAndRefund = async (status: number, error: string): Promise<ChatProxyResult> => {
+    const refunded = credits ? await credits.refund() : undefined;
+    return { status, body: { error, ...(refunded ? { credits: refunded } : {}) } };
+  };
   try {
     const upstream = await fetch(`${baseUrl}/chat/completions`, {
       method: "POST",
@@ -49,17 +69,23 @@ export async function forwardChat(raw: Uint8Array, env: ChatProxyEnv): Promise<C
     const result = await upstream.json().catch(() => null) as unknown;
     if (!upstream.ok) {
       const message = extractProviderMessage(result) || `AI provider returned HTTP ${upstream.status}.`;
-      return fail(502, message.slice(0, 500));
+      return failAndRefund(502, message.slice(0, 500));
     }
     const content = extractCompletionContent(result);
-    if (content === null) return fail(502, "AI provider returned no message content.");
-    return { status: 200, body: { content } };
+    if (content === null) return failAndRefund(502, "AI provider returned no message content.");
+    return { status: 200, body: { content, ...(balance ? { credits: balance } : {}) } };
   } catch (error) {
     const message = error instanceof Error && error.name === "TimeoutError"
       ? "AI provider request timed out."
       : "Could not reach the configured AI provider.";
-    return fail(502, message);
+    return failAndRefund(502, message);
   }
+}
+
+function outOfCreditsMessage(status: CreditStatus): string {
+  return status.globalExhausted
+    ? "Today's shared AI budget is used up. AI comes back at 00:00 UTC."
+    : `You've used all ${status.limit} free AI credits for today. They reset at 00:00 UTC.`;
 }
 
 function fail(status: number, error: string): ChatProxyResult {

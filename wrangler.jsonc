@@ -11,8 +11,17 @@
     "run_worker_first": ["/api/*", "/download/*"]
   },
   "vars": {
-    "GITHUB_REPO": "JakeOJeff/simustyle"
-  }
+    "GITHUB_REPO": "JakeOJeff/simustyle",
+    // Daily AI credits (one credit = one model call), reset at 00:00 UTC.
+    // Per visitor, and for the whole site: the second number caps what the AI key can spend in a day.
+    "AI_DAILY_CREDITS": "30",
+    "AI_GLOBAL_DAILY_CREDITS": "3000"
+  },
+  // Holds the daily credit counts (see AiCreditLedger in worker/index.ts).
+  "durable_objects": {
+    "bindings": [{ "name": "AI_CREDITS", "class_name": "AiCreditLedger" }]
+  },
+  "migrations": [{ "tag": "v1", "new_sqlite_classes": ["AiCreditLedger"] }]
   // AI is off until you add secrets: `npx wrangler secret put AI_API_KEY` and `npx wrangler secret put AI_MODEL`
-  // (optionally AI_BASE_URL). Anyone who can open the site can then spend that key.
+  // (optionally AI_BASE_URL). Visitors then spend that key, up to the credit limits above.
 }

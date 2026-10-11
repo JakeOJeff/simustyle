@@ -89,7 +89,7 @@ if (parseDemo && !reducedMotion && "IntersectionObserver" in window) {
 // The installer is Windows-only; say so plainly to visitors on other systems.
 const isWindows = /Windows/i.test(navigator.userAgent);
 const note = document.getElementById("cta-note");
-if (note && !isWindows) note.textContent = "Free · No account needed · Desktop app for Windows";
+if (note && !isWindows) note.textContent = "Free forever · No account needed · Desktop app for Windows";
 
 // Load three.js after first paint so the headline and buttons show immediately.
 const canvas = document.getElementById("hero-canvas") as HTMLCanvasElement | null;

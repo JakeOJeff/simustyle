@@ -1,6 +1,28 @@
 /** Browser-side client for the Vite development server's secret-holding proxy. */
 import { AI_RESPONSE_JSON_SCHEMA } from "./prompt";
 import { desktopChat, isDesktopRuntime } from "../platform/desktop";
+import type { CreditStatus } from "./credits";
+
+export type { CreditStatus };
+
+let creditListener: ((credits: CreditStatus) => void) | null = null;
+
+/** Called with the visitor's balance after every AI call the hosted proxy meters. */
+export function onCreditsChange(listener: ((credits: CreditStatus) => void) | null): void {
+  creditListener = listener;
+}
+
+/** Reads today's AI credits from the hosted proxy; null when AI is off, runs on the desktop, or is unreachable. */
+export async function fetchCredits(): Promise<CreditStatus | null> {
+  if (isDesktopRuntime()) return null;
+  try {
+    const response = await fetch("/api/ai/credits", { cache: "no-store" });
+    const payload = await response.json() as unknown;
+    return isRecord(payload) && isCreditStatus(payload.credits) ? payload.credits : null;
+  } catch {
+    return null;
+  }
+}
 
 export interface ChatMessage {
   role: "system" | "user" | "assistant";
@@ -52,6 +74,7 @@ export async function requestJson(
       throw new Error("Could not reach the local AI endpoint. Check that the development server is running.");
     }
     payload = await response.json().catch(() => null);
+    if (isRecord(payload) && isCreditStatus(payload.credits)) creditListener?.(payload.credits);
     if (!response.ok) {
       const message = isRecord(payload) && typeof payload.error === "string"
         ? payload.error
@@ -67,6 +90,10 @@ export async function requestJson(
   } catch {
     throw new Error("The model returned invalid JSON.");
   }
+}
+
+function isCreditStatus(value: unknown): value is CreditStatus {
+  return isRecord(value) && typeof value.remaining === "number" && typeof value.limit === "number" && typeof value.resetsAt === "string";
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {

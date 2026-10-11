@@ -4,6 +4,7 @@ import { loadEnv } from "vite";
 import { build as esbuild } from "esbuild";
 import { resolve } from "node:path";
 import { forwardChat, MAX_CHAT_REQUEST_BYTES } from "./src/ai/chatProxy";
+import { clientIdFromAddress, creditLimits, CreditLedger, memoryCreditStorage } from "./src/ai/credits";
 
 export default defineConfig(({ mode }) => {
   // Do not use Vite's VITE_ prefix: these values must stay on the server.
@@ -30,9 +31,22 @@ export default defineConfig(({ mode }) => {
 });
 
 function aiProxy(env: Record<string, string>) {
+  // Same daily credits as the hosted Worker, kept in memory until the dev server restarts.
+  const ledger = new CreditLedger(memoryCreditStorage(), creditLimits(env));
+  const clientId = (request: unknown) =>
+    clientIdFromAddress((request as { socket?: { remoteAddress?: string } }).socket?.remoteAddress ?? "local");
   return {
     name: "simustyle-ai-server-proxy",
     configureServer(server: import("vite").ViteDevServer) {
+      server.middlewares.use("/api/ai/credits", async (request, response) => {
+        response.setHeader("Cache-Control", "no-store");
+        response.setHeader("Content-Type", "application/json; charset=utf-8");
+        if (!env.AI_API_KEY || !env.AI_MODEL) {
+          response.end(JSON.stringify({ enabled: false }));
+          return;
+        }
+        response.end(JSON.stringify({ enabled: true, credits: await ledger.status(await clientId(request)) }));
+      });
       server.middlewares.use("/api/ai/chat", async (request, response) => {
         const incoming = request as unknown as {
           method?: string;
@@ -80,7 +94,8 @@ function aiProxy(env: Record<string, string>) {
           bytes.set(chunk, offset);
           offset += chunk.byteLength;
         }
-        const result = await forwardChat(bytes, env);
+        const id = await clientId(request);
+        const result = await forwardChat(bytes, env, { spend: () => ledger.spend(id), refund: () => ledger.refund(id) });
         send(result.status, result.body);
       });
     }

@@ -1,6 +1,8 @@
 <script lang="ts">
   import { ArrowUp } from "@lucide/svelte";
   import type { SceneOp } from "../scene/types";
+  import type { CreditStatus } from "../ai/client";
+  import { resetIn } from "./SupportDialog.svelte";
 
   export interface AIPanelMessage {
     id: string;
@@ -22,14 +24,19 @@
     onSubmit: (prompt: string) => void;
     onUndo: (messageId: string) => void;
     onApplyDraft: (messageId: string) => void;
+    /** Today's free AI credits on the hosted site; null when AI is not metered. */
+    credits?: CreditStatus | null;
+    /** Opens the "free forever" note that explains the credit limit. */
+    onSupport?: () => void;
   }
 
-  let { messages, loading, aiProgress, prompt, onPromptChange, onSubmit, onUndo, onApplyDraft }: Props = $props();
+  let { messages, loading, aiProgress, prompt, onPromptChange, onSubmit, onUndo, onApplyDraft, credits = null, onSupport }: Props = $props();
+  const outOfCredits = $derived(credits !== null && credits.remaining <= 0);
 
   function submit(event: Event) {
     event.preventDefault();
     const value = prompt.trim();
-    if (!value || loading) return;
+    if (!value || loading || outOfCredits) return;
     onSubmit(value);
   }
 
@@ -51,7 +58,7 @@
       <div class="empty-state">
         <p>Describe a change and I'll make it. You can undo anything.</p>
         <div class="suggestions">
-          {#each suggestions as suggestion (suggestion)}<button type="button" onclick={() => onSubmit(suggestion)}>{suggestion}</button>{/each}
+          {#each suggestions as suggestion (suggestion)}<button type="button" disabled={outOfCredits} onclick={() => onSubmit(suggestion)}>{suggestion}</button>{/each}
         </div>
       </div>
     {/if}
@@ -141,8 +148,15 @@
         }}
       ></textarea>
       <div class="prompt-actions">
-        <span>{loading ? "Working…" : "Enter to send · Shift+Enter for new line"}</span>
-        <button type="submit" aria-label={loading ? "Working" : "Send"} title="Send (Enter)" disabled={loading || !prompt.trim()}>
+        {#if credits}
+          <span class="credits" class:empty={outOfCredits} title="Free AI credits reset every day at 00:00 UTC">
+            {#if outOfCredits}Out of credits{resetIn(credits) ? ` · back in ${resetIn(credits)}` : ""}{:else}{credits.remaining}/{credits.limit} credits left today{/if}
+            {#if onSupport}<button type="button" class="why" onclick={onSupport}>Why?</button>{/if}
+          </span>
+        {:else}
+          <span>{loading ? "Working…" : "Enter to send · Shift+Enter for new line"}</span>
+        {/if}
+        <button type="submit" class="send" aria-label={loading ? "Working" : "Send"} title="Send (Enter)" disabled={loading || outOfCredits || !prompt.trim()}>
           {#if loading}<span class="spinner" aria-hidden="true"></span>{:else}<ArrowUp size={15} />{/if}
         </button>
       </div>
@@ -157,7 +171,7 @@
   .empty-state p{margin:0;color:#e3e3e6;font-size:12.5px;line-height:1.55}
   .suggestions{display:flex;flex-direction:column;align-items:flex-start;gap:6px}
   .suggestions button{max-width:100%;padding:7px 11px;border:1px solid #ffffff17;border-radius:7px;background:#ffffff05;color:#e6e6e9;font-size:12px;line-height:1.35;text-align:left;cursor:pointer;transition:background .12s,border-color .12s}
-  .suggestions button:hover{border-color:#a99bff66;background:#a99bff10;color:#fff}
+  .suggestions button:hover:not(:disabled){border-color:#a99bff66;background:#a99bff10;color:#fff}
   .suggestions button:focus-visible{outline:2px solid var(--accent,#a99bff);outline-offset:1px}
   .loading-state{display:flex;align-items:center;gap:7px;padding:4px 0;color:#b0a6e8;font:10.5px 'DM Mono',monospace}
   .spinner{width:11px;height:11px;border:1px solid #655b94;border-top-color:#a99bff;border-radius:50%;animation:spin .8s linear infinite}
@@ -188,7 +202,10 @@
   textarea::placeholder{color:#74747f}textarea:disabled{opacity:.55}
   .prompt-actions{display:flex;align-items:center;justify-content:space-between;gap:8px;padding:4px 6px 6px 12px;color:#6e6e79;font-size:10.5px}
   .prompt-actions>span{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-  .prompt-actions button{display:grid;width:28px;height:28px;flex:none;place-items:center;padding:0;border:0;border-radius:7px;background:var(--accent-fill,#7c6cf0);color:#fff;cursor:pointer;transition:background .12s,opacity .12s}
-  .prompt-actions button:hover:not(:disabled){background:var(--accent-hover,#8b7cf6)}.prompt-actions button:disabled{background:#ffffff12;color:#8d8d97;cursor:default}
+  .credits{display:inline-flex;align-items:center;gap:6px;font-variant-numeric:tabular-nums}.credits.empty{color:#e5a345}
+  .why{padding:0;border:0;background:none;color:#a99bff;font:inherit;cursor:pointer;text-decoration:underline;text-underline-offset:2px}.why:hover{color:#c4baff}
+  .suggestions button:disabled{opacity:.45;cursor:default}
+  .prompt-actions .send{display:grid;width:28px;height:28px;flex:none;place-items:center;padding:0;border:0;border-radius:7px;background:var(--accent-fill,#7c6cf0);color:#fff;cursor:pointer;transition:background .12s,opacity .12s}
+  .prompt-actions .send:hover:not(:disabled){background:var(--accent-hover,#8b7cf6)}.prompt-actions .send:disabled{background:#ffffff12;color:#8d8d97;cursor:default}
   @media(max-height:600px){.conversation{padding-top:6px;padding-bottom:6px}.prompt-form{padding:6px 8px}.prompt-form textarea{min-height:36px}}
 </style>

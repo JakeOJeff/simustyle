@@ -52,7 +52,8 @@ npm run preview:cf     # builds and runs the Worker locally
 
 The Worker serves `dist/` and handles two routes itself:
 
-- `POST /api/ai/chat`: the same AI proxy as the dev server. It returns "AI is not configured" until you add secrets with `npx wrangler secret put AI_API_KEY` and `npx wrangler secret put AI_MODEL` (and optionally `AI_BASE_URL`). Anyone who can reach the site can use that key, so set provider spending limits first.
+- `POST /api/ai/chat`: the same AI proxy as the dev server. It returns "AI is not configured" until you add secrets with `npx wrangler secret put AI_API_KEY` and `npx wrangler secret put AI_MODEL` (and optionally `AI_BASE_URL`). Each visitor gets `AI_DAILY_CREDITS` model calls per UTC day (default 30) and the whole site stops at `AI_GLOBAL_DAILY_CREDITS` (default 3000); both are set in `wrangler.jsonc` and counted by the `AiCreditLedger` Durable Object. Set a provider spending limit as well.
+- `GET /api/ai/credits`: the visitor's remaining credits for today, shown in the Assistant window.
 - `GET /download/windows`: redirects to the newest GitHub release's `-setup.exe`, or to the releases page if there is none. Change `GITHUB_REPO` in `wrangler.jsonc` if the repository moves.
 
 ## Project docs
