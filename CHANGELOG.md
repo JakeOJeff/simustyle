@@ -15,8 +15,8 @@ Record meaningful project changes during the event, newest first.
 
 - Changed: The scene assistant now builds a draft, runs game-start scripts plus five isolated script ticks, captures print output and runtime issues, then requests an independent second pass against the player's intent and preflight output. The second scene is revalidated before it reaches the editor. The AI panel shows preflight details and progress. Space now starts Play while stopped, resumes while paused, and remains a script input during Play. Files: `src/ai/agent.ts`, `src/App.svelte`, `src/editor/AIPanel.svelte`, `src/editor/DocsPanel.svelte`, `tests/ai/agent.test.ts`, README, and `docs/USER_GUIDE.md`.
 - Why: Catch script/runtime problems and mismatches before changing the live scene, and make Space a Play control while retaining the `when space is pressed` behavior.
-- Validation: `npm run check` passed TypeScript, Svelte diagnostics (0 errors/0 warnings), all 126 tests, and the production build; `git diff --check` passed. The build reports the large-chunk warning.
-- Limitations: The preview is isolated and does not render the scene or run Rapier physics; visual appearance, collisions, and physics behavior are not verified. No live AI provider request was made.
+- Validation: `npm run check` passed TypeScript, Svelte diagnostics (0 errors/0 warnings), all 129 tests, and the production build; `git diff --check` passed. The build reports the large-chunk warning.
+- Limitations: The preview is isolated and does not render the scene or run Rapier physics; visual appearance, collisions, and physics behavior are not verified. No live AI provider request or browser visual review was made; the in-app browser was unavailable.
 
 ### 2026-10-11T07:04:00+05:30 — Add a demo walkthrough
 

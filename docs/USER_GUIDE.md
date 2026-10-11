@@ -86,7 +86,7 @@ The editor provides syntax highlighting, line numbers, starter examples, and inl
 
 ## AI scene assistant
 
-Open the AI window and describe a scene change in the prompt box; Ctrl+Enter sends the request. Review the proposed operations and apply them to make one undoable change. Generated script source and scene operations are validated before application. New objects are placed on free floor space when no position is given, lifted if they would sink into the floor, and renamed if their name is already taken; the reply mentions any adjustment. AI requires a configured provider and network access.
+Open the AI window and describe a scene change in the prompt box; Ctrl+Enter sends the request. Before applying anything, the assistant builds a first draft, runs its scripts in an isolated Play-start preview, then asks for an independent second pass that checks the design against your request and the captured Console output. The second result is validated before it is applied as one undoable edit. Expand **Checked before apply** in the response to see script output and runtime issues. This preview runs game-start scripts and five short script ticks; it does not render the scene or run Rapier physics, so it cannot verify the visual appearance or physics behavior. New objects are placed on free floor space when no position is given, lifted if they would sink into the floor, and renamed if their name is already taken; the reply mentions any adjustment. AI requires a configured provider and network access.
 
 In the browser development server, set `AI_API_KEY` and `AI_MODEL` in the ignored `.env` file. `AI_BASE_URL` is optional and defaults to OpenAI's `/v1` API. Never expose a provider key with a `VITE_` variable. In the desktop app, configure the provider from AI Settings; the API key is stored in the operating system credential store. See [installation and desktop setup](../README.md#install-and-run).
 
@@ -119,6 +119,8 @@ Choose **Export** in the top bar:
 | Ctrl+drag in viewport | Box-select intersecting objects |
 | Ctrl+click or Shift+click in Hierarchy | Extend selection |
 | Ctrl+Enter in AI prompt | Send the AI request |
+| Space while stopped / paused | Start / resume Play |
+| Space during Play | Send the `space` key to scripts |
 | / | Focus the Console command bar |
 | Tab in Console | Select the most recently added scene object |
 | Tab / Shift+Tab in Script | Indent / outdent lines |

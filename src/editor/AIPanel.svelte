@@ -8,18 +8,20 @@
     /** A short result summary shown on one line above the operation details. */
     summary?: string;
     operations?: SceneOp[];
+    preflight?: { console: string[]; issues: string[]; baselineIssues: string[]; frames: number };
   }
 
   interface Props {
     messages: readonly AIPanelMessage[];
     loading: boolean;
+    aiProgress: string;
     prompt: string;
     onPromptChange: (prompt: string) => void;
     onSubmit: (prompt: string) => void;
     onUndo: (messageId: string) => void;
   }
 
-  let { messages, loading, prompt, onPromptChange, onSubmit, onUndo }: Props = $props();
+  let { messages, loading, aiProgress, prompt, onPromptChange, onSubmit, onUndo }: Props = $props();
 
   function submit(event: Event) {
     event.preventDefault();
@@ -55,6 +57,26 @@
           <p class="message-content">{message.content}</p>
         {:else}
           <p class="summary" title={message.summary ?? message.content}>{message.summary ?? message.content}</p>
+          {#if message.preflight}
+            <details class="preflight-details">
+              <summary>Checked before apply · {message.preflight.frames} script ticks</summary>
+              <div class="preflight-output">
+                <strong>Console output</strong>
+                {#if message.preflight.console.length}
+                  {#each message.preflight.console as line}<code>{line}</code>{/each}
+                {:else}<span>No script print output.</span>{/if}
+                <strong>Runtime issues in second pass</strong>
+                {#if message.preflight.issues.length}
+                  {#each message.preflight.issues as line}<code>{line}</code>{/each}
+                {:else}<span>None detected.</span>{/if}
+                {#if message.preflight.baselineIssues.length}
+                  <strong>Issues already present before this request</strong>
+                  {#each message.preflight.baselineIssues as line}<code>{line}</code>{/each}
+                {/if}
+                <span>Scripts were previewed in isolation without Rapier physics or visual review.</span>
+              </div>
+            </details>
+          {/if}
           {#if message.operations?.length}
             <details class="operation-details">
               <summary>{message.operations.length} {message.operations.length === 1 ? "operation" : "operations"} <span>View changes</span></summary>
@@ -73,7 +95,7 @@
       </article>
     {/each}
     {#if loading}
-      <div class="loading-state" role="status"><span class="spinner" aria-hidden="true"></span>Planning scene changes…</div>
+      <div class="loading-state" role="status"><span class="spinner" aria-hidden="true"></span>{aiProgress}</div>
     {/if}
   </div>
 
@@ -114,6 +136,9 @@
   .message-content,.summary{grid-column:2;margin:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:#c6c4cf;font-size:11px;line-height:1.5}
   .summary{color:#e0deea;font-weight:500}
   .operation-details{grid-column:2;color:#92909e;font-size:9px}
+  .preflight-details{grid-column:2;color:#92909e;font-size:9px}
+  .preflight-details>summary{cursor:pointer;list-style:none;min-height:19px;color:#aaa3d8}.preflight-details>summary::-webkit-details-marker{display:none}.preflight-details>summary:before{content:'›';display:inline-block;margin-right:6px;color:#9a8bf0;font-size:14px}.preflight-details[open]>summary:before{transform:rotate(90deg)}
+  .preflight-output{display:grid;gap:4px;margin:2px 0 5px 5px;padding-left:8px;border-left:1px solid #ffffff14}.preflight-output strong{margin-top:3px;color:#c6c2d4;font-size:8px}.preflight-output code{overflow-wrap:anywhere;color:#bdb9cc;font:8px/1.4 'DM Mono',monospace}.preflight-output span{color:#777583;font-size:8px}
   .operation-details>summary,.operation>summary{cursor:pointer;list-style:none;display:flex;align-items:center;gap:7px;min-height:19px}
   .operation-details>summary::-webkit-details-marker,.operation>summary::-webkit-details-marker{display:none}
   .operation-details>summary:before,.operation>summary:before{content:'›';display:inline-block;color:#9a8bf0;font-size:14px;transition:transform .12s}

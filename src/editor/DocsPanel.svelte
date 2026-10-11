@@ -73,7 +73,7 @@ when space is pressed
 
     <section id="docs-ai-assistant">
       <h2>AI scene assistant</h2>
-      <p>Open the AI window, describe the change, then send with <kbd>Ctrl</kbd>+<kbd>Enter</kbd>. Review the proposed changes before applying; applied edits can be undone. AI checks scene operations and script source before making changes.</p>
+      <p>Open the AI window, describe the change, then send with <kbd>Ctrl</kbd>+<kbd>Enter</kbd>. Before applying anything, the assistant builds a first draft, runs its scripts in an isolated Play-start preview, and asks for a separate second pass against your request and the captured Console output. It validates the second result and shows the preview output before the change is applied as one undoable edit. The preview runs game-start scripts and five short script ticks; it does not render the scene or run Rapier physics. Expand the check details in the assistant response.</p>
       <p>For browser development, set <code>AI_API_KEY</code> and <code>AI_MODEL</code> in the ignored root <code>.env</code> file. <code>AI_BASE_URL</code> is optional. In the desktop app, use AI Settings; the key is stored in the operating system credential store. Requests need network access. Never put a key in a <code>VITE_</code> variable.</p>
     </section>
 
@@ -106,6 +106,7 @@ when space is pressed
         <div><dt>F</dt><dd>Frame selected object</dd></div>
         <div><dt>Ctrl+drag</dt><dd>Box-select in viewport</dd></div>
         <div><dt>Ctrl+Enter</dt><dd>Send AI prompt</dd></div>
+        <div><dt>Space</dt><dd>Start / resume Play; during Play, send the space key to scripts</dd></div>
         <div><dt>/</dt><dd>Focus Console command bar</dd></div>
         <div><dt>Tab in Console</dt><dd>Select most recently added scene object</dd></div>
         <div><dt>Tab / Shift+Tab</dt><dd>Indent / outdent script lines</dd></div>

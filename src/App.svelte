@@ -72,6 +72,7 @@
   let frameToken = $state(0);
   let aiPrompt = $state("");
   let aiLoading = $state(false);
+  let aiProgress = $state("Building the first pass…");
   let aiMessages: AIPanelMessage[] = $state([]);
   let aiUndoRecords: Record<string, SceneOp[]> = $state.raw({});
   let nextAIId = 1;
@@ -361,17 +362,19 @@
     pushAIMessage({ id: `ai_${nextAIId++}`, role: "user", content: prompt });
     aiPrompt = "";
     aiLoading = true;
+    aiProgress = "Building the first pass…";
     panelOpen.ai = true;
     try {
       const result = await runSceneAgent(scene, prompt, {
         buildSystemPrompt,
         responseSchema: AI_RESPONSE_JSON_SCHEMA.schema,
+        onProgress: (progress) => aiProgress = progress,
         complete: ({ systemPrompt, userPrompt, correctionErrors, responseSchema, previousReply }) =>
           requestSceneEdit(systemPrompt, userPrompt, correctionErrors, responseSchema, previousReply)
       });
       const id = `ai_${nextAIId++}`;
       if (!result.ok || !result.scene || !result.inverseOps) {
-        pushAIMessage({ id, role: "assistant", content: result.errors.join(" · "), summary: `Could not apply the request after ${result.attempts} attempt${result.attempts === 1 ? "" : "s"}.` });
+        pushAIMessage({ id, role: "assistant", content: result.errors.join(" · "), summary: `Could not complete after ${result.attempts} AI call${result.attempts === 1 ? "" : "s"}.`, ...(result.preflight ? { preflight: result.preflight } : {}) });
         message = result.errors.join(" · ") || "AI changes could not be validated";
         return;
       }
@@ -382,7 +385,7 @@
       const changed = result.ops.find((operation) => operation.op === "create" || operation.op === "update");
       if (changed && (changed.op === "create" || changed.op === "update")) selectEntity(changed.id);
       frameToken += 1;
-      pushAIMessage({ id, role: "assistant", content: result.summary ?? "Scene updated.", summary: result.summary ?? "Scene updated.", operations: result.ops });
+      pushAIMessage({ id, role: "assistant", content: result.summary ?? "Scene updated.", summary: result.summary ?? "Scene updated.", operations: result.ops, ...(result.preflight ? { preflight: result.preflight } : {}) });
       message = result.summary ?? "AI changes applied";
     } catch (error) {
       const reason = error instanceof Error ? error.message : String(error);
@@ -636,6 +639,16 @@
       event.preventDefault();
       panelOpen.console = true;
       requestAnimationFrame(() => commandInput?.focus());
+      return;
+    }
+    if (event.code === "Space" && !event.repeat && playState === "stopped") {
+      event.preventDefault();
+      void startSimulation();
+      return;
+    }
+    if (event.code === "Space" && !event.repeat && playState === "paused") {
+      event.preventDefault();
+      resumeSimulation();
       return;
     }
     if (playState === "playing") {
@@ -1030,6 +1043,7 @@ when clicked
 
   async function startSimulation() {
     if (playStarting || playState !== "stopped") return;
+    commandInput?.blur();
     commitAllScripts();
     playStarting = true;
     activeGesture = null;
@@ -1269,7 +1283,7 @@ when clicked
           {#if panelOpen.ai}
             <section class="panel-window" class:floating-panel={panelLayouts.ai.dock === "floating"} style={panelWindowStyle("ai")} use:rememberPanelSize={"ai"}>
               <header class="panel-window-title"><button class="panel-drag-handle" type="button" aria-label="Drag AI panel to move or snap" onpointerdown={(event) => startPanelDrag(event, "ai")}><strong>AI</strong><span>Drag to move or snap</span></button><button class="panel-close" type="button" aria-label="Close AI" onclick={() => panelOpen.ai = false}><X size={13} /></button></header>
-              <div class="panel-window-body"><AIPanel messages={aiMessages} loading={aiLoading} prompt={aiPrompt} onPromptChange={(value) => aiPrompt = value} onSubmit={submitAI} onUndo={undoAIChange} /></div>
+              <div class="panel-window-body"><AIPanel messages={aiMessages} loading={aiLoading} {aiProgress} prompt={aiPrompt} onPromptChange={(value) => aiPrompt = value} onSubmit={submitAI} onUndo={undoAIChange} /></div>
               <PanelResizeHandles panelName="AI" dock={panelLayouts.ai.dock} onResizeStart={(event, edge) => startPanelResize(event, "ai", edge)} />
             </section>
           {/if}
