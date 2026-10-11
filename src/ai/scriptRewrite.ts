@@ -3,9 +3,10 @@
 //   2. lines: send the AI the broken lines (with the whole script as read-only
 //      context) and splice its replacements back in. A replacement that still
 //      fails is sent back with its errors; a fix that reveals a masked error on
-//      another line targets that line next.
-// Valid lines are never touched. Lines still broken after the last call are
-// reported, while the fixed ones are kept. Every fix is checked with the real parser,
+//      another line targets that line next;
+//   3. fallback: lines still broken after the last call are commented out, keeping
+//      the user's text, so the result always runs.
+// Valid lines are never touched. Every fix is checked with the real parser,
 // checker, and word recognizer.
 import { autocorrect, scriptProblems, type ScriptProblem } from "../lang/autocorrect";
 import { declaredNames } from "../lang/fuzzy";
@@ -193,27 +194,90 @@ function sentence(text: string): string {
 const defaultCompletion: RewriteCompletion = (messages, schema) => requestJson(messages, schema);
 
 /**
- * Apply a reply one line at a time, keeping each replacement that leaves no
- * problem on its own lines. Applied bottom-up so earlier line numbers stay valid.
+ * Apply a reply one line at a time from the top, keeping each replacement that
+ * leaves no problem on its own lines. Going top-down means a broken line above
+ * cannot hide a bad replacement below it (the parser stops at its first error).
  */
 function keepWorkingFixes(source: string, reply: LineReply, targets: Set<number>, names: Set<string>): { source: string; kept: number; rejected: RejectedFix[] } {
   let current = source;
   let kept = 0;
+  // A kept replacement that spans several lines pushes the later lines down.
+  let shift = 0;
   const rejected: RejectedFix[] = [];
   const fixes = [...new Map(reply.lines.filter((fix) => targets.has(fix.line)).map((fix) => [fix.line, fix])).values()]
-    .sort((a, b) => b.line - a.line);
+    .sort((a, b) => a.line - b.line);
   for (const fix of fixes) {
-    const next = applyLineFixes(current, [fix], new Set([fix.line]));
+    const line = fix.line + shift;
+    const next = applyLineFixes(current, [{ line, text: fix.text }], new Set([line]));
     const [start, end] = next.edited[0]!;
     const broken = scriptProblems(next.source, names).filter((problem) => problem.line >= start && problem.line <= end);
     if (broken.length) {
-      rejected.push({ line: fix.line, text: fix.text, problems: broken.map((problem) => problem.message) });
+      rejected.push({ line, text: fix.text, problems: broken.map((problem) => problem.message) });
       continue;
     }
     current = next.source;
+    shift += end - start;
     kept += 1;
   }
   return { source: current, kept, rejected };
+}
+
+const UNCONVERTED = "-- Parse could not convert: ";
+/** Rounds of commenting out before giving up; each round also clears emptied blocks. */
+const FALLBACK_ROUNDS = 5;
+
+function indentOf(line: string): number {
+  return line.match(/^\s*/)![0].length;
+}
+
+function isComment(line: string): boolean {
+  return line.trim().startsWith("--");
+}
+
+function commentOut(line: string): string {
+  return `${line.match(/^\s*/)![0]}${UNCONVERTED}${line.trim()}`;
+}
+
+/** Comment out event or block lines whose indented body is now only comments, innermost first. */
+function commentEmptyBlocks(source: string): string {
+  const lines = source.split("\n");
+  for (let changed = true; changed;) {
+    changed = false;
+    lines.forEach((line, index) => {
+      if (!line.trim() || isComment(line)) return;
+      const body: string[] = [];
+      for (let i = index + 1; i < lines.length; i += 1) {
+        if (!lines[i]!.trim()) continue;
+        if (indentOf(lines[i]!) <= indentOf(line)) break;
+        body.push(lines[i]!);
+      }
+      if (body.length && body.every(isComment)) {
+        lines[index] = commentOut(line);
+        changed = true;
+      }
+    });
+  }
+  return lines.join("\n");
+}
+
+/**
+ * Last resort so Parse always returns a script that runs: comment out lines the
+ * AI could not fix (and any block they leave empty), keeping the user's text.
+ */
+function commentOutBroken(source: string, names: Set<string>): { source: string; lines: number[] } {
+  let current = source;
+  const commented = new Set<number>();
+  for (let round = 0; round < FALLBACK_ROUNDS; round += 1) {
+    const broken = new Set(scriptProblems(current, names).map((problem) => problem.line));
+    if (!broken.size) break;
+    current = current.split("\n").map((line, index) => {
+      if (!broken.has(index + 1) || isComment(line) || !line.trim()) return line;
+      commented.add(index + 1);
+      return commentOut(line);
+    }).join("\n");
+    current = commentEmptyBlocks(current);
+  }
+  return { source: current, lines: [...commented].sort((a, b) => a - b) };
 }
 
 /** Fix only the broken lines; see the file header. */
@@ -244,13 +308,15 @@ export async function runScriptRewrite(request: ScriptRewriteRequest, complete: 
     if (!problems.length) return { source: current, meaning: notes.join(" "), stage: "lines", aiCalls };
   }
 
-  // Some lines are still broken. Report each with the AI's last attempt, and keep
-  // the lines that were fixed rather than discarding them.
-  const unresolved = [...groupByLine(problems)].map(([line, messages]) => {
+  // Stage 3: comment out what is still broken, saying what the AI last tried for each.
+  const fallback = commentOutBroken(current, names);
+  const remaining = scriptProblems(fallback.source, names);
+  if (remaining.length) throw new Error(`Parse could not fix the script after ${aiCalls} AI calls. Line ${remaining[0]!.line}: ${remaining[0]!.message}`);
+  const lines = current.split("\n");
+  const unresolved = fallback.lines.map((line) => {
     const tried = rejected.find((fix) => fix.line === line);
-    return `Line ${line}: ${messages[0]}${tried ? ` (AI's last try ${JSON.stringify(tried.text.trim())} failed: ${tried.problems[0]})` : " (AI returned no fix for it)"}`;
+    return `line ${line} ${JSON.stringify(lines[line - 1]!.trim())}${tried ? ` (AI's last try ${JSON.stringify(tried.text.trim())} failed: ${tried.problems[0]})` : ""}`;
   });
-  if (current === request.source) throw new Error(`Parse could not fix the script after ${aiCalls} AI calls. ${unresolved.join(" ")}`);
-  notes.push(`Still broken, edit by hand: ${unresolved.join(" ")}`);
-  return { source: current, meaning: notes.join(" "), stage: "lines", aiCalls };
+  notes.push(`Could not convert, so commented out for you to edit: ${unresolved.join("; ")}.`);
+  return { source: fallback.source, meaning: notes.join(" "), stage: "lines", aiCalls };
 }

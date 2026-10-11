@@ -4,6 +4,13 @@ Record meaningful project changes during the event, newest first.
 
 ## Event build log
 
+### 2026-10-11T07:26:00+05:30 — Parse always returns a runnable script
+
+- Changed: AI line fixes are now checked top-down, with later line numbers adjusted when a fix spans several lines, so a broken line above can no longer hide a bad replacement below it. If lines are still broken after 4 AI calls, Parse comments them out as `-- Parse could not convert: <original text>` (and any event or block left with only comments), keeps every line it did fix, and lists each one in the review with the AI's last attempt. Files: `src/ai/scriptRewrite.ts`, `tests/ai/scriptRewrite.test.ts`, and `AI_USAGE.md`.
+- Why: The participant asked how to stop Parse from failing. A live run showed a bad line-7 fix accepted while line 6 was still broken (the parser stops at its first error), which wasted an AI call.
+- Validation: `npm run typecheck` and `npx vitest run` (all tests; 12 Parse tests) passed. The docs/DEMO.md broken script was run against the configured model twice: both runs produced a valid script in 2 calls.
+- Limitations: Parse can still fail if the AI request itself fails (network, key, provider error). Commented-out lines change behavior until the user edits them. README, the user guide, and in-app Docs (being edited by Codex at the same time) still do not mention the comment-out fallback.
+
 ### 2026-10-11T07:11:00+05:30 — Keep Parse's fixed lines when one line cannot be fixed
 
 - Changed: When lines are still broken after 4 AI calls, Parse now keeps the lines it did fix and lists the broken ones in the review ("Still broken, edit by hand"), each with the AI's last rejected attempt and its error, or a note that the AI returned no fix. It only fails outright when nothing changed, and that error now includes the same detail. The Parse prompt now says that something the user counts ("give me a point") becomes a variable (`increase score by 1`); the earlier "never add values" rule had discouraged that. Files: `src/ai/scriptRewrite.ts`, `tests/ai/scriptRewrite.test.ts`, and `AI_USAGE.md`.
