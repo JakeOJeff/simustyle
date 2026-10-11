@@ -4,6 +4,13 @@ Record meaningful project changes during the event, newest first.
 
 ## Event build log
 
+### 2026-10-12T03:40:00+05:30 — Landing donate links open the support popup
+
+- Changed: The nav Donate button, the footer Donate link, and "Donate to keep it running" now open the editor's "SimuStyle is free, forever" popup (with today's credit limit from `/api/ai/credits`) instead of going straight to Razorpay; the popup's Donate button opens the payment page. Ctrl/middle-clicks and visits without JavaScript still follow the link. The popup code loads only on first click. Files: `index.html`, `src/landing/main.ts`.
+- Why: Requested that Donate show the popup first.
+- Validation: In headless Chrome against the dev server, clicking the nav Donate button opened the popup (showing 30 daily credits) without leaving the page and focused its Donate button; the footer link opened it too, and Maybe later closed it. `vite build` succeeds.
+- Limitations: None known.
+
 ### 2026-10-12T03:25:00+05:30 — Landing donate button and new headline
 
 - Changed: Added a Donate button (heart icon, opens the Razorpay page in a new tab) next to Open editor in the nav, and a Donate link in the footer links. Below 640 px the button shows only the heart. The hero headline is now "You describe it. We make it real." with the user's intro text. Files: `index.html`, `src/landing/landing.css`.

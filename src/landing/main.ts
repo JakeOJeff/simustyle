@@ -91,6 +91,37 @@ const isWindows = /Windows/i.test(navigator.userAgent);
 const note = document.getElementById("cta-note");
 if (note && !isWindows) note.textContent = "Free forever · No account needed · Desktop app for Windows";
 
+// Donate links open the editor's "free forever" popup first; its Donate button goes to the payment page.
+// Modified clicks (new tab, middle click) and visits without JS follow the link directly.
+let closeDonatePopup: (() => void) | null = null;
+async function openDonatePopup() {
+  if (closeDonatePopup) return;
+  const [{ mount, unmount }, { default: SupportDialog }, { fetchCredits }] = await Promise.all([
+    import("svelte"), import("../editor/SupportDialog.svelte"), import("../ai/client")
+  ]);
+  const opener = document.activeElement as HTMLElement | null;
+  const host = document.body.appendChild(document.createElement("div"));
+  const close = () => {
+    unmount(popup);
+    host.remove();
+    document.removeEventListener("keydown", onKey);
+    closeDonatePopup = null;
+    opener?.focus();
+  };
+  const onKey = (event: KeyboardEvent) => { if (event.key === "Escape") close(); };
+  const credits = await fetchCredits().catch(() => null);
+  const popup = mount(SupportDialog, { target: host, props: { credits, onClose: close } });
+  document.addEventListener("keydown", onKey);
+  host.querySelector<HTMLElement>(".donate")?.focus();
+  closeDonatePopup = close;
+}
+document.addEventListener("click", (event) => {
+  const link = (event.target as HTMLElement).closest<HTMLAnchorElement>("a[data-donate]");
+  if (!link || event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
+  event.preventDefault();
+  void openDonatePopup().catch(() => window.open(link.href, "_blank", "noopener"));
+});
+
 // Load three.js after first paint so the headline and buttons show immediately.
 const canvas = document.getElementById("hero-canvas") as HTMLCanvasElement | null;
 if (canvas) {
