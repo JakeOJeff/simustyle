@@ -15,7 +15,7 @@
   import SettingsPanel from "./editor/SettingsPanel.svelte";
   import ScriptEditor from "./editor/ScriptEditor.svelte";
   import type { ParseEntity } from "./ai/scriptParse";
-  import { ScriptRuntime, scriptOps } from "./runtime/scripts";
+  import { ScriptRuntime, scriptOps, validateScripts } from "./runtime/scripts";
   import { uniqueName } from "./runtime/commands";
   import { chooseSceneToOpen, chooseSceneToSave, getDesktopAiSettings, isDesktopRuntime, readSceneFile, saveDesktopAiSettings, writeSceneFile } from "./platform/desktop";
   import type { VideoExportConfig, VideoExportProgress } from "./export/video";
@@ -374,7 +374,7 @@
       });
       const id = `ai_${nextAIId++}`;
       if (!result.ok || !result.scene || !result.inverseOps) {
-        pushAIMessage({ id, role: "assistant", content: result.errors.join(" · "), summary: `Could not complete after ${result.attempts} AI call${result.attempts === 1 ? "" : "s"}.`, ...(result.preflight ? { preflight: result.preflight } : {}) });
+        pushAIMessage({ id, role: "assistant", content: result.errors.join(" · "), summary: `Could not complete after ${result.attempts} AI call${result.attempts === 1 ? "" : "s"}.`, ...(result.preflight ? { preflight: result.preflight } : {}), ...(result.fallbackDraft ? { fallbackDraft: { summary: result.fallbackDraft.summary, operations: result.fallbackDraft.ops } } : {}) });
         message = result.errors.join(" · ") || "AI changes could not be validated";
         return;
       }
@@ -407,6 +407,27 @@
     const { [messageId]: _removed, ...remaining } = aiUndoRecords;
     aiUndoRecords = remaining;
     message = "Undid AI change";
+  }
+
+  function applyAIFallback(messageId: string) {
+    const messageEntry = aiMessages.find((entry) => entry.id === messageId);
+    const operations = messageEntry?.fallbackDraft?.operations;
+    if (!operations) return;
+    const result = applyOps(scene, operations);
+    if (result.errors.length) { message = `Could not apply the first draft: ${result.errors.join(" · ")}`; return; }
+    const scriptErrors = validateScripts(result.scene);
+    if (scriptErrors.length) { message = `Could not apply the first draft: ${scriptErrors[0]!.message}`; return; }
+    scene = result.scene;
+    undoStack = [...undoStack, result.inverseOps];
+    redoStack = [];
+    aiUndoRecords = { ...aiUndoRecords, [messageId]: result.inverseOps };
+    const changed = operations.find((operation) => operation.op === "create" || operation.op === "update");
+    if (changed && (changed.op === "create" || changed.op === "update")) selectEntity(changed.id);
+    frameToken += 1;
+    aiMessages = aiMessages.map((entry) => entry.id === messageId
+      ? { ...entry, content: "Applied the first validated draft. Review issues remain visible above.", summary: "Applied the first validated draft; review issues remain.", operations, fallbackDraft: undefined }
+      : entry);
+    message = "Applied the first validated draft; inspect the runtime issues in the AI response.";
   }
 
   function apply(ops: SceneOp[]) {
@@ -1283,7 +1304,7 @@ when clicked
           {#if panelOpen.ai}
             <section class="panel-window" class:floating-panel={panelLayouts.ai.dock === "floating"} style={panelWindowStyle("ai")} use:rememberPanelSize={"ai"}>
               <header class="panel-window-title"><button class="panel-drag-handle" type="button" aria-label="Drag AI panel to move or snap" onpointerdown={(event) => startPanelDrag(event, "ai")}><strong>AI</strong><span>Drag to move or snap</span></button><button class="panel-close" type="button" aria-label="Close AI" onclick={() => panelOpen.ai = false}><X size={13} /></button></header>
-              <div class="panel-window-body"><AIPanel messages={aiMessages} loading={aiLoading} {aiProgress} prompt={aiPrompt} onPromptChange={(value) => aiPrompt = value} onSubmit={submitAI} onUndo={undoAIChange} /></div>
+              <div class="panel-window-body"><AIPanel messages={aiMessages} loading={aiLoading} {aiProgress} prompt={aiPrompt} onPromptChange={(value) => aiPrompt = value} onSubmit={submitAI} onUndo={undoAIChange} onApplyDraft={applyAIFallback} /></div>
               <PanelResizeHandles panelName="AI" dock={panelLayouts.ai.dock} onResizeStart={(event, edge) => startPanelResize(event, "ai", edge)} />
             </section>
           {/if}

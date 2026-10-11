@@ -4,6 +4,13 @@ Record meaningful project changes during the event, newest first.
 
 ## Event build log
 
+### 2026-10-11T08:00:00+05:30 — Preserve valid scene drafts when review fails
+
+- Changed: If the second-pass model request fails or exhausts corrections, apply the first draft automatically when it passes operation, script, and new runtime checks. When that draft has runtime issues, retain it in the AI panel with a visible **Apply first draft anyway** action and its preview details. Files: `src/ai/agent.ts`, `src/App.svelte`, `src/editor/AIPanel.svelte`, README, and `AI_USAGE.md`.
+- Why: A failed independent review previously discarded the user's validated scene changes without a way to recover them.
+- Validation: `npm run typecheck`, `npx svelte-check --tsconfig ./tsconfig.json` (0 errors/0 warnings), `npm run build`, and `git diff --check` passed. Automated tests were not run.
+- Limitations: A draft with runtime issues requires the user to choose the explicit fallback action. The preview does not include visual review or Rapier physics.
+
 ### 2026-10-11T07:54:00+05:30 — Increase scene assistant review retries
 
 - Changed: Increased second-pass review correction retries from two to four in `src/ai/agent.ts`; documented the retry behavior in `README.md`.

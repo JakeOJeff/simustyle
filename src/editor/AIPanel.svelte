@@ -9,6 +9,7 @@
     summary?: string;
     operations?: SceneOp[];
     preflight?: { console: string[]; issues: string[]; baselineIssues: string[]; frames: number };
+    fallbackDraft?: { summary: string; operations: SceneOp[] };
   }
 
   interface Props {
@@ -19,9 +20,10 @@
     onPromptChange: (prompt: string) => void;
     onSubmit: (prompt: string) => void;
     onUndo: (messageId: string) => void;
+    onApplyDraft: (messageId: string) => void;
   }
 
-  let { messages, loading, aiProgress, prompt, onPromptChange, onSubmit, onUndo }: Props = $props();
+  let { messages, loading, aiProgress, prompt, onPromptChange, onSubmit, onUndo, onApplyDraft }: Props = $props();
 
   function submit(event: Event) {
     event.preventDefault();
@@ -65,7 +67,7 @@
                 {#if message.preflight.console.length}
                   {#each message.preflight.console as line}<code>{line}</code>{/each}
                 {:else}<span>No script print output.</span>{/if}
-                <strong>Runtime issues in second pass</strong>
+                <strong>Runtime issues in preview</strong>
                 {#if message.preflight.issues.length}
                   {#each message.preflight.issues as line}<code>{line}</code>{/each}
                 {:else}<span>None detected.</span>{/if}
@@ -90,6 +92,26 @@
               </div>
               <button class="undo-button" type="button" onclick={() => onUndo(message.id)}>Undo this change</button>
             </details>
+          {/if}
+          {#if message.fallbackDraft}
+            <div class="fallback-draft">
+              <span>{message.fallbackDraft.summary}</span>
+              <span>First draft passed scene and script checks, but its preview found runtime issues.</span>
+              <button class="undo-button" type="button" onclick={() => onApplyDraft(message.id)}>Apply first draft anyway</button>
+              {#if message.fallbackDraft.operations.length}
+                <details class="operation-details">
+                  <summary>{message.fallbackDraft.operations.length} draft {message.fallbackDraft.operations.length === 1 ? "operation" : "operations"} <span>View draft</span></summary>
+                  <div class="operation-list">
+                    {#each message.fallbackDraft.operations as operation, index (`${message.id}-draft-${index}`)}
+                      <details class="operation">
+                        <summary><span class="operation-kind">{operation.op.toUpperCase()}</span>{operationLabel(operation)}</summary>
+                        <pre>{JSON.stringify(operation, null, 2)}</pre>
+                      </details>
+                    {/each}
+                  </div>
+                </details>
+              {/if}
+            </div>
           {/if}
         {/if}
       </article>
@@ -149,6 +171,7 @@
   pre{max-height:180px;overflow:auto;margin:2px 0 6px 19px;padding:7px;background:#111217;border:1px solid #ffffff0d;border-radius:4px;color:#c4c0d2;font:9px/1.45 'DM Mono',monospace;white-space:pre-wrap;overflow-wrap:anywhere}
   .undo-button{margin:2px 0 4px 18px;padding:4px 7px;border:1px solid #ffffff16;border-radius:4px;background:#24232d;color:#bcb5e4;font-size:9px;cursor:pointer}
   .undo-button:hover{background:#302d3d}
+  .fallback-draft{grid-column:2;display:grid;gap:5px;color:#d2b98a;font-size:9px;line-height:1.4}
   .prompt-form{padding:7px 10px 8px;border-top:1px solid #ffffff10;background:#15161c}
   textarea{display:block;width:100%;min-height:39px;max-height:90px;resize:vertical;padding:7px 9px;border:1px solid #ffffff14;border-radius:5px;outline:none;background:#101116;color:#e5e3ec;font:10px/1.45 'DM Sans',sans-serif}
   textarea::placeholder{color:#696775}textarea:focus{border-color:#7768be}textarea:disabled{opacity:.55}

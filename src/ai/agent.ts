@@ -43,6 +43,7 @@ export interface SceneAgentResult {
   errors: string[];
   attempts: number;
   preflight?: SceneAgentPreflight;
+  fallbackDraft?: { summary: string; ops: SceneOp[]; preflight: SceneAgentPreflight };
 }
 
 function replyFrom(value: unknown): SceneAgentReply | null {
@@ -126,6 +127,31 @@ export async function runSceneAgent(scene: Scene, userPrompt: string, dependenci
   let candidate = firstResult.scene;
   const baselinePreflight = inspectCandidate(scene);
   let preflight = inspectCandidate(candidate, baselinePreflight.issues);
+  const baselineIssues = new Set(baselinePreflight.issues);
+  const draftRuntimeErrors = preflight.issues.filter((line) => !baselineIssues.has(line));
+  const useDraftAfterReviewFailure = (reason: string): SceneAgentResult => {
+    if (!draft || !firstResult.inverseOps) return { ok: false, ops: [], errors: [reason], attempts, preflight };
+    if (!draftRuntimeErrors.length) {
+      return {
+        ok: true,
+        summary: `${draft.summary} Applied the validated first draft because the independent review could not complete: ${reason}`,
+        ops: draft.ops,
+        scene: firstResult.scene,
+        inverseOps: firstResult.inverseOps,
+        errors: [],
+        attempts,
+        preflight
+      };
+    }
+    return {
+      ok: false,
+      ops: [],
+      errors: [reason, ...draftRuntimeErrors],
+      attempts,
+      preflight,
+      fallbackDraft: { summary: draft.summary, ops: draft.ops, preflight }
+    };
+  };
   dependencies.onProgress?.("Reviewing the first build and its Console output…");
 
   const reviewerSystemPrompt = `${systemPrompt}\n\nYou are now doing a separate second-pass review. Inspect the requested result against the player's exact intent and the first build. Treat the isolated Console output as real script-runtime feedback. Return one corrected full operation list, or keep the first build unchanged only if it matches the request and its runtime check is clean. The editor has not applied either build.`;
@@ -149,7 +175,7 @@ export async function runSceneAgent(scene: Scene, userPrompt: string, dependenci
       });
     } catch (error) {
       const reason = error instanceof Error ? error.message : String(error);
-      return { ok: false, ops: [], errors: [`Second-pass review failed: ${reason}`], attempts, preflight };
+      return useDraftAfterReviewFailure(`Second-pass review failed: ${reason}`);
     }
     previousReply = typeof raw === "string" ? raw : JSON.stringify(raw) ?? "";
     reviewed = replyFrom(raw);
@@ -174,7 +200,7 @@ export async function runSceneAgent(scene: Scene, userPrompt: string, dependenci
         }
       }
     }
-    if (reviewAttempt === reviewRetries + 1) return { ok: false, ops: [], errors: correctionErrors, attempts, preflight };
+    if (reviewAttempt === reviewRetries + 1) return useDraftAfterReviewFailure(`Second-pass review did not pass validation after ${reviewAttempt} attempts.`);
   }
   if (!reviewed || !reviewedResult || correctionErrors.length) return { ok: false, ops: [], errors: correctionErrors, attempts, preflight };
   return { ok: true, summary: reviewed.summary, ops: reviewed.ops, scene: candidate, inverseOps: reviewedResult.inverseOps, errors: [], attempts, preflight };
