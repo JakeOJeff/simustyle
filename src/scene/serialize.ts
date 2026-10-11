@@ -4,6 +4,7 @@ import { validateScene } from "./validate";
 
 interface SavedScene {
   version: 1;
+  name?: string;
   settings: Partial<SceneSettings>;
   entities: Entity[];
 }
@@ -24,6 +25,7 @@ export function serializeScene(scene: Scene): string {
   if (errors.length) throw new Error(`Cannot serialize invalid scene: ${errors.join("; ")}`);
   const saved: SavedScene = {
     version: 1,
+    ...(scene.name ? { name: scene.name.trim() } : {}),
     settings: Object.fromEntries(Object.entries(scene.settings).filter(([key, value]) =>
       JSON.stringify(value) !== JSON.stringify(DEFAULT_SCENE_SETTINGS[key as keyof SceneSettings])
     )) as Partial<SceneSettings>,
@@ -50,6 +52,7 @@ export function deserializeScene(json: string): Scene {
   }
   const scene = {
     version: raw.version,
+    ...(raw.name === undefined ? {} : { name: raw.name }),
     settings: { ...structuredClone(DEFAULT_SCENE_SETTINGS), ...raw.settings },
     entities: raw.entities
   } as unknown as Scene;

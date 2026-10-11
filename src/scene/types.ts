@@ -18,6 +18,8 @@ export interface Entity {
 
 export interface Scene {
   version: 1;
+  /** Optional user-facing name; older scene files remain valid without it. */
+  name?: string;
   settings: SceneSettings;
   entities: Entity[];
 }

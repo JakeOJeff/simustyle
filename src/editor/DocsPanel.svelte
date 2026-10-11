@@ -85,7 +85,7 @@ when space is pressed
 
     <section id="docs-save-export">
       <h2>Save and export</h2>
-      <p>Use the scene menu or File menu to create, open, and save JSON scenes. Ctrl+S saves. The scene name shows whether there are unsaved edits. Desktop Open and Save use native dialogs and support <code>.simu</code> and <code>.json</code>.</p>
+      <p>Use the scene menu or File menu to create, open, rename, and save scenes. Rename scene stores the name in the scene file. Ctrl+S saves the current scene as its own JSON file, or writes the selected desktop <code>.simu</code>/<code>.json</code> path. Open Scene Loader from File or View for a movable window with recent scenes, Browse, and Save current scene as JSON. The last ten opened or saved scenes appear there; browser recents are cached on this device and desktop recents use their file paths.</p>
       <ul>
         <li><b>GLB:</b> export a 3D snapshot for compatible tools and viewers.</li>
         <li><b>Standalone HTML:</b> export a self-contained web scene that autoplays. Add <code>?controls=1</code> to show script parameter sliders.</li>

@@ -5,7 +5,7 @@
 
   /** Everything the top bar can ask the editor to do. */
   export interface TopBarActions {
-    newScene(): void; openScene(): void; saveScene(): void;
+    newScene(): void; openScene(): void; openRecent(): void; openSceneLoader(): void; saveScene(): void; renameScene(): void;
     undo(): void; redo(): void;
     cut(): void; copy(): void; paste(): void; duplicate(): void; remove(): void; rename(): void; group(): void;
     togglePanel(name: string): void; frameSelected(): void; openSettings(): void;
@@ -85,6 +85,9 @@
 {#snippet fileItems()}
   <div class="tb-menu" role="menu">
     <button role="menuitem" onclick={() => run(actions.newScene)}>New scene</button>
+    <button role="menuitem" onclick={() => run(actions.openRecent)}>Open Recent</button>
+    <button role="menuitem" onclick={() => run(actions.openSceneLoader)}>Scene Loader</button>
+    <button role="menuitem" onclick={() => run(actions.renameScene)}>Rename scene</button>
     <button role="menuitem" onclick={() => run(actions.openScene)}>Open…</button>
     <button role="menuitem" onclick={() => run(actions.saveScene)}>Save <kbd>Ctrl+S</kbd></button>
   </div>

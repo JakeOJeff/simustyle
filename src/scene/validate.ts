@@ -137,6 +137,9 @@ export function validateScene(scene: unknown): string[] {
   const errors: string[] = [];
   if (!isRecord(scene)) return ["scene: must be an object"];
   if (scene.version !== 1) errors.push("scene.version: must be 1");
+  if (scene.name !== undefined && (typeof scene.name !== "string" || !scene.name.trim() || scene.name.trim().length > 100)) {
+    errors.push("scene.name: must be a non-empty string of at most 100 characters");
+  }
   if (!isRecord(scene.settings)) {
     errors.push("scene.settings: must be an object");
   } else {

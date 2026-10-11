@@ -4,6 +4,13 @@ Record meaningful project changes during the event, newest first.
 
 ## Event build log
 
+### 2026-10-11T08:15:00+05:30 — Add scene naming and a Scene Loader window
+
+- Changed: Added a Rename scene dialog and persist scene names in scene JSON. Added a movable Scene Loader window with Open, Open Recent, recent-scene entries, and Save current scene as JSON. Browser recents cache scene contents in IndexedDB; desktop recents retain their file paths. Updated README, the user guide, and in-app Docs.
+- Why: Make scenes nameable and provide a dedicated place to reopen and save individual scene files.
+- Validation: `npm run typecheck`, `npx svelte-check --tsconfig ./tsconfig.json` (0 errors/0 warnings), `npm run build`, and `git diff --check` passed. Automated tests were not run.
+- Limitations: The loader lists the ten most recent scenes. Browser recents are local to this browser origin. The new window was not manually exercised in an interactive app.
+
 ### 2026-10-11T08:00:00+05:30 — Preserve valid scene drafts when review fails
 
 - Changed: If the second-pass model request fails or exhausts corrections, apply the first draft automatically when it passes operation, script, and new runtime checks. When that draft has runtime issues, retain it in the AI panel with a visible **Apply first draft anyway** action and its preview details. Files: `src/ai/agent.ts`, `src/App.svelte`, `src/editor/AIPanel.svelte`, README, and `AI_USAGE.md`.

@@ -18,6 +18,7 @@
   import { ScriptRuntime, scriptOps, validateScripts } from "./runtime/scripts";
   import { uniqueName } from "./runtime/commands";
   import { chooseSceneToOpen, chooseSceneToSave, getDesktopAiSettings, isDesktopRuntime, readSceneFile, saveDesktopAiSettings, writeSceneFile } from "./platform/desktop";
+  import { cacheRecentScene, loadRecentScenes, readCachedRecentScene, saveRecentScenes, type RecentSceneEntry } from "./platform/recentScenes";
   import type { VideoExportConfig, VideoExportProgress } from "./export/video";
   import type { AnimationTrack, AnimationValue } from "./runtime/animator";
   import { AnimatorRuntime } from "./runtime/animator";
@@ -31,7 +32,7 @@
   import { createEmptyScene, type Entity, type Scene, type SceneOp, type Vec3 } from "./scene/types";
   import type { PlayState, SimulationController } from "./runtime/physics";
 
-  type EditorPanel = "hierarchy" | "inspector" | "console" | "ai" | "timeline" | "docs";
+  type EditorPanel = "hierarchy" | "inspector" | "console" | "ai" | "timeline" | "docs" | "sceneLoader";
   type PanelDock = "left" | "right" | "top" | "bottom" | "floating";
   type PanelLayout = { dock: PanelDock; x: number; y: number; width: number; height: number; dockSize?: number };
 
@@ -52,14 +53,15 @@
   let playState: PlayState = $state("stopped");
   let playStarting = $state(false);
   let simulationWarnings = $state<string[]>([]);
-  let panelOpen = $state<Record<EditorPanel, boolean>>({ hierarchy: true, inspector: true, console: true, ai: false, timeline: false, docs: false });
+  let panelOpen: Record<EditorPanel, boolean> = $state({ hierarchy: true, inspector: true, console: true, ai: false, timeline: false, docs: false, sceneLoader: false });
   let panelLayouts = $state<Record<EditorPanel, PanelLayout>>({
     hierarchy: { dock: "left", x: 12, y: 12, width: 260, height: 420 },
     inspector: { dock: "right", x: 16, y: 16, width: 300, height: 420 },
     console: { dock: "bottom", x: 12, y: 12, width: 500, height: 250 },
     ai: { dock: "right", x: 16, y: 16, width: 430, height: 340 },
     timeline: { dock: "bottom", x: 16, y: 16, width: 680, height: 250 },
-    docs: { dock: "floating", x: 220, y: 20, width: 620, height: 680 }
+    docs: { dock: "floating", x: 220, y: 20, width: 620, height: 680 },
+    sceneLoader: { dock: "floating", x: 260, y: 70, width: 430, height: 420 }
   });
   let draggingPanel: { panel: EditorPanel; offsetX: number; offsetY: number; stageLeft: number; stageTop: number; stageWidth: number; stageHeight: number } | null = $state(null);
   let resizingPanel: { panel: EditorPanel; edge: ResizeEdge; dock: PanelDock; startX: number; startY: number; left: number; top: number; width: number; height: number; stageWidth: number; stageHeight: number } | null = $state(null);
@@ -80,7 +82,10 @@
   let settingsOpen = $state(false);
   let aiSettings = $state({ apiKeyConfigured: false, model: "gpt-4o-mini", baseUrl: "https://api.openai.com/v1" });
   let scenePath = $state<string | null>(null);
-  const sceneName = $derived(scenePath?.split(/[\\/]/).at(-1)?.replace(/(\.scene)?\.(json|simu)$/i, "") || "Untitled scene");
+  let savedSceneName = $state<string | undefined>(undefined);
+  let recentScenes = $state<RecentSceneEntry[]>([]);
+  let sceneRenameTarget = $state<string | null>(null);
+  const sceneName = $derived(scene.name?.trim() || "Untitled scene");
   // Script tabs open over the viewport, like script windows in Roblox Studio.
   let openScripts: string[] = $state([]);
   let activeTab: string = $state("scene");
@@ -167,7 +172,7 @@
     try {
       const saved = JSON.parse(localStorage.getItem("simustyle.panelWorkspace") ?? "null") as { open?: Record<string, unknown>; layouts?: Record<string, Partial<PanelLayout>> } | null;
       if (saved) {
-        for (const panel of ["hierarchy", "inspector", "console", "ai", "timeline", "docs"] as const) {
+        for (const panel of ["hierarchy", "inspector", "console", "ai", "timeline", "docs", "sceneLoader"] as const) {
           if (typeof saved.open?.[panel] === "boolean") panelOpen[panel] = saved.open[panel] as boolean;
           const layout = saved.layouts?.[panel];
           if (!layout) continue;
@@ -313,6 +318,7 @@
 
   onMount(() => {
     restorePanelWorkspace();
+    recentScenes = loadRecentScenes();
     if (isDesktopRuntime()) {
       void getDesktopAiSettings().then((settings) => aiSettings = settings).catch((error) => {
         message = error instanceof Error ? error.message : "Could not load AI settings";
@@ -608,6 +614,71 @@
       message = `Renamed entity to ${name}`;
       renameTarget = null;
       contextMenu = null;
+    }
+  }
+
+  function commitSceneRename() {
+    if (sceneRenameTarget === null) return;
+    const name = sceneRenameTarget.trim();
+    if (!name) return;
+    scene = { ...scene, name };
+    sceneRenameTarget = null;
+    message = `Renamed scene to ${name}`;
+  }
+
+  function sceneNameFromFile(fileName: string): string {
+    return fileName.replace(/(\.scene)?\.(json|simu)$/i, "") || fileName;
+  }
+
+  function sceneDownloadName(): string {
+    const safeName = sceneName.replace(/[<>:"/\\|?*\x00-\x1f]/g, "-").replace(/[. ]+$/g, "").trim();
+    return `${safeName || "scene"}.scene.json`;
+  }
+
+  async function rememberOpenedScene(name: string, path: string | null, contents?: string, fileName = name): Promise<boolean> {
+    const key = path ? `desktop:${path}` : `browser:${fileName.toLocaleLowerCase()}`;
+    let cached = true;
+    if (!path && contents !== undefined) {
+      try {
+        await cacheRecentScene(key, contents);
+      } catch {
+        cached = false;
+      }
+    }
+    const entry: RecentSceneEntry = { key, name, path, ...(path ? {} : { sourceName: fileName }) };
+    recentScenes = [entry, ...recentScenes.filter((candidate) => candidate.key !== key)].slice(0, 10);
+    saveRecentScenes(recentScenes);
+    return cached;
+  }
+
+  function installOpenedScene(loadedScene: Scene, path: string | null, fileName: string) {
+    const nextScene = loadedScene.name?.trim() ? loadedScene : { ...loadedScene, name: sceneNameFromFile(fileName) };
+    stopSimulation();
+    scene = nextScene;
+    scenePath = path ?? fileName;
+    activeGesture = null;
+    selectEntity(null);
+    undoStack = [];
+    redoStack = [];
+    savedHistory = undoStack;
+    savedSceneName = nextScene.name;
+  }
+
+  async function openRecentScene(key: string) {
+    const entry = recentScenes.find((candidate) => candidate.key === key);
+    if (!entry) return;
+    try {
+      const contents = entry.path && isDesktopRuntime()
+        ? await readSceneFile(entry.path)
+        : await readCachedRecentScene(entry.key);
+      const loadedScene = deserializeScene(contents);
+      const fileName = entry.sourceName ?? entry.path?.split(/[\\/]/).at(-1) ?? entry.name;
+      installOpenedScene(loadedScene, entry.path, fileName);
+      recentScenes = [entry, ...recentScenes.filter((candidate) => candidate.key !== key)];
+      saveRecentScenes(recentScenes);
+      message = `Opened ${sceneName}`;
+    } catch (error) {
+      message = error instanceof Error ? error.message : "Unable to open recent scene";
     }
   }
 
@@ -966,6 +1037,7 @@ when clicked
     redoStack = [];
     savedHistory = undoStack;
     scenePath = null;
+    savedSceneName = scene.name;
     message = "New scene";
   }
 
@@ -973,26 +1045,55 @@ when clicked
     commitAllScripts();
     if (isDesktopRuntime()) {
       try {
-        const path = scenePath ?? await chooseSceneToSave("untitled.simu");
+        const path = scenePath ?? await chooseSceneToSave(`${sceneName.replace(/[<>:"/\\|?*]/g, "-")}.simu`);
         if (!path) return;
-        await writeSceneFile(path, serializeScene(scene));
+        const contents = serializeScene(scene);
+        await writeSceneFile(path, contents);
         scenePath = path;
         savedHistory = undoStack;
+        savedSceneName = scene.name;
+        await rememberOpenedScene(sceneName, path, contents);
         message = `Saved ${path.split(/[\\/]/).at(-1) ?? "scene"}`;
       } catch (error) {
         message = error instanceof Error ? error.message : "Unable to save scene file";
       }
       return;
     }
-    const file = new Blob([serializeScene(scene)], { type: "application/json" });
+    const contents = serializeScene(scene);
+    const fileName = sceneDownloadName();
+    const file = new Blob([contents], { type: "application/json" });
     const url = URL.createObjectURL(file);
     const anchor = document.createElement("a");
     anchor.href = url;
-    anchor.download = "untitled.scene.json";
+    anchor.download = fileName;
     anchor.click();
     URL.revokeObjectURL(url);
     savedHistory = undoStack;
-    message = "Scene saved";
+    savedSceneName = scene.name;
+    scenePath = fileName;
+    const recentCached = await rememberOpenedScene(sceneName, null, contents, fileName);
+    message = recentCached ? "Scene saved as JSON" : "Scene saved as JSON, but browser storage could not cache it for Open Recent.";
+  }
+
+  async function saveSceneAsJson() {
+    if (!isDesktopRuntime()) {
+      await saveScene();
+      return;
+    }
+    commitAllScripts();
+    try {
+      const path = await chooseSceneToSave(sceneDownloadName());
+      if (!path) return;
+      const contents = serializeScene(scene);
+      await writeSceneFile(path, contents);
+      scenePath = path;
+      savedHistory = undoStack;
+      savedSceneName = scene.name;
+      await rememberOpenedScene(sceneName, path, contents);
+      message = `Saved ${path.split(/[\\/]/).at(-1) ?? "scene"}`;
+    } catch (error) {
+      message = error instanceof Error ? error.message : "Unable to save scene file";
+    }
   }
 
   async function loadScene(event?: Event) {
@@ -1000,16 +1101,11 @@ when clicked
       try {
         const path = await chooseSceneToOpen();
         if (!path) return;
-        const loadedScene = deserializeScene(await readSceneFile(path));
-        stopSimulation();
-        scene = loadedScene;
-        activeGesture = null;
-        selectEntity(null);
-        undoStack = [];
-        redoStack = [];
-        scenePath = path;
-        savedHistory = undoStack;
-        message = `Opened ${path.split(/[\\/]/).at(-1) ?? "scene"}`;
+        const contents = await readSceneFile(path);
+        const fileName = path.split(/[\\/]/).at(-1) ?? "scene";
+        installOpenedScene(deserializeScene(contents), path, fileName);
+        await rememberOpenedScene(sceneName, path, contents, fileName);
+        message = `Opened ${sceneName}`;
       } catch (error) {
         message = error instanceof Error ? error.message : "Unable to open scene file";
       }
@@ -1020,16 +1116,10 @@ when clicked
     const file = input.files?.[0];
     if (!file) return;
     try {
-      const loadedScene = deserializeScene(await file.text());
-      stopSimulation();
-      scene = loadedScene;
-      scenePath = file.name;
-      activeGesture = null;
-      selectEntity(null);
-      undoStack = [];
-      redoStack = [];
-      savedHistory = undoStack;
-      message = `Opened ${file.name}`;
+      const contents = await file.text();
+      installOpenedScene(deserializeScene(contents), null, file.name);
+      const recentCached = await rememberOpenedScene(sceneName, null, contents, file.name);
+      message = recentCached ? `Opened ${sceneName}` : `Opened ${sceneName}, but browser storage could not cache it for Open Recent.`;
     } catch (error) {
       message = error instanceof Error ? error.message : "Unable to open scene file";
     } finally {
@@ -1148,8 +1238,8 @@ when clicked
     message = "Stepped one frame";
   }
 
-  const panelNames: EditorPanel[] = ["hierarchy", "inspector", "console", "ai", "timeline", "docs"];
-  const panelLabels: Record<EditorPanel, string> = { hierarchy: "Hierarchy", inspector: "Inspector", console: "Console", ai: "AI", timeline: "Timeline", docs: "Docs" };
+  const panelNames: EditorPanel[] = ["hierarchy", "inspector", "console", "ai", "timeline", "docs", "sceneLoader"];
+  const panelLabels: Record<EditorPanel, string> = { hierarchy: "Hierarchy", inspector: "Inspector", console: "Console", ai: "AI", timeline: "Timeline", docs: "Docs", sceneLoader: "Scene Loader" };
 
   function togglePanel(name: string) {
     if (!(name in panelOpen)) return;
@@ -1158,8 +1248,8 @@ when clicked
     if (panelOpen[panel]) {
       focusedPanel = panel;
       const layout = panelLayouts[panel];
-      const width = panel === "docs" ? Math.min(layout.width, Math.max(220, stageWidth)) : layout.width;
-      const height = panel === "docs" ? Math.min(layout.height, Math.max(140, stageHeight)) : layout.height;
+      const width = panel === "docs" || panel === "sceneLoader" ? Math.min(layout.width, Math.max(220, stageWidth)) : layout.width;
+      const height = panel === "docs" || panel === "sceneLoader" ? Math.min(layout.height, Math.max(140, stageHeight)) : layout.height;
       panelLayouts[panel] = {
         ...layout,
         x: Math.min(Math.max(0, layout.x), Math.max(0, stageWidth - width)),
@@ -1170,9 +1260,22 @@ when clicked
     }
   }
 
+  function showSceneLoader() {
+    if (!panelOpen.sceneLoader) togglePanel("sceneLoader");
+    else focusedPanel = "sceneLoader";
+  }
+
+  function openScenePicker() {
+    if (isDesktopRuntime()) void loadScene();
+    else openInput.click();
+  }
+
   const topBarActions: TopBarActions = {
     newScene, saveScene: () => void saveScene(), undo, redo,
     openScene: () => isDesktopRuntime() ? void loadScene() : openInput.click(),
+    openRecent: () => showSceneLoader(),
+    openSceneLoader: () => showSceneLoader(),
+    renameScene: () => { if (playState !== "stopped") message = "Stop the simulation before renaming the scene."; else sceneRenameTarget = sceneName; },
     cut: () => { if (selectedId) cutEntity(selectedId); },
     copy: () => { if (selectedId) copyEntity(selectedId); },
     paste: () => pasteEntity(null),
@@ -1210,7 +1313,7 @@ when clicked
 <main class="editor" class:simulation-playing={playState === "playing"} class:simulation-paused={playState === "paused"}>
   <TopBar
     {sceneName}
-    saved={undoStack === savedHistory}
+    saved={undoStack === savedHistory && scene.name === savedSceneName}
     editable={playState === "stopped"}
     canUndo={undoStack.length > 0}
     canRedo={redoStack.length > 0}
@@ -1230,7 +1333,7 @@ when clicked
   >
     {#snippet exportMenu()}<ExportMenu scene={viewportScene} onVideoExport={exportVideo} />{/snippet}
   </TopBar>
-  <input bind:this={openInput} class="file-input" type="file" accept=".json,.scene.json,application/json" onchange={loadScene} />
+  <input bind:this={openInput} class="file-input" type="file" accept=".simu,.json,.scene.json,application/json" onchange={loadScene} />
 
   <div class="editor-body">
     <section class="viewport-column">
@@ -1322,6 +1425,30 @@ when clicked
               <PanelResizeHandles panelName="Docs" dock={panelLayouts.docs.dock} onResizeStart={(event, edge) => startPanelResize(event, "docs", edge)} />
             </section>
           {/if}
+          {#if panelOpen.sceneLoader}
+            <section class="panel-window floating-panel scene-loader-window" style={panelWindowStyle("sceneLoader")} use:rememberPanelSize={"sceneLoader"}>
+              <header class="panel-window-title"><button class="panel-drag-handle" type="button" aria-label="Drag Scene Loader panel to move" onpointerdown={(event) => startPanelDrag(event, "sceneLoader")}><strong>Scene Loader</strong><span>Open and save scene files</span></button><button class="panel-close" type="button" aria-label="Close Scene Loader" onclick={() => panelOpen.sceneLoader = false}><X size={13} /></button></header>
+              <div class="panel-window-body scene-loader-body">
+                <div class="scene-loader-actions">
+                  <button type="button" onclick={openScenePicker}>Open scene…</button>
+                  <button type="button" onclick={() => void saveSceneAsJson()}>Save current scene as JSON</button>
+                </div>
+                <div class="scene-loader-heading">Recent scenes</div>
+                {#if recentScenes.length}
+                  <div class="scene-loader-list">
+                    {#each recentScenes as entry (entry.key)}
+                      <button type="button" class:current-scene={entry.key === (scenePath && isDesktopRuntime() ? `desktop:${scenePath}` : `browser:${scenePath?.toLocaleLowerCase() ?? ""}`)} onclick={() => void openRecentScene(entry.key)}>
+                        <strong>{entry.name}</strong><small>{entry.path ?? "Saved in this browser"}</small>
+                      </button>
+                    {/each}
+                  </div>
+                {:else}
+                  <p class="scene-loader-empty">No recent scenes yet. Open a .simu or .json file to add it here.</p>
+                {/if}
+              </div>
+              <PanelResizeHandles panelName="Scene Loader" dock={panelLayouts.sceneLoader.dock} onResizeStart={(event, edge) => startPanelResize(event, "sceneLoader", edge)} />
+            </section>
+          {/if}
           {#if draggingPanel && snapTarget}
             <div class="panel-snap-preview snap-{snapTarget}" aria-hidden="true"></div>
           {/if}
@@ -1341,6 +1468,17 @@ when clicked
   {#if settingsOpen}
     <div class="settings-overlay" role="presentation" onclick={(event) => { if (event.target === event.currentTarget) settingsOpen = false; }}>
       <SettingsPanel model={aiSettings.model} baseUrl={aiSettings.baseUrl} hasApiKey={aiSettings.apiKeyConfigured} onSave={saveAiSettings} onRemoveKey={removeAiKey} onClose={() => settingsOpen = false} />
+    </div>
+  {/if}
+  {#if sceneRenameTarget !== null}
+    <div class="rename-overlay" role="presentation" onclick={(event) => { if (event.target === event.currentTarget) sceneRenameTarget = null; }}>
+      <div class="rename-dialog" role="dialog" aria-modal="true" aria-labelledby="rename-scene-title">
+        <h2 id="rename-scene-title">Rename scene</h2>
+        <form onsubmit={(event) => { event.preventDefault(); commitSceneRename(); }}>
+          <input aria-label="Scene name" bind:value={sceneRenameTarget} maxlength="100" />
+          <div class="rename-actions"><button type="button" onclick={() => sceneRenameTarget = null}>Cancel</button><button type="submit" disabled={!sceneRenameTarget.trim()}>Rename</button></div>
+        </form>
+      </div>
     </div>
   {/if}
   {#if contextMenu}
@@ -1419,6 +1557,17 @@ when clicked
   .command-bar input{flex:1;min-width:0;height:100%;border:0;outline:none;background:transparent;color:#e6e3f1;font:11px 'DM Mono',monospace}
   .command-bar button{height:22px;padding:0 10px;border:0;border-radius:4px;background:#1f2f3a;color:#a9def7;font-size:10px;cursor:pointer}.command-bar button:disabled{opacity:.4;cursor:default}
   .settings-overlay{position:fixed;inset:0;z-index:20;display:grid;place-items:center;padding:20px;background:#09090dc9;backdrop-filter:blur(5px)}
+  .scene-loader-body{padding:10px;gap:10px}
+  .scene-loader-actions{display:flex;flex-wrap:wrap;gap:6px}
+  .scene-loader-actions button{height:27px;padding:0 9px;border:1px solid #ffffff16;border-radius:5px;background:#25252f;color:#d6d3e0;font-size:10px}
+  .scene-loader-actions button:hover{background:#302d40;color:#fff}
+  .scene-loader-heading{color:#aaa8b5;font-size:10px;font-weight:600}
+  .scene-loader-list{display:grid;min-height:0;gap:3px;overflow:auto}
+  .scene-loader-list button{display:flex;height:auto;min-height:42px;flex-direction:column;align-items:flex-start;justify-content:center;gap:3px;padding:6px 9px;border:0;border-radius:5px;background:transparent;text-align:left}
+  .scene-loader-list button:hover,.scene-loader-list button.current-scene{background:#ffffff0c}
+  .scene-loader-list strong{max-width:100%;overflow:hidden;color:#e6e3f1;font-size:10.5px;text-overflow:ellipsis}
+  .scene-loader-list small{max-width:100%;overflow:hidden;color:#777583;font-size:9px;text-overflow:ellipsis}
+  .scene-loader-empty{margin:0;color:#777583;font-size:10px;line-height:1.5}
   .context-dismiss{position:fixed;inset:0;z-index:30;border:0;background:transparent}
   .entity-context-menu{position:fixed;z-index:31;width:194px;padding:5px;border:1px solid #383845;border-radius:8px;background:#1b1b23;box-shadow:0 12px 36px #0009}
   .entity-context-menu button{display:block;width:100%;height:30px;padding:0 10px;border:0;border-radius:4px;background:transparent;color:#e6e3f1;text-align:left;font-size:11px;cursor:pointer}

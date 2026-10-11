@@ -44,7 +44,7 @@ Right-click an object in the viewport or Hierarchy to open its context menu. It 
 
 ### Save and open scenes
 
-Use the scene menu at the left of the top bar or the File menu to create, open, and save a scene. **Ctrl+S** saves. Browser scenes use JSON files. In the desktop app, Open and Save use native dialogs and accept `.simu` or `.json` scene files. The scene name area shows whether there are unsaved edits.
+Use the scene menu at the left of the top bar or the File menu to create, open, rename, and save a scene. The scene name is editable from **Rename scene** and is stored in the scene file. **Ctrl+S** saves the current scene as its own JSON file (or writes the selected desktop `.simu`/`.json` path). Open **Scene Loader** from File or View to show a movable window with recent scenes, a file browser button, and **Save current scene as JSON**. The last ten opened or saved scenes appear in the list. Browser recents are cached on this device; desktop recents use their file paths. The scene name area shows whether there are unsaved edits.
 
 ## Inspector and components
 
