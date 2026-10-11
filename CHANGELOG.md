@@ -4,6 +4,13 @@ Record meaningful project changes during the event, newest first.
 
 ## Event build log
 
+### 2026-10-12T03:25:00+05:30 — Landing donate button and new headline
+
+- Changed: Added a Donate button (heart icon, opens the Razorpay page in a new tab) next to Open editor in the nav, and a Donate link in the footer links. Below 640 px the button shows only the heart. The hero headline is now "You describe it. We make it real." with the user's intro text. Files: `index.html`, `src/landing/landing.css`.
+- Why: Requested a donate link and new hero copy.
+- Validation: Headless Chrome screenshots at 1440 px and 390 px show the button, the footer link, and a two-line headline with no overlap.
+- Limitations: None known.
+
 ### 2026-10-12T03:05:00+05:30 — Daily AI credits and a donation popup
 
 - Changed: AI on the hosted site and dev server is now metered. Each visitor gets 30 credits per UTC day (one credit per model call), and the whole site stops at 3000 a day so the owner's key has a hard daily spending cap. Both numbers are `AI_DAILY_CREDITS` and `AI_GLOBAL_DAILY_CREDITS` in `wrangler.jsonc`. The Worker counts credits in a new `AiCreditLedger` Durable Object keyed by a hash of the visitor's IP. The dev server keeps the same counts in memory. A credit is refunded when the provider call fails. New `GET /api/ai/credits` endpoint. The Assistant shows "N/30 credits left today · Why?" under the prompt box and disables sending at zero. A new "SimuStyle is free, forever" dialog explains that the developer pays for the hosting and AI, that this is why there is a limit, and links to https://razorpay.me/@paulynshemy. It opens from a new heart button in the top bar or the "Why?" link, automatically when credits run out, and once per browser after the third successful AI request. The landing page says "Free forever" and has a footer note with the donation link. The desktop app uses the user's own key and is not metered. Files: `src/ai/credits.ts` (new), `src/ai/chatProxy.ts`, `src/ai/client.ts`, `worker/index.ts`, `wrangler.jsonc`, `vite.config.ts`, `src/editor/SupportDialog.svelte` (new), `src/editor/AIPanel.svelte`, `src/editor/TopBar.svelte`, `src/App.svelte`, `index.html`, `src/landing/landing.css`, `src/landing/main.ts`, `README.md`, `docs/USER_GUIDE.md`, `src/editor/DocsPanel.svelte`, `tests/ai/credits.test.ts` (new).

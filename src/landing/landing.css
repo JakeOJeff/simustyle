@@ -53,6 +53,12 @@ h1, h2, h3 { margin: 0; letter-spacing: -.025em; line-height: 1.08; }
 .logo img { border-radius: 7px; }
 .nav-links { display: flex; gap: 26px; margin-right: auto; font-size: 14px; color: var(--text-2); }
 .nav-links a:hover { color: var(--text); }
+.nav-actions { display: flex; align-items: center; gap: 8px; }
+/* Donate: quiet next to Open editor, with a warm heart that brightens on hover. */
+.btn-donate { gap: 7px; background: transparent; border-color: var(--line-strong); color: var(--text-2); }
+.btn-donate svg { width: 15px; height: 15px; color: #f0789a; transition: transform .15s; }
+.btn-donate:hover { border-color: #f0789a66; background: #f0789a12; color: var(--text); }
+.btn-donate:hover svg { transform: scale(1.15); }
 
 /* Hero */
 .hero { position: relative; padding: 190px 24px 0; text-align: center; isolation: isolate; }
@@ -189,6 +195,8 @@ h2 { font-size: clamp(32px, 4.4vw, 52px); font-weight: 700; letter-spacing: -.03
   .nav-inner { justify-content: space-between; }
 }
 @media (max-width: 640px) {
+  .btn-donate { width: 34px; padding: 0; }
+  .btn-donate span { display: none; }
   .hero { padding: 130px 16px 0; }
   .grid, .platforms { grid-template-columns: 1fr; }
   .section { padding: 90px 16px 0; }
