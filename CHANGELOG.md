@@ -4,6 +4,13 @@ Record meaningful project changes during the event, newest first.
 
 ## Event build log
 
+### 2026-10-11T07:04:00+05:30 — Add a demo walkthrough
+
+- Changed: Added `docs/DEMO.md` with an AI scene prompt and follow-ups, a working Player/Coin script, a broken script for showing Parse, optional command-bar lines, and talking points. Files: `docs/DEMO.md` (new).
+- Why: The participant asked for ready-to-use demo material.
+- Validation: The Player and Coin scripts pass `scriptProblems` (parser, type checker, and word recognizer) with no problems. For the broken script, local autocorrect was run to confirm which words it fixes and that lines 2 and 5–8 are left for the AI.
+- Limitations: AI prompts and the AI Parse result were not run against a live model, and the command-bar lines were not checked. Local autocorrect turns `bump` into `jump`; this is noted in the file. The README does not link to the file yet.
+
 ### 2026-10-11T06:58:00+05:30 — Add Console quick commands and object indexes
 
 - Changed: The Console command bar now accepts `clear`, `play`/`run`/`start`, `pause`, and `stop`; `play` resumes a paused simulation. Script and Console object descriptions can include a zero-based index, such as `all balls[2]`, to select one ranked match. Updated the Console hint and feature documentation. Files: `src/App.svelte`, `src/lang/`, `src/runtime/`, `src/ai/prompt.ts`, `src/editor/DocsPanel.svelte`, README, `docs/USER_GUIDE.md`, and `AI_USAGE.md`.
