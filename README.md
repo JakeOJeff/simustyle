@@ -22,7 +22,7 @@ npm install
 npm run dev
 ```
 
-Open the local address printed by Vite. The browser editor uses WebGL for its 3D viewport.
+Open the local address printed by Vite. The landing page is at `/` and the editor is at `/editor/`. The browser editor uses WebGL for its 3D viewport.
 
 ## Optional AI setup
 
@@ -37,6 +37,23 @@ npm run tauri:dev
 ```
 
 Building the Windows installer requires Rust, the MSVC C++ build tools, WebView2, NSIS, and the `x86_64-pc-windows-msvc` Rust target. See the [Tauri Windows prerequisites](https://v2.tauri.app/start/prerequisites/) and [installer guide](https://v2.tauri.app/distribute/windows-installer/). Build with `npm run tauri:build`.
+
+To publish the installer, push a version tag (for example `git tag v0.2.0 && git push origin v0.2.0`). The `Release Windows app` GitHub Actions workflow builds it on a Windows runner and attaches the `-setup.exe` file to a GitHub release.
+
+## Host on Cloudflare
+
+The site (landing page, editor, and AI proxy) deploys as one Cloudflare Worker with static assets, configured in `wrangler.jsonc`.
+
+```sh
+npx wrangler login     # once
+npm run deploy         # builds dist/ and deploys
+npm run preview:cf     # builds and runs the Worker locally
+```
+
+The Worker serves `dist/` and handles two routes itself:
+
+- `POST /api/ai/chat`: the same AI proxy as the dev server. It returns "AI is not configured" until you add secrets with `npx wrangler secret put AI_API_KEY` and `npx wrangler secret put AI_MODEL` (and optionally `AI_BASE_URL`). Anyone who can reach the site can use that key, so set provider spending limits first.
+- `GET /download/windows`: redirects to the newest GitHub release's `-setup.exe`, or to the releases page if there is none. Change `GITHUB_REPO` in `wrangler.jsonc` if the repository moves.
 
 ## Project docs
 

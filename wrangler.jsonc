@@ -1,0 +1,18 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "simustyle",
+  "main": "worker/index.ts",
+  "compatibility_date": "2026-09-01",
+  "assets": {
+    // Built by `npm run build`: landing page at /, editor at /editor/.
+    "directory": "./dist",
+    "binding": "ASSETS",
+    "html_handling": "auto-trailing-slash",
+    "run_worker_first": ["/api/*", "/download/*"]
+  },
+  "vars": {
+    "GITHUB_REPO": "JakeOJeff/simustyle"
+  }
+  // AI is off until you add secrets: `npx wrangler secret put AI_API_KEY` and `npx wrangler secret put AI_MODEL`
+  // (optionally AI_BASE_URL). Anyone who can open the site can then spend that key.
+}

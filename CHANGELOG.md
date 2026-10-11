@@ -4,6 +4,13 @@ Record meaningful project changes during the event, newest first.
 
 ## Event build log
 
+### 2026-10-12T02:30:00+05:30 — Add landing page and Cloudflare hosting
+
+- Changed: Added a landing page at `/` with a live three.js hero scene, an editor screenshot, feature and scripting sections, and "Open in browser" / "Download for Windows" buttons. Moved the editor to `/editor/` (Vite now builds two pages; the Tauri window opens `editor/index.html`). Added a Cloudflare Worker (`worker/index.ts`, `wrangler.jsonc`) that serves `dist/`, runs the AI proxy at `/api/ai/chat`, and redirects `/download/windows` to the latest GitHub release installer. Moved the AI proxy logic into `src/ai/chatProxy.ts` so the dev server and Worker share it. Added `npm run deploy` and `npm run preview:cf`, and a GitHub Actions workflow that builds and releases the Windows installer on `v*` tags. Files: `index.html`, `editor/index.html`, `src/landing/*`, `src/ai/chatProxy.ts`, `vite.config.ts`, `worker/index.ts`, `wrangler.jsonc`, `.github/workflows/release-windows.yml`, `src-tauri/tauri.conf.json`, `package.json`, `tsconfig.json`, `README.md`.
+- Why: Give the project a public home page with both ways in, and host it on Cloudflare.
+- Validation: `tsc --noEmit` and `vite build` pass. Under `wrangler dev`, `/` and `/editor/` load, `/editor` redirects to `/editor/`, a demo scene plays with physics, `/api/ai/chat` returns the "not configured" error without secrets, and `/download/windows` redirects to the releases page. Checked the landing page in headless Chrome at 1440 px and 390 px wide.
+- Limitations: Not yet deployed; deploying needs `wrangler login`. The download link falls back to the releases page until the first tagged release. The release workflow and the Tauri `editor/index.html` window URL have not been run. A hosted AI key would be usable by any visitor.
+
 ### 2026-10-12T01:40:00+05:30 — Fix Play doing nothing on a fresh dev server
 
 - Changed: Added `@dimforge/rapier3d-compat` to Vite's `optimizeDeps.include`. Files: `vite.config.ts`.
