@@ -4,7 +4,8 @@
 //      context) and splice its replacements back in. A replacement that still
 //      fails is sent back with its errors; a fix that reveals a masked error on
 //      another line targets that line next.
-// Valid lines are never touched. Every result is checked with the real parser,
+// Valid lines are never touched. Lines still broken after the last call are
+// reported, while the fixed ones are kept. Every fix is checked with the real parser,
 // checker, and word recognizer.
 import { autocorrect, scriptProblems, type ScriptProblem } from "../lang/autocorrect";
 import { declaredNames } from "../lang/fuzzy";
@@ -63,7 +64,8 @@ const SYSTEM_PROMPT = `You fix broken lines in scripts for a 3D scene editor. Us
 ${SCRIPT_AGENT_SPEC}
 
 ## Rules
-- Only rewrite the listed broken lines. Never add actions, events, objects, or values the user did not write.
+- Only rewrite the listed broken lines. Never add actions, events, or objects the user did not write.
+- Something the user counts or tracks ("give me a point", "lose a life", "add a coin") becomes a variable: "increase score by 1", "decrease lives by 1". That is their intent, not an addition.
 - Always return a valid replacement for every listed line, even when the wording is odd or illogical: make sense of it as the closest supported script that keeps the user's words and intent.
 - Keep the user's own action, target, values, and order. Map casual or unsupported words to the nearest supported ones (begins → starts, tint → paint, hop → bounce).
 - Supported triggers stay as written (an object-added trigger stays "when [object] is added").
@@ -241,5 +243,14 @@ export async function runScriptRewrite(request: ScriptRewriteRequest, complete: 
     problems = scriptProblems(current, names);
     if (!problems.length) return { source: current, meaning: notes.join(" "), stage: "lines", aiCalls };
   }
-  throw new Error(`Parse could not fix every line after ${aiCalls} AI calls: Line ${problems[0]!.line}: ${problems[0]!.message}`);
+
+  // Some lines are still broken. Report each with the AI's last attempt, and keep
+  // the lines that were fixed rather than discarding them.
+  const unresolved = [...groupByLine(problems)].map(([line, messages]) => {
+    const tried = rejected.find((fix) => fix.line === line);
+    return `Line ${line}: ${messages[0]}${tried ? ` (AI's last try ${JSON.stringify(tried.text.trim())} failed: ${tried.problems[0]})` : " (AI returned no fix for it)"}`;
+  });
+  if (current === request.source) throw new Error(`Parse could not fix the script after ${aiCalls} AI calls. ${unresolved.join(" ")}`);
+  notes.push(`Still broken, edit by hand: ${unresolved.join(" ")}`);
+  return { source: current, meaning: notes.join(" "), stage: "lines", aiCalls };
 }

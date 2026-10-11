@@ -99,9 +99,29 @@ describe("runScriptRewrite", () => {
     expect(model.calls[1]!.messages[1]!.content).not.toContain("Line 2 (");
   });
 
-  it("gives up with the remaining error when no fix compiles", async () => {
+  it("fails with the AI's last attempt when no line could be fixed", async () => {
     const bad = { lines: [{ line: 2, text: "  move gibberish wrongly" }], meaning: "" };
     const model = fakeModel([bad, bad, bad, bad]);
-    await expect(runScriptRewrite({ source: "when clicked\n  move the object near this up 2", owner, entities }, model.complete)).rejects.toThrow(/could not fix every line after 4 AI calls/);
+    await expect(runScriptRewrite({ source: "when clicked\n  move the object near this up 2", owner, entities }, model.complete))
+      .rejects.toThrow(/after 4 AI calls\. Line 2: .*AI's last try "move gibberish wrongly" failed/);
+  });
+
+  it("keeps fixed lines and reports the ones still broken", async () => {
+    const reply = { lines: [{ line: 2, text: "  move Ball1 up 2" }, { line: 3, text: "  zorp" }], meaning: "" };
+    const stuck = { lines: [{ line: 3, text: "  zorp" }], meaning: "" };
+    const model = fakeModel([reply, stuck, stuck, stuck]);
+    const result = await runScriptRewrite({ source: "when clicked\n  move the object near this up 2\n  give me a point", owner, entities }, model.complete);
+    expect(result.source).toBe("when clicked\n  move Ball1 up 2\n  give me a point");
+    expect(result.meaning).toMatch(/Still broken, edit by hand: Line 3: .*"zorp"/);
+  });
+
+  it("names a still-broken line the AI never answered", async () => {
+    const model = fakeModel([
+      { lines: [{ line: 2, text: "  move Ball1 up 2" }], meaning: "" },
+      { lines: [], meaning: "" }, { lines: [], meaning: "" }, { lines: [], meaning: "" }
+    ]);
+    const result = await runScriptRewrite({ source: "when clicked\n  move the object near this up 2\n  give me a point", owner, entities }, model.complete);
+    expect(result.meaning).toContain("Line 3:");
+    expect(result.meaning).toContain("AI returned no fix for it");
   });
 });

@@ -4,6 +4,20 @@ Record meaningful project changes during the event, newest first.
 
 ## Event build log
 
+### 2026-10-11T07:11:00+05:30 — Keep Parse's fixed lines when one line cannot be fixed
+
+- Changed: When lines are still broken after 4 AI calls, Parse now keeps the lines it did fix and lists the broken ones in the review ("Still broken, edit by hand"), each with the AI's last rejected attempt and its error, or a note that the AI returned no fix. It only fails outright when nothing changed, and that error now includes the same detail. The Parse prompt now says that something the user counts ("give me a point") becomes a variable (`increase score by 1`); the earlier "never add values" rule had discouraged that. Files: `src/ai/scriptRewrite.ts`, `tests/ai/scriptRewrite.test.ts`, and `AI_USAGE.md`.
+- Why: The participant hit `AI rewrite failed: Parse could not fix every line after 4 AI calls: Line 8: Unexpected text after statement` on the demo script. Probing the parser showed that error comes from the untouched `give me a point`, so every AI fix for that line was rejected or missing, and the whole result was discarded with no hint why.
+- Validation: `npm run typecheck` and `npx vitest run` (129 tests, 3 new or changed for this) passed.
+- Limitations: The AI's actual rejected replies from the participant's run were not captured, so the prompt change addresses the likely cause rather than a confirmed one. Not retried against a live model.
+
+### 2026-10-11T07:09:00+05:30 — Add AI second-pass scene review and Space Play shortcut
+
+- Changed: The scene assistant now builds a draft, runs game-start scripts plus five isolated script ticks, captures print output and runtime issues, then requests an independent second pass against the player's intent and preflight output. The second scene is revalidated before it reaches the editor. The AI panel shows preflight details and progress. Space now starts Play while stopped, resumes while paused, and remains a script input during Play. Files: `src/ai/agent.ts`, `src/App.svelte`, `src/editor/AIPanel.svelte`, `src/editor/DocsPanel.svelte`, `tests/ai/agent.test.ts`, README, and `docs/USER_GUIDE.md`.
+- Why: Catch script/runtime problems and mismatches before changing the live scene, and make Space a Play control while retaining the `when space is pressed` behavior.
+- Validation: `npm run check` passed TypeScript, Svelte diagnostics (0 errors/0 warnings), all 126 tests, and the production build; `git diff --check` passed. The build reports the large-chunk warning.
+- Limitations: The preview is isolated and does not render the scene or run Rapier physics; visual appearance, collisions, and physics behavior are not verified. No live AI provider request was made.
+
 ### 2026-10-11T07:04:00+05:30 — Add a demo walkthrough
 
 - Changed: Added `docs/DEMO.md` with an AI scene prompt and follow-ups, a working Player/Coin script, a broken script for showing Parse, optional command-bar lines, and talking points. Files: `docs/DEMO.md` (new).
