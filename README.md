@@ -38,7 +38,7 @@ npm run tauri:dev
 
 Building the Windows installer requires Rust, the MSVC C++ build tools, WebView2, NSIS, and the `x86_64-pc-windows-msvc` Rust target. See the [Tauri Windows prerequisites](https://v2.tauri.app/start/prerequisites/) and [installer guide](https://v2.tauri.app/distribute/windows-installer/). Build with `npm run tauri:build`.
 
-To publish the installer, push a version tag (for example `git tag v0.2.0 && git push origin v0.2.0`). The `Release Windows app` GitHub Actions workflow builds it on a Windows runner and attaches the `-setup.exe` file to a GitHub release.
+To publish the installer, create a release on GitHub (Releases → Draft a new release, tag such as `v0.3.0`, Publish). The `Release Windows app` workflow stamps the app with that version, builds it on a Windows runner, and attaches `SimuStyle_<version>_x64-setup.exe` to the release. Running the workflow by hand from the Actions tab builds the installer as an artifact without touching any release.
 
 ## Host on Cloudflare
 

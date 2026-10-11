@@ -4,6 +4,13 @@ Record meaningful project changes during the event, newest first.
 
 ## Event build log
 
+### 2026-10-12T04:00:00+05:30 — Build the Windows app on every GitHub release
+
+- Changed: The `Release Windows app` workflow now runs when a GitHub release is published, not on tag pushes. It checks out the release tag, sets the app version from the tag (`v0.3.0` → `0.3.0`), builds the NSIS installer, and attaches it to that release. It also keeps the installer as a build artifact. Running it by hand builds the artifact without changing any release. Files: `.github/workflows/release-windows.yml`, `README.md`.
+- Why: Requested a desktop build that starts whenever a release is made.
+- Validation: The workflow YAML parses. It has not run on GitHub yet.
+- Limitations: A tag that is not a version like `v1.2.3` fails the build with an error. Releases created by other workflows using the default `GITHUB_TOKEN` do not trigger it.
+
 ### 2026-10-12T03:40:00+05:30 — Landing donate links open the support popup
 
 - Changed: The nav Donate button, the footer Donate link, and "Donate to keep it running" now open the editor's "SimuStyle is free, forever" popup (with today's credit limit from `/api/ai/credits`) instead of going straight to Razorpay; the popup's Donate button opens the payment page. Ctrl/middle-clicks and visits without JavaScript still follow the link. The popup code loads only on first click. Files: `index.html`, `src/landing/main.ts`.

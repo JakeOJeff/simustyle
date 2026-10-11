@@ -1,21 +1,30 @@
-# Builds the Windows installer and publishes it as a GitHub release when a version tag is pushed:
-#   git tag v0.2.0 && git push origin v0.2.0
+# Builds the Windows installer whenever a GitHub release is published and attaches it to that release.
+#   1. On GitHub: Releases → Draft a new release → tag such as v0.3.0 → Publish release.
+#   2. This workflow stamps the app with the tag's version, builds, and uploads SimuStyle_<version>_x64-setup.exe.
 # The site's /download/windows link redirects to the newest release's *-setup.exe.
+# Run it by hand from the Actions tab to get the installer as a build artifact without touching any release.
 name: Release Windows app
 
 on:
-  push:
-    tags: ["v*"]
+  release:
+    types: [published]
   workflow_dispatch:
 
 permissions:
   contents: write
+
+concurrency:
+  group: windows-build-${{ github.event.release.tag_name || github.ref }}
+  cancel-in-progress: true
 
 jobs:
   windows:
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          # Build the commit the release tag points at.
+          ref: ${{ github.event.release.tag_name || github.ref }}
 
       - uses: actions/setup-node@v4
         with:
@@ -32,12 +41,42 @@ jobs:
 
       - run: npm ci
 
-      - uses: tauri-apps/tauri-action@v0
+      # Release v0.3.0 builds app version 0.3.0, so the installer name and About version match the release.
+      - name: Set app version from the release tag
+        if: github.event_name == 'release'
+        shell: bash
+        env:
+          TAG: ${{ github.event.release.tag_name }}
+        run: |
+          VERSION="${TAG#v}"
+          if ! [[ "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?$ ]]; then
+            echo "::error::Release tag '$TAG' is not a version like v1.2.3."
+            exit 1
+          fi
+          node -e '
+            const fs = require("fs");
+            const file = "src-tauri/tauri.conf.json";
+            const config = JSON.parse(fs.readFileSync(file, "utf8"));
+            config.version = process.argv[1];
+            fs.writeFileSync(file, JSON.stringify(config, null, 2) + "\n");
+          ' "$VERSION"
+          echo "Building SimuStyle $VERSION"
+
+      - name: Build and attach the installer to the release
+        if: github.event_name == 'release'
+        uses: tauri-apps/tauri-action@v0
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
-          tagName: ${{ github.ref_type == 'tag' && github.ref_name || 'v__VERSION__' }}
-          releaseName: SimuStyle ${{ github.ref_type == 'tag' && github.ref_name || 'v__VERSION__' }}
-          releaseBody: Windows 10/11 (64-bit) installer. Download the -setup.exe file below.
-          releaseDraft: false
-          prerelease: false
+          releaseId: ${{ github.event.release.id }}
+
+      - name: Build the installer (manual run)
+        if: github.event_name != 'release'
+        uses: tauri-apps/tauri-action@v0
+
+      - name: Keep the installer as a build artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: SimuStyle-windows-installer
+          path: src-tauri/target/release/bundle/nsis/*-setup.exe
+          if-no-files-found: error
