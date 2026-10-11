@@ -3,6 +3,14 @@ import { parseScript } from "../../src/lang/parser.js";
 import { ScriptError } from "../../src/lang/lexer.js";
 
 describe("script parser", () => {
+  it("parses random expressions as move coordinates, not object targets", () => {
+    const program = parseScript("when clicked\n  move it to random -5 to 2 0 0");
+    expect(program.handlers[0]?.body[0]).toMatchObject({
+      kind: "command",
+      command: { name: "move", destination: { kind: "point" } },
+    });
+  });
+
   it("parses typed parameters, top-level statements, and all handler forms", () => {
     const program = parseScript(`param speed: float 0..10 = 3
 param tint: color = #ff5500

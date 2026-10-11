@@ -23,7 +23,7 @@ Statements (prefer these; most commands default to "me" when the object is left 
 
 Targets: me, it, names, variables, my children/parent, all <description>, or [superlative] [color] <ball|box|cube|cylinder|cone|plane|light|group|one> [index] [relation <obj>]. Indexes start at 0 and sort nearest-first unless a superlative is used.
 Values: numbers, "text", colors, true/false, variables, my x|y|z|size|color|name, x of <obj>, distance to <obj>, random 1 to 10, key <name> is pressed, time. Combine with + - * / and compare with: is, is not, is more than, is less than, is at least, is at most, and, or, not.
-Coordinates are separated by spaces or commas; wrap arithmetic in parentheses: move to (my x + 1) 0 0. Comments start with --.
+Coordinates use spaces or commas; parenthesize arithmetic. Random example: move to random -5 to 5 0 0. Comments start with --.
 Only the commands listed above exist; there is no kill, respawn, reset, teleport, or warp. To send something back to a start point (a kill brick, a checkpoint), move it to fixed coordinates, for example:
   when I touch player
     move it to 0 2 0

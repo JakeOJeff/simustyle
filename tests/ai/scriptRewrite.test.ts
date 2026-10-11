@@ -101,12 +101,12 @@ describe("runScriptRewrite", () => {
 
   it("checks fixes top-down so a broken line above cannot hide a bad fix below", async () => {
     const model = fakeModel([
-      { lines: [{ line: 1, text: "when I touch Ball1" }, { line: 2, text: "  move Ball1 to random 1 to 10 random 1 to 10 random 1 to 10" }], meaning: "" },
-      { lines: [{ line: 2, text: "  move Ball1 to (random 1 to 10) 0 0" }], meaning: "" }
+      { lines: [{ line: 1, text: "when I touch Ball1" }, { line: 2, text: "  move Ball1 to random -5 2 random" }], meaning: "" },
+      { lines: [{ line: 2, text: "  move Ball1 to random -5 to 2 0 0" }], meaning: "" }
     ]);
     const result = await runScriptRewrite({ source: "when i jump into Ball1\n  move the object near this somewhere random", owner, entities }, model.complete);
-    expect(result.source).toBe("when I touch Ball1\n  move Ball1 to (random 1 to 10) 0 0");
-    expect(model.calls[1]!.messages[1]!.content).toContain("your previous fix");
+    expect(result.source).toBe("when I touch Ball1\n  move Ball1 to random -5 to 2 0 0");
+    expect(model.calls[1]!.messages[1]!.content).toContain("Expected 'to'");
   });
 
   it("comments out a line no fix compiles, and the block it leaves empty", async () => {

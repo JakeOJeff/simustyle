@@ -705,7 +705,8 @@ class Parser {
       this.advance();
       const after = this.parseRelation();
       if (after) return { kind: "relative", relation: after, target: this.parseTarget() };
-      if (!this.startsNumber() && this.peek().kind === "identifier" && !this.atDuration()) return { kind: "relative", relation: "near", target: this.parseTarget() };
+      const startsRandomValue = this.word("random") || (this.word("a") && this.peek(1).value === "random");
+      if (!this.startsNumber() && !startsRandomValue && this.peek().kind === "identifier" && !this.atDuration()) return { kind: "relative", relation: "near", target: this.parseTarget() };
       return { kind: "point", value: this.parseVector() };
     }
     if (this.word("by")) { this.advance(); return { kind: "offset", value: this.parseVector() }; }

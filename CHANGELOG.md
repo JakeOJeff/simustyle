@@ -4,6 +4,13 @@ Record meaningful project changes during the event, newest first.
 
 ## Event build log
 
+### 2026-10-11T07:45:00+05:30 — Fix random move coordinates and show color hover swatches
+
+- Changed: The script parser now reads `random` after `move ... to` as a numeric coordinate expression, and the AI script guide shows the accepted random-range syntax. Hovering a color token now shows its swatch and hex value. Files: `src/lang/parser.ts`, `src/ai/prompt.ts`, `src/editor/ScriptEditor.svelte`, tests, README, and `docs/USER_GUIDE.md`.
+- Why: The participant's Parse attempt returned “Unexpected text after statement” because `random` was treated as an object target; the participant also asked to preview colors on hover.
+- Validation: Targeted parser/rewrite/prompt tests passed (24 tests); `npm run check` passed TypeScript, Svelte diagnostics (0 errors/0 warnings), all 130 tests, and production build. A second `npm run build` also passed. `git diff --check` passed.
+- Limitations: The reported random syntax was reproduced with a mocked AI reply, not a live provider call. The hover tooltip was typechecked and built but not visually exercised in an interactive browser.
+
 ### 2026-10-11T07:26:00+05:30 — Parse always returns a runnable script
 
 - Changed: AI line fixes are now checked top-down, with later line numbers adjusted when a fix spans several lines, so a broken line above can no longer hide a bad replacement below it. If lines are still broken after 4 AI calls, Parse comments them out as `-- Parse could not convert: <original text>` (and any event or block left with only comments), keeps every line it did fix, and lists each one in the review with the AI's last attempt. Files: `src/ai/scriptRewrite.ts`, `tests/ai/scriptRewrite.test.ts`, and `AI_USAGE.md`.

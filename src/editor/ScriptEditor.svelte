@@ -96,7 +96,7 @@
   }
 
   // --- Hover card: which scene object a word in the script refers to ---
-  interface HoverCard { left: number; top: number; title: string; items: ParseEntity[] }
+  interface HoverCard { left: number; top: number; title: string; items: ParseEntity[]; swatch?: string; colorText?: string }
   let hoverCard = $state<HoverCard | null>(null);
   let owningEntity = $derived(ownerId ? entityById.get(ownerId) ?? null : null);
   const selfWords = new Set(["me", "my", "myself", "i", "self"]);
@@ -148,7 +148,14 @@
       const end = start + span.text.length;
       if (column < end) {
         const found = span.text.trim() && span.cls !== "comment" ? resolveWord(span.text, previous) : null;
-        hoverCard = found ? {
+        hoverCard = span.swatch ? {
+          left: Math.max(4, padLeft + start * charWidth - textarea.scrollLeft),
+          top: padTop + (index + 1) * lineHeight - textarea.scrollTop + 2,
+          title: "Color",
+          items: [],
+          swatch: span.swatch,
+          colorText: span.text
+        } : found ? {
           ...found,
           left: Math.max(4, padLeft + start * charWidth - textarea.scrollLeft),
           top: padTop + (index + 1) * lineHeight - textarea.scrollTop + 2
@@ -358,6 +365,9 @@
         {#if hoverCard}
           <div class="hover-card" role="tooltip" style="left:{hoverCard.left}px;top:{hoverCard.top}px">
             <small>{hoverCard.title}</small>
+            {#if hoverCard.swatch}
+              <div class="color-detail"><i class="swatch" style="background:{hoverCard.swatch}"></i><code>{hoverCard.colorText} · {hoverCard.swatch}</code></div>
+            {/if}
             {#each hoverCard.items.slice(0, 4) as item (item.id)}
               <div class="hover-item">
                 <b>{#if item.color}<i class="swatch" style="background:{item.color}"></i>{/if}{item.name}</b>
@@ -367,7 +377,7 @@
                 </span>
               </div>
             {:else}
-              <span class="detail">No matching object in the scene yet.</span>
+              {#if !hoverCard.swatch}<span class="detail">No matching object in the scene yet.</span>{/if}
             {/each}
             {#if hoverCard.items.length > 4}<span class="detail">and {hoverCard.items.length - 4} more</span>{/if}
           </div>
@@ -467,6 +477,7 @@
   .fuzzy-box{position:absolute;box-sizing:border-box;border:1.5px dashed #ffd479aa;border-radius:4px;background:#ffd47910;padding:0}
   .hover-card{position:absolute;z-index:5;display:grid;gap:6px;min-width:170px;max-width:290px;padding:8px 10px;border:1px solid #ffd47944;border-radius:6px;background:#1f1d24f2;box-shadow:0 8px 24px #0008;pointer-events:none;font-size:10.5px}
   .hover-card small{color:#bfa865;font:9px 'DM Mono',monospace;letter-spacing:.04em}
+  .color-detail{display:flex;align-items:center;gap:7px}.color-detail .swatch{width:18px;height:18px;border-radius:4px}.color-detail code{color:#e7e2f0;font:10px 'DM Mono',monospace}
   .hover-item{display:grid;grid-template-columns:1fr auto;gap:2px 8px}.hover-item b{display:flex;align-items:center;gap:5px;color:#ffe2a3;font-weight:600}
   .hover-item .kind{color:#7fd1ff;font:9px 'DM Mono',monospace;text-transform:uppercase}.hover-card .detail{grid-column:1/-1;color:#a7a4b3;font-size:10px}
   .swatch{width:9px;height:9px;border-radius:2px;border:1px solid #ffffff33}
