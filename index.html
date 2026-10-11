@@ -21,9 +21,7 @@
         <nav class="nav-links" aria-label="Primary">
           <a href="#ai">AI Parse</a>
           <a href="#features">Features</a>
-          <a href="#scripting">Scripting</a>
           <a href="#download">Download</a>
-          <a href="https://github.com/JakeOJeff/simustyle/blob/main/docs/USER_GUIDE.md">Docs</a>
           <a href="https://github.com/JakeOJeff/simustyle">GitHub</a>
         </nav>
         <a class="btn btn-primary btn-sm" href="/editor/">Open editor</a>
@@ -36,10 +34,7 @@
         <div class="hero-fade" aria-hidden="true"></div>
         <div class="hero-content">
           <h1>Build worlds that<br /><span class="grad">move, collide &amp; react.</span></h1>
-          <p class="lede">
-            A 3D scene, physics, and animation editor with AI built in. Describe a scene and it gets built.
-            Write a script in your own words and AI Parse turns it into code that runs.
-          </p>
+          <p class="lede">A 3D scene, physics, and animation editor with AI built in. Describe it, script it in plain words, press Play.</p>
           <div class="cta-row">
             <a class="btn btn-primary btn-lg" href="/editor/">
               <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M8 5v14l11-7z" /></svg>
@@ -50,7 +45,7 @@
               Download for Windows
             </a>
           </div>
-          <p class="cta-note" id="cta-note">No account needed · Runs on WebGL · Windows 10/11, 64&#8209;bit installer</p>
+          <p class="cta-note" id="cta-note">Free · No account needed</p>
         </div>
 
         <div class="shot-wrap">
@@ -61,16 +56,11 @@
         </div>
       </section>
 
-      <section class="strip" aria-label="Built with">
-        <span>Built on</span>
-        <b>Three.js</b><b>Rapier physics</b><b>Svelte</b><b>Tauri</b><b>WebGL</b>
-      </section>
-
       <section class="section ai" id="ai">
         <div class="section-head">
           <p class="kicker">✦ AI Parse</p>
           <h2>Type it how you'd say it.<br />SimuStyle makes it run.</h2>
-          <p>Misspell it, ramble, describe what you want. Press Parse and your script becomes valid code, without the AI rewriting what already worked.</p>
+          <p>Misspell it, ramble, describe what you want. Parse turns it into valid code and leaves working lines alone.</p>
         </div>
 
         <div class="parse" id="parse-demo">
@@ -111,31 +101,25 @@
           <li data-step="local">
             <span class="step-n">1</span>
             <h3>Typos fixed instantly</h3>
-            <p>Misspelled keywords like <code>wiat</code> and <code>presed</code> are corrected on your machine. No AI call, no waiting.</p>
+            <p>Corrected on your machine. No AI call.</p>
           </li>
           <li data-step="ai">
             <span class="step-n">2</span>
             <h3>AI fixes only what's broken</h3>
-            <p>The model reads the whole script for context but rewrites only the failing lines. It maps loose wording to real commands and never adds actions you didn't ask for.</p>
+            <p>Loose wording becomes real commands. Nothing extra is added.</p>
           </li>
           <li data-step="check">
             <span class="step-n">3</span>
             <h3>Checked before you see it</h3>
-            <p>Every fix goes through the real parser and type checker. You review the highlighted changes, then choose <b>Use rewrite</b>.</p>
+            <p>Every fix passes the real parser before you accept it.</p>
           </li>
         </ol>
 
         <div class="assistant">
           <div class="assistant-copy">
-            <p class="kicker">AI scene assistant</p>
-            <h3>Describe a whole scene. Get a playable one.</h3>
-            <p>One prompt builds grouped objects, materials, lights, physics bodies, and scripts. Follow-ups edit the scene you already have.</p>
-            <ul class="checks">
-              <li>Drafts the scene, then test-runs its scripts before applying anything</li>
-              <li>A second pass checks the draft against your request</li>
-              <li>Lands as one undoable edit, so a single Ctrl+Z reverts it</li>
-              <li>Works with any OpenAI-compatible model</li>
-            </ul>
+            <p class="kicker">Scene assistant</p>
+            <h3>Describe a whole scene.<br />Get a playable one.</h3>
+            <p>One prompt builds objects, lights, physics, and scripts, test-runs them, and lands as a single undoable edit.</p>
           </div>
           <div class="prompt-card">
             <div class="pane-head"><span>Assistant</span><small>prompt</small></div>
@@ -152,38 +136,27 @@
         <div class="section-head">
           <p class="kicker">Everything in one editor</p>
           <h2>From empty scene to playable demo.</h2>
-          <p>The tools you'd expect from a desktop 3D package, tuned to get an idea moving in minutes.</p>
         </div>
         <div class="grid">
           <article class="card">
             <div class="icon"><svg viewBox="0 0 24 24"><path d="M12 2 3 7v10l9 5 9-5V7zm0 2.3L18.7 8 12 11.7 5.3 8zM5 9.7l6 3.3v6.6l-6-3.3zm8 9.9V13l6-3.3v6.6z" /></svg></div>
             <h3>Scene editor</h3>
-            <p>Viewport, hierarchy, and inspector. Orbit, pan, parent objects, and right-click to drop shapes, lights, and cameras where you point.</p>
+            <p>Viewport, hierarchy, and inspector. Drag objects right where you want them.</p>
           </article>
           <article class="card">
             <div class="icon"><svg viewBox="0 0 24 24"><circle cx="12" cy="7" r="4" /><path d="M3 20h18v2H3zM11 12h2v6h-2z" /></svg></div>
             <h3>Real physics</h3>
-            <p>Rigid bodies and collisions powered by Rapier. Press Play to simulate, Stop to snap back to your edit.</p>
-          </article>
-          <article class="card">
-            <div class="icon"><svg viewBox="0 0 24 24"><path d="M4 5h16v2H4zm0 6h10v2H4zm0 6h13v2H4z" /></svg></div>
-            <h3>Plain-English scripts</h3>
-            <p>Write behaviors like <code>when clicked spin fast</code>. Events, variables, keys, and messages — no boilerplate.</p>
+            <p>Rigid bodies and collisions by Rapier. Play to simulate, Stop to snap back.</p>
           </article>
           <article class="card">
             <div class="icon"><svg viewBox="0 0 24 24"><path d="M3 18c4 0 5-12 9-12s5 12 9 12" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" /></svg></div>
             <h3>Keyframe animation</h3>
-            <p>A timeline with 30+ easing curves, a bezier editor, and one-click presets like bounce, float, and pulse.</p>
+            <p>A timeline with easing curves and one-click presets like bounce and float.</p>
           </article>
           <article class="card">
             <div class="icon"><svg viewBox="0 0 24 24"><path d="M12 3v11m0 0-4-4m4 4 4-4M4 17v3h16v-3" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" /></svg></div>
             <h3>Export anywhere</h3>
-            <p>Ship your scene as a GLB model, a standalone HTML page anyone can open, or a WebM video.</p>
-          </article>
-          <article class="card">
-            <div class="icon"><svg viewBox="0 0 24 24"><path d="M12 2l2.2 5.8L20 10l-5.8 2.2L12 18l-2.2-5.8L4 10l5.8-2.2zM19 16l1 2.5 2.5 1-2.5 1L19 23l-1-2.5-2.5-1 2.5-1z" /></svg></div>
-            <h3>AI built in</h3>
-            <p>Build scenes from a description and fix scripts with AI Parse. <a class="inline" href="#ai">See how it works →</a></p>
+            <p>Ship a GLB model, a standalone HTML page, or a WebM video.</p>
           </article>
         </div>
       </section>
@@ -192,29 +165,17 @@
         <div class="split-copy">
           <p class="kicker">Scripting</p>
           <h2>Logic you can read out loud.</h2>
-          <p>
-            SimuStyle's script language reads like instructions to a friend. Respond to clicks, keys, and collisions,
-            keep score, broadcast messages, and animate over time — then press Play.
-          </p>
-          <ul class="checks">
-            <li>Events: game start, forever, clicks, keys, touches</li>
-            <li>Tweens: <code>move up 1 over 0.25 seconds</code></li>
-            <li>Tunable settings exposed as Inspector sliders</li>
-          </ul>
+          <p>Respond to clicks, keys, and collisions, keep score, and animate over time. It reads like instructions to a friend.</p>
           <a class="btn btn-ghost" href="/editor/">Try it in the editor →</a>
         </div>
         <pre class="code" aria-label="Example SimuStyle script"><span class="c-file">Player.simu</span>
-<span class="k">setting</span> speed = <span class="n">0.12</span> <span class="k">from</span> <span class="n">0</span> <span class="k">to</span> <span class="n">0.35</span>
-
 <span class="k">when</span> game starts
   <span class="f">set</span> score <span class="k">to</span> <span class="n">0</span>
   <span class="f">paint</span> blue
 
 <span class="k">forever</span>
   <span class="k">if</span> key left <span class="k">is</span> pressed
-    <span class="f">move</span> left speed
-  <span class="k">if</span> key right <span class="k">is</span> pressed
-    <span class="f">move</span> right speed
+    <span class="f">move</span> left <span class="n">0.1</span>
 
 <span class="k">when</span> I touch a coin
   <span class="f">destroy</span> it
@@ -229,41 +190,17 @@
         </div>
         <div class="platforms">
           <article class="platform featured">
-            <div class="platform-top">
-              <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9" fill="none" stroke="currentColor" stroke-width="1.8" /><path d="M3 12h18M12 3c2.5 2.7 3.8 5.7 3.8 9s-1.3 6.3-3.8 9c-2.5-2.7-3.8-5.7-3.8-9S9.5 5.7 12 3z" fill="none" stroke="currentColor" stroke-width="1.8" /></svg>
-              <span class="tag">Instant</span>
-            </div>
+            <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9" fill="none" stroke="currentColor" stroke-width="1.8" /><path d="M3 12h18M12 3c2.5 2.7 3.8 5.7 3.8 9s-1.3 6.3-3.8 9c-2.5-2.7-3.8-5.7-3.8-9S9.5 5.7 12 3z" fill="none" stroke="currentColor" stroke-width="1.8" /></svg>
             <h3>Web editor</h3>
-            <p>Nothing to install. Open it in Chrome, Edge, or Firefox on any desktop computer and start building.</p>
-            <ul class="checks">
-              <li>Starts in seconds</li>
-              <li>Always the latest version</li>
-              <li>Save and load scene files</li>
-            </ul>
+            <p>Nothing to install. Runs in any modern desktop browser.</p>
             <a class="btn btn-primary btn-block" href="/editor/">Open in browser</a>
           </article>
           <article class="platform">
-            <div class="platform-top">
-              <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 5.5 10.4 4.5v7H3zM11.4 4.35 21 3v8.5h-9.6zM3 12.5h7.4v7L3 18.5zM11.4 12.5H21V21l-9.6-1.35z" /></svg>
-              <span class="tag">Desktop</span>
-            </div>
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 5.5 10.4 4.5v7H3zM11.4 4.35 21 3v8.5h-9.6zM3 12.5h7.4v7L3 18.5zM11.4 12.5H21V21l-9.6-1.35z" /></svg>
             <h3>Windows app</h3>
-            <p>A native desktop app with its own window, system file dialogs, a recent-scenes list, and in-app AI settings.</p>
-            <ul class="checks">
-              <li>Windows 10 and 11, 64-bit</li>
-              <li>Works offline</li>
-              <li>Native open and save dialogs</li>
-            </ul>
+            <p>Works offline, with native file dialogs. Windows 10 and 11.</p>
             <a class="btn btn-ghost btn-block" href="/download/windows" data-download>Download for Windows</a>
           </article>
-        </div>
-      </section>
-
-      <section class="final">
-        <h2>Your next scene is one click away.</h2>
-        <div class="cta-row center">
-          <a class="btn btn-primary btn-lg" href="/editor/">Open in browser</a>
-          <a class="btn btn-ghost btn-lg" href="/download/windows" data-download>Download for Windows</a>
         </div>
       </section>
     </main>

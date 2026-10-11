@@ -16,17 +16,8 @@ function onScroll() {
 window.addEventListener("scroll", onScroll, { passive: true });
 onScroll();
 
-// Card glow follows the pointer.
-for (const card of document.querySelectorAll<HTMLElement>(".card")) {
-  card.addEventListener("pointermove", (event) => {
-    const box = card.getBoundingClientRect();
-    card.style.setProperty("--mx", `${event.clientX - box.left}px`);
-    card.style.setProperty("--my", `${event.clientY - box.top}px`);
-  });
-}
-
 // Fade sections in as they enter the viewport.
-const revealTargets = document.querySelectorAll<HTMLElement>(".section-head, .card, .split > *, .parse, .steps li, .assistant > *, .platform, .final, .strip");
+const revealTargets = document.querySelectorAll<HTMLElement>(".section-head, .card, .split > *, .parse, .steps li, .assistant > *, .platform");
 if (!reducedMotion && "IntersectionObserver" in window) {
   const observer = new IntersectionObserver((entries) => {
     for (const entry of entries) {
@@ -37,7 +28,7 @@ if (!reducedMotion && "IntersectionObserver" in window) {
   }, { rootMargin: "0px 0px -8% 0px" });
   revealTargets.forEach((element, index) => {
     element.classList.add("reveal");
-    element.style.transitionDelay = element.classList.contains("card") ? `${(index % 3) * 70}ms` : "";
+    element.style.transitionDelay = element.classList.contains("card") ? `${(index % 4) * 70}ms` : "";
     observer.observe(element);
   });
 }
@@ -98,7 +89,7 @@ if (parseDemo && !reducedMotion && "IntersectionObserver" in window) {
 // The installer is Windows-only; say so plainly to visitors on other systems.
 const isWindows = /Windows/i.test(navigator.userAgent);
 const note = document.getElementById("cta-note");
-if (note && !isWindows) note.textContent = "No account needed · Runs in any modern desktop browser · Desktop app available for Windows";
+if (note && !isWindows) note.textContent = "Free · No account needed · Desktop app for Windows";
 
 // Load three.js after first paint so the headline and buttons show immediately.
 const canvas = document.getElementById("hero-canvas") as HTMLCanvasElement | null;

@@ -4,6 +4,13 @@ Record meaningful project changes during the event, newest first.
 
 ## Event build log
 
+### 2026-10-12T02:55:00+05:30 — Declutter the landing page
+
+- Changed: The nav has four links. The hero intro is one sentence and the note under the buttons is shorter. Removed the "Built on" strip, the final repeated call-to-action, the assistant checklist, the scripting checklist, and the download tags and checklists. The AI Parse steps are plain text with a top rule that lights up as the demo plays. Features is one row of four calmer cards (the AI and scripting cards repeated other sections). The example script is shorter. Removed the pointer glow on cards. Page height at 1440 px went from about 5650 px to 4390 px. Files: `index.html`, `src/landing/landing.css`, `src/landing/main.ts`.
+- Why: Requested a less cluttered landing page.
+- Validation: `vite build` succeeds. Full-page headless Chrome screenshots at 1440 px and 390 px show no overlap or horizontal scroll.
+- Limitations: None known.
+
 ### 2026-10-12T02:50:00+05:30 — Feature AI Parse on the landing page
 
 - Changed: Added an AI section after the hero with an animated AI Parse demo (a casual script on the left; on the right, typo fixes, then AI fixes, then the parser check), a three-step explanation, and an AI scene assistant block. Updated the hero text and AI feature card to lead with AI and added an "AI Parse" nav link. Removed the version pill above the headline and the purple glows under buttons, behind the screenshot, behind the code card, and behind the final call to action. Files: `index.html`, `src/landing/landing.css`, `src/landing/main.ts`.
