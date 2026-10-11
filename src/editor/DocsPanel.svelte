@@ -58,7 +58,7 @@
 
 when space is pressed
   move up 2 over 0.5 seconds</pre>
-      <p>Tab and Shift+Tab indent, Enter auto-indents, and Ctrl+/ toggles comments. Apply changes with <b>Apply</b> or Ctrl+S. The editor also applies edits when you leave it, save, or start Play. <b>✦ Parse</b> fixes typos locally first, then asks AI to fix only the broken lines, and rewrites the whole script only when needed; review the highlighted changes before using them. Hover an object name, <code>me</code>, or a shape word to see which object it refers to.</p>
+      <p>Tab and Shift+Tab indent, Enter auto-indents, and Ctrl+/ toggles comments. Apply changes with <b>Apply</b> or Ctrl+S. The editor also applies edits when you leave it, save, or start Play. <b>✦ Parse</b> fixes typos locally first, then asks AI to fix only the broken lines, never valid ones, without adding actions you did not write; review the highlighted changes before using them. Hover an object name, <code>me</code>, or a shape word to see which object it refers to.</p>
       <p>Console runs supported plain-English commands immediately. While stopped, commands are one undoable edit; during Play or Pause, they affect the live simulation and Stop restores the original scene. For example: <code>add a red ball named player at 0 2 0</code>, <code>move player above the box</code>, or <code>paint player blue</code>. Up and Down recall command history. Waits and glides complete immediately in Console.</p>
       <h3>Common script sentences</h3>
       <ul>

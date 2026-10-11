@@ -43,8 +43,7 @@
   const stageLabels: Record<RewriteStage, string> = {
     none: "",
     local: "Fixed locally — no AI call",
-    lines: "AI fixed only the broken lines",
-    full: "AI rewrote the full script"
+    lines: "AI fixed only the broken lines"
   };
   // Draft lines that are not in the original, so the review shows exactly what changed.
   let changedDraftLines = $derived.by(() => {

@@ -4,6 +4,13 @@ Record meaningful project changes during the event, newest first.
 
 ## Event build log
 
+### 2026-10-11T06:43:00+05:30 — Parse fixes only broken lines and makes sense of odd wording
+
+- Changed: Removed Parse's full-script rewrite stage. After local typo fixes, the AI now gets the whole script as read-only context but may only replace the broken lines; replacements for valid lines are ignored. Each returned line is checked on its own: working fixes are kept, and failed ones are sent back with their errors on the next call (up to 4 AI calls). The prompt now tells the model to always return a valid line by working out what the user meant, mapping odd or unsupported words to the nearest supported ones, and never adding actions, events, or values the user did not write. Files: `src/ai/scriptRewrite.ts`, `src/editor/ScriptEditor.svelte`, `tests/ai/scriptRewrite.test.ts`, `README.md`, `docs/USER_GUIDE.md`, `src/editor/DocsPanel.svelte`, and `AI_USAGE.md`.
+- Why: The participant reported Parse failing on illogical wording instead of rewriting it, and asked that it rewrite only the errors rather than the whole script.
+- Validation: `npm run typecheck`, `svelte-check` (0 errors/0 warnings), and `npx vitest run` (125 tests; rewrite tests replaced for the new flow) passed.
+- Limitations: Not exercised against a live model. Parse still reports an error if no replacement compiles after 4 AI calls. When a kept fix splits one line into several, error feedback for later lines in the same call may cite their old line numbers.
+
 ### 2026-10-11T06:31:00+05:30 — Name changed objects in Console after each command
 
 - Changed: After a command-bar command, Console now prints one line per created, changed, or removed object, using its name: `Created Ball2: red ball at 0 0.5 0`, `Crate: painted red`, `Crate: moved to 1 2 3`, `Crate: hidden`, `Removed Crate`. Moves, turns, scales, paint, hide/show, renames, reparenting, and added/removed components each have wording; any other field shows as `changed Component.field`. Named palette colors print by name, other colors as hex. Files: `src/scene/describeChanges.ts` (new), `src/App.svelte`, `tests/scene/describeChanges.test.ts` (new), `README.md`, `docs/USER_GUIDE.md`, and `AI_USAGE.md`.

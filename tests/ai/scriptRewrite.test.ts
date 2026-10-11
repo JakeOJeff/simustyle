@@ -63,33 +63,45 @@ describe("runScriptRewrite", () => {
   });
 
   it("sends only the broken lines and splices the fix in", async () => {
-    const model = fakeModel([{ lines: [{ line: 3, text: "  move Ball1 up 2" }], needsContext: false, meaning: "Moves the closest object" }]);
+    const model = fakeModel([{ lines: [{ line: 3, text: "  move Ball1 up 2" }], meaning: "Moves the closest object" }]);
     const result = await runScriptRewrite({ source: "when clicked\n  spin\n  move the object near this up 2", owner, entities }, model.complete);
     expect(result).toMatchObject({ source: "when clicked\n  spin\n  move Ball1 up 2", stage: "lines", aiCalls: 1 });
     expect(model.calls[0]!.schema).toBe("script_line_fix");
     const prompt = model.calls[0]!.messages[1]!.content;
     expect(prompt).toContain('Line 3 (under "when clicked")');
-    expect(prompt).not.toContain('"  spin"');
+    expect(prompt).not.toContain("Line 2");
   });
 
-  it("escalates to a full rewrite when the model needs context or the line fix fails", async () => {
+  it("never changes valid lines, even if the model returns them", async () => {
+    const model = fakeModel([{ lines: [{ line: 2, text: "  destroy me" }, { line: 3, text: "  move Ball1 up 2" }], meaning: "" }]);
+    const result = await runScriptRewrite({ source: "when clicked\n  spin\n  move the object near this up 2", owner, entities }, model.complete);
+    expect(result.source).toBe("when clicked\n  spin\n  move Ball1 up 2");
+  });
+
+  it("sends a failed line fix back with its errors and retries only that line", async () => {
     const model = fakeModel([
-      { lines: [], needsContext: true, meaning: "" },
-      { source: "when clicked\n  move Ball1 up 2", meaning: "Moves the ball" }
+      { lines: [{ line: 2, text: "  move gibberish wrongly" }], meaning: "" },
+      { lines: [{ line: 2, text: "  move Ball1 up 2" }], meaning: "Moves the ball" }
     ]);
     const result = await runScriptRewrite({ source: "when clicked\n  move the object near this up 2", owner, entities }, model.complete);
-    expect(result).toMatchObject({ stage: "full", aiCalls: 2 });
-    expect(model.calls.map((call) => call.schema)).toEqual(["script_line_fix", "script_rewrite"]);
-
-    const broken = fakeModel([
-      { lines: [{ line: 2, text: "  move gibberish wrongly" }], needsContext: false, meaning: "" },
-      { source: "when clicked\n  move Ball1 up 2", meaning: "" }
-    ]);
-    expect((await runScriptRewrite({ source: "when clicked\n  move the object near this up 2", owner, entities }, broken.complete)).stage).toBe("full");
+    expect(result).toMatchObject({ source: "when clicked\n  move Ball1 up 2", stage: "lines", aiCalls: 2 });
+    expect(model.calls.map((call) => call.schema)).toEqual(["script_line_fix", "script_line_fix"]);
+    expect(model.calls[1]!.messages[1]!.content).toContain('your previous fix "  move gibberish wrongly" failed');
   });
 
-  it("rejects a full rewrite that still does not compile", async () => {
-    const model = fakeModel([{ lines: [], needsContext: true, meaning: "" }, { source: "when clicked\n  move gibberish wrongly", meaning: "" }]);
-    await expect(runScriptRewrite({ source: "when clicked\n  move the object near this up 2", owner, entities }, model.complete)).rejects.toThrow(/still has script errors/);
+  it("keeps the lines it fixed and retries only the ones still broken", async () => {
+    const model = fakeModel([
+      { lines: [{ line: 2, text: "  move Ball1 up 2" }, { line: 3, text: "  zorp" }], meaning: "" },
+      { lines: [{ line: 3, text: "  spin" }], meaning: "" }
+    ]);
+    const result = await runScriptRewrite({ source: "when clicked\n  move the object near this up 2\n  do a twirl thing", owner, entities }, model.complete);
+    expect(result.source).toBe("when clicked\n  move Ball1 up 2\n  spin");
+    expect(model.calls[1]!.messages[1]!.content).not.toContain("Line 2 (");
+  });
+
+  it("gives up with the remaining error when no fix compiles", async () => {
+    const bad = { lines: [{ line: 2, text: "  move gibberish wrongly" }], meaning: "" };
+    const model = fakeModel([bad, bad, bad, bad]);
+    await expect(runScriptRewrite({ source: "when clicked\n  move the object near this up 2", owner, entities }, model.complete)).rejects.toThrow(/could not fix every line after 4 AI calls/);
   });
 });

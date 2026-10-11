@@ -1,10 +1,11 @@
-// AI "Parse" for the script editor, as an adaptive, escalating pipeline:
+// AI "Parse" for the script editor. It only ever changes broken lines:
 //   1. local: fix typos and common synonyms with no AI call;
-//   2. lines: send the AI only the broken lines (with their event line) and splice
-//      its replacements back in; repeats once if fixing revealed a masked error;
-//   3. full:  only if the targeted fix fails or the AI asks for more context,
-//      rewrite the whole script.
-// Every stage's output is checked with the real parser, checker, and word recognizer.
+//   2. lines: send the AI the broken lines (with the whole script as read-only
+//      context) and splice its replacements back in. A replacement that still
+//      fails is sent back with its errors; a fix that reveals a masked error on
+//      another line targets that line next.
+// Valid lines are never touched. Every result is checked with the real parser,
+// checker, and word recognizer.
 import { autocorrect, scriptProblems, type ScriptProblem } from "../lang/autocorrect";
 import { declaredNames } from "../lang/fuzzy";
 import { requestJson, type ChatMessage } from "./client";
@@ -18,7 +19,7 @@ export interface ScriptRewriteRequest {
 }
 
 /** Which stage produced the result: "none" means the script was already valid. */
-export type RewriteStage = "none" | "local" | "lines" | "full";
+export type RewriteStage = "none" | "local" | "lines";
 
 export interface ScriptRewriteResult {
   source: string;
@@ -45,40 +46,30 @@ const LINE_FIX_SCHEMA: JsonSchema = {
           additionalProperties: false
         }
       },
-      needsContext: { type: "boolean" },
       meaning: { type: "string" }
     },
-    required: ["lines", "needsContext", "meaning"],
+    required: ["lines", "meaning"],
     additionalProperties: false
   }
 };
 
-const FULL_REWRITE_SCHEMA: JsonSchema = {
-  name: "script_rewrite",
-  strict: true,
-  schema: {
-    type: "object",
-    properties: { source: { type: "string" }, meaning: { type: "string" } },
-    required: ["source", "meaning"],
-    additionalProperties: false
-  }
-};
+/** AI calls allowed before giving up on the lines that still fail. */
+const LINE_PASSES = 4;
 
-/** At most this many targeted line passes before escalating to a full rewrite. */
-const LINE_PASSES = 2;
-
-// Identical for every stage, so providers with prompt caching reuse it between calls.
-const SYSTEM_PROMPT = `You fix scripts for a 3D scene editor. Users write casual, approximate English; you turn it into the script language below while keeping exactly what they meant.
+// Identical for every call, so providers with prompt caching reuse it.
+const SYSTEM_PROMPT = `You fix broken lines in scripts for a 3D scene editor. Users write casual, approximate, sometimes illogical English. For each broken line, work out what the user was trying to make happen and write the line they should have written in the language below.
 
 ## Script language
 ${SCRIPT_AGENT_SPEC}
 
 ## Rules
-- Change only what is broken or unclear. Keep valid wording, settings, comments, indentation, and order.
-- "this", "me", "myself" mean the script owner. Resolve object descriptions ("the ball near me") with the scene list by position; write exact object names and quote names containing spaces.
-- Map casual words to supported ones when the intent is clear (begins → starts, tint → paint, hop → bounce).
-- Preserve every requested action, target, value, event, and order. Never swap a trigger or condition for a different one to make it compile; an object-added trigger stays "when [object] is added".
-- Never invent objects, variables, values, or behavior. If an essential detail is missing, say so in meaning.
+- Only rewrite the listed broken lines. Never add actions, events, objects, or values the user did not write.
+- Always return a valid replacement for every listed line, even when the wording is odd or illogical: make sense of it as the closest supported script that keeps the user's words and intent.
+- Keep the user's own action, target, values, and order. Map casual or unsupported words to the nearest supported ones (begins → starts, tint → paint, hop → bounce).
+- Supported triggers stay as written (an object-added trigger stays "when [object] is added").
+- "this", "me", "myself" mean the script owner. Resolve object descriptions ("the ball near me") with the scene list by position; write exact object names and quote names containing spaces. Only use objects from the scene list.
+- Only fill in a value when the command cannot work without one, and then use a plain default (1 second, 1 unit).
+- Say in meaning, in one short sentence, what you understood and any word you swapped.
 - Answer with JSON only, no markdown fences.`;
 
 function round(value: number): number {
@@ -121,32 +112,32 @@ function groupByLine(problems: ScriptProblem[]): Map<number, string[]> {
   return byLine;
 }
 
-export function buildLineFixMessages(request: ScriptRewriteRequest, source: string, problems: ScriptProblem[]): ChatMessage[] {
+/** A replacement the model already tried for a line, and why it failed. */
+export interface RejectedFix {
+  line: number;
+  text: string;
+  problems: string[];
+}
+
+export function buildLineFixMessages(request: ScriptRewriteRequest, source: string, problems: ScriptProblem[], rejected: RejectedFix[] = []): ChatMessage[] {
   const lines = source.split("\n");
   const targets = [...groupByLine(problems)].map(([line, messages]) => {
     const event = eventLineFor(lines, line - 1);
-    return `Line ${line}${event ? ` (under "${event}")` : ""}: ${JSON.stringify(lines[line - 1] ?? "")}\n  problems: ${messages.join("; ")}`;
+    const tried = rejected.filter((fix) => fix.line === line)
+      .map((fix) => `\n  your previous fix ${JSON.stringify(fix.text)} failed: ${fix.problems.join("; ")}`).join("");
+    return `Line ${line}${event ? ` (under "${event}")` : ""}: ${JSON.stringify(lines[line - 1] ?? "")}\n  problems: ${messages.join("; ")}${tried}`;
   });
+  const numbered = lines.map((line, index) => `${index + 1}| ${line}`).join("\n");
   const user = `${contextBlock(request, source)}
 
-Fix only these lines of the user's script:
+Whole script, for context only (do not change other lines):
+${numbered}
+
+Fix only these lines:
 ${targets.join("\n")}
 
-Return {"lines":[{"line":<number>,"text":"<replacement line, keeping its indentation>"}],"needsContext":false,"meaning":"<one short sentence>"}.
-- One entry per listed line. Use "\\n" in text only if one sentence must become several lines.
-- If a line cannot be understood without seeing the rest of the script, return "lines":[] and "needsContext":true.`;
-  return [{ role: "system", content: SYSTEM_PROMPT }, { role: "user", content: user }];
-}
-
-export function buildScriptRewriteMessages(request: ScriptRewriteRequest, source: string = request.source, problems: ScriptProblem[] = []): ChatMessage[] {
-  const remaining = problems.length ? `\nProblems found:\n${problems.map((problem) => `- line ${problem.line}: ${problem.message}`).join("\n")}\n` : "";
-  const user = `${contextBlock(request, source)}
-${remaining}
-Rewrite the complete script below into valid script syntax, interpreting it as a whole. Change only what is needed.
-Return {"source":"<complete script>","meaning":"<one short sentence>"}.
-<script>
-${source}
-</script>`;
+Return {"lines":[{"line":<number>,"text":"<replacement line, keeping its indentation>"}],"meaning":"<one short sentence>"}.
+- One entry per listed line. Use "\\n" in text only if one sentence must become several lines.`;
   return [{ role: "system", content: SYSTEM_PROMPT }, { role: "user", content: user }];
 }
 
@@ -156,25 +147,16 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 
 interface LineReply {
   lines: { line: number; text: string }[];
-  needsContext: boolean;
   meaning: string;
 }
 
 function parseLineReply(value: unknown): LineReply {
-  if (!isRecord(value) || !Array.isArray(value.lines)) return { lines: [], needsContext: true, meaning: "" };
+  if (!isRecord(value) || !Array.isArray(value.lines)) return { lines: [], meaning: "" };
   return {
     lines: value.lines.filter(isRecord).filter((item) => Number.isInteger(item.line) && typeof item.text === "string")
       .map((item) => ({ line: item.line as number, text: item.text as string })),
-    needsContext: value.needsContext === true,
     meaning: typeof value.meaning === "string" ? value.meaning : ""
   };
-}
-
-function parseFullReply(value: unknown): { source: string; meaning: string } {
-  if (!isRecord(value)) throw new Error("The AI response must be a JSON object.");
-  if (typeof value.source !== "string" || typeof value.meaning !== "string") throw new Error("The AI response must include rewritten source and an explanation.");
-  if (!value.source.trim()) throw new Error("The AI returned an empty script.");
-  return { source: value.source, meaning: value.meaning };
 }
 
 /**
@@ -208,7 +190,31 @@ function sentence(text: string): string {
 
 const defaultCompletion: RewriteCompletion = (messages, schema) => requestJson(messages, schema);
 
-/** Fix the script with the cheapest stage that works; see the file header. */
+/**
+ * Apply a reply one line at a time, keeping each replacement that leaves no
+ * problem on its own lines. Applied bottom-up so earlier line numbers stay valid.
+ */
+function keepWorkingFixes(source: string, reply: LineReply, targets: Set<number>, names: Set<string>): { source: string; kept: number; rejected: RejectedFix[] } {
+  let current = source;
+  let kept = 0;
+  const rejected: RejectedFix[] = [];
+  const fixes = [...new Map(reply.lines.filter((fix) => targets.has(fix.line)).map((fix) => [fix.line, fix])).values()]
+    .sort((a, b) => b.line - a.line);
+  for (const fix of fixes) {
+    const next = applyLineFixes(current, [fix], new Set([fix.line]));
+    const [start, end] = next.edited[0]!;
+    const broken = scriptProblems(next.source, names).filter((problem) => problem.line >= start && problem.line <= end);
+    if (broken.length) {
+      rejected.push({ line: fix.line, text: fix.text, problems: broken.map((problem) => problem.message) });
+      continue;
+    }
+    current = next.source;
+    kept += 1;
+  }
+  return { source: current, kept, rejected };
+}
+
+/** Fix only the broken lines; see the file header. */
 export async function runScriptRewrite(request: ScriptRewriteRequest, complete: RewriteCompletion = defaultCompletion): Promise<ScriptRewriteResult> {
   const names = entityNameSet(request.entities);
   const notes: string[] = [];
@@ -223,26 +229,17 @@ export async function runScriptRewrite(request: ScriptRewriteRequest, complete: 
     return { source: current, meaning: notes.join(" ") || "The script is already valid.", stage: local.fixes.length ? "local" : "none", aiCalls };
   }
 
-  // Stage 2: targeted line fixes.
+  // Stage 2: AI fixes for the broken lines only.
+  let rejected: RejectedFix[] = [];
   for (let pass = 0; pass < LINE_PASSES; pass += 1) {
-    const reply = parseLineReply(await complete(buildLineFixMessages(request, current, problems), LINE_FIX_SCHEMA));
+    const reply = parseLineReply(await complete(buildLineFixMessages(request, current, problems, rejected), LINE_FIX_SCHEMA));
     aiCalls += 1;
-    if (reply.needsContext || !reply.lines.length) break;
-    const next = applyLineFixes(current, reply.lines, new Set(problems.map((problem) => problem.line)));
-    const nextProblems = scriptProblems(next.source, names);
-    const editedStillBroken = nextProblems.some((problem) => next.edited.some(([start, end]) => problem.line >= start && problem.line <= end));
-    if (!next.edited.length || editedStillBroken) break;
-    current = next.source;
-    problems = nextProblems;
-    if (reply.meaning) notes.push(sentence(reply.meaning));
+    const result = keepWorkingFixes(current, reply, new Set(problems.map((problem) => problem.line)), names);
+    current = result.source;
+    rejected = result.rejected;
+    if (result.kept && reply.meaning) notes.push(sentence(reply.meaning));
+    problems = scriptProblems(current, names);
     if (!problems.length) return { source: current, meaning: notes.join(" "), stage: "lines", aiCalls };
-    // Otherwise the parser has moved on to an error the first one was hiding: target it next.
   }
-
-  // Stage 3: full rewrite with the whole script as context.
-  const full = parseFullReply(await complete(buildScriptRewriteMessages(request, current, problems), FULL_REWRITE_SCHEMA));
-  aiCalls += 1;
-  const remaining = scriptProblems(full.source, names);
-  if (remaining.length) throw new Error(`The AI rewrite still has script errors: Line ${remaining[0]!.line}: ${remaining[0]!.message}`);
-  return { source: full.source, meaning: [...notes, sentence(full.meaning)].filter(Boolean).join(" "), stage: "full", aiCalls };
+  throw new Error(`Parse could not fix every line after ${aiCalls} AI calls: Line ${problems[0]!.line}: ${problems[0]!.message}`);
 }
