@@ -4,6 +4,13 @@ Record meaningful project changes during the event, newest first.
 
 ## Event build log
 
+### 2026-10-11T23:45:00+05:30 — Replace viewport view bar with view menus and axis gizmo
+
+- Changed: Replaced the top-right camera view bar with a Perspective view menu (Perspective, Top, Bottom, Front, Back, Right, Left) and a Shaded/Wireframe menu in the top-left, next to the tool rail. Added a clickable axis gizmo in the top-right that follows the camera, with Frame selected and Reset camera buttons below it. Files: `src/editor/Viewport.svelte`, `docs/USER_GUIDE.md`.
+- Why: Match the requested viewport header layout.
+- Validation: `tsc --noEmit` and `svelte-check` report no errors.
+- Limitations: Shading is per-session editor state and is not saved with the scene.
+
 ### 2026-10-11T23:20:00+05:30 — Add easing curves, animation presets, and iconized editor controls
 
 - Changed: Added a shared easing engine (Sine, Quad, Cubic, Quart, Quint, Expo, Circ, Back, Elastic, Bounce in In/Out/In-Out, plus Linear, Smooth, Step, and custom cubic-bezier) used by the editor, animator, and HTML export. Rebuilt Timeline with icon transport, Loop and length controls, eased curves drawn on each segment, key shapes per easing, a selected-key bar, snapping key drags, and double-click insert-on-curve. Added an easing picker with a live motion preview and a draggable bezier editor, and 13 one-click animation presets with live preview cards. Added a viewport tool rail, create shelf, and camera view bar with eased transitions; icons in the context menu, bottom tabs, Inspector sections, and keyframe-state diamonds; and an Animate button in the top bar. Fixed `localPosition`, which multiplied a matrix by a vector and broke right-click placement under a parent. Files: `src/runtime/easing.ts`, `src/runtime/animationPresets.ts`, `src/editor/animation/*`, `src/editor/Timeline.svelte`, `src/editor/Viewport.svelte`, `src/editor/Inspector.svelte`, `src/editor/TopBar.svelte`, `src/App.svelte`, `src/scene/hierarchy.ts`.

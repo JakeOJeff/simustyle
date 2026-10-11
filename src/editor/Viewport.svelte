@@ -3,13 +3,15 @@
   import * as THREE from "three";
   import { OrbitControls } from "three/addons/controls/OrbitControls.js";
   import { TransformControls } from "three/addons/controls/TransformControls.js";
-  import { Box, Focus, House } from "@lucide/svelte";
+  import { ChevronDown, Focus, House } from "@lucide/svelte";
   import { easeProgress } from "../runtime/easing";
   import type { Entity, Scene, Vec3 } from "../scene/types";
 
   /** "select" picks objects without showing a transform gizmo. */
   type TransformMode = "select" | "translate" | "rotate" | "scale";
-  type ViewPreset = "perspective" | "home" | "top" | "front" | "right" | "back" | "left";
+  type ViewPreset = "perspective" | "home" | "top" | "bottom" | "front" | "right" | "back" | "left";
+  type Shading = "shaded" | "wireframe";
+  type AxisMark = { key: string; label: string; color: string; positive: boolean; view: ViewPreset; x: number; y: number; depth: number };
   type TransformPhase = "start" | "change" | "end";
   type TransformPatch = { position?: Vec3; rotation?: Vec3; scale?: Vec3 };
 
@@ -45,13 +47,29 @@
   let viewControls: { setView(view: ViewPreset): void; frame(): void } | null = null;
   /** The view preset the camera is in, or null after the user orbits freely. */
   let activeView = $state<ViewPreset | null>("perspective");
-  const viewButtons: { view: ViewPreset; label: string; short: string; secondary?: boolean }[] = [
-    { view: "top", label: "Top view", short: "Top" },
-    { view: "front", label: "Front view", short: "Front" },
-    { view: "right", label: "Right view", short: "Right" },
-    { view: "back", label: "Back view", short: "Back", secondary: true },
-    { view: "left", label: "Left view", short: "Left", secondary: true }
+  const viewOptions: { view: ViewPreset; label: string }[] = [
+    { view: "perspective", label: "Perspective" },
+    { view: "top", label: "Top" },
+    { view: "bottom", label: "Bottom" },
+    { view: "front", label: "Front" },
+    { view: "back", label: "Back" },
+    { view: "right", label: "Right" },
+    { view: "left", label: "Left" }
   ];
+  const shadingOptions: { value: Shading; label: string }[] = [
+    { value: "shaded", label: "Shaded" },
+    { value: "wireframe", label: "Wireframe" }
+  ];
+  let shading = $state<Shading>("shaded");
+  let openMenu = $state<"view" | "shading" | null>(null);
+  /** Axis gizmo marks in screen space, back-to-front so nearer marks draw on top. */
+  let axisMarks = $state<AxisMark[]>([]);
+  const viewLabel = $derived(viewOptions.find((item) => item.view === activeView)?.label ?? "Perspective");
+  const shadingLabel = $derived(shadingOptions.find((item) => item.value === shading)?.label ?? "Shaded");
+
+  function closeMenuOutside(event: PointerEvent) {
+    if (openMenu && !(event.target as Element | null)?.closest?.(".view-menu")) openMenu = null;
+  }
 
   function component(entity: Entity, name: string): Record<string, unknown> {
     return entity.components[name] ?? {};
@@ -266,7 +284,7 @@
       const directions: Record<ViewPreset, THREE.Vector3> = {
         perspective: new THREE.Vector3(7, 6, 9), home: new THREE.Vector3(7, 6, 9),
         // A hair of z keeps OrbitControls from flipping when looking straight down.
-        top: new THREE.Vector3(0, 1, 0.0001), front: new THREE.Vector3(0, 0, 1), right: new THREE.Vector3(1, 0, 0), back: new THREE.Vector3(0, 0, -1), left: new THREE.Vector3(-1, 0, 0)
+        top: new THREE.Vector3(0, 1, 0.0001), bottom: new THREE.Vector3(0, -1, 0.0001), front: new THREE.Vector3(0, 0, 1), right: new THREE.Vector3(1, 0, 0), back: new THREE.Vector3(0, 0, -1), left: new THREE.Vector3(-1, 0, 0)
       };
       const reach = view === "home" ? Math.hypot(7, 5.2, 9) : distance;
       flyTo(target.clone().add(directions[view].normalize().multiplyScalar(reach)), target);
@@ -439,6 +457,7 @@
         material.emissiveIntensity = typeof materialData.emissiveIntensity === "number" ? materialData.emissiveIntensity : 0;
         material.opacity = typeof materialData.opacity === "number" ? materialData.opacity : 1;
         material.transparent = material.opacity < 1;
+        material.wireframe = shading === "wireframe";
       }
 
       // Parent once every object exists, so children listed before their parent still attach.
@@ -475,11 +494,34 @@
       orbit.update();
     }
 
+    const axisDefs: { key: string; label: string; color: string; direction: THREE.Vector3; view: ViewPreset }[] = [
+      { key: "x", label: "X", color: "#ef5350", direction: new THREE.Vector3(1, 0, 0), view: "right" },
+      { key: "y", label: "Y", color: "#4caf50", direction: new THREE.Vector3(0, 1, 0), view: "top" },
+      { key: "z", label: "Z", color: "#4a90e2", direction: new THREE.Vector3(0, 0, 1), view: "front" },
+      { key: "-x", label: "", color: "#ef5350", direction: new THREE.Vector3(-1, 0, 0), view: "left" },
+      { key: "-y", label: "", color: "#4caf50", direction: new THREE.Vector3(0, -1, 0), view: "bottom" },
+      { key: "-z", label: "", color: "#4a90e2", direction: new THREE.Vector3(0, 0, -1), view: "back" }
+    ];
+    const lastGizmoQuaternion = new THREE.Quaternion(0, 0, 0, 0);
+    const inverseCamera = new THREE.Quaternion();
+    const projected = new THREE.Vector3();
+    /** Re-projects the world axes into camera space whenever the camera turns. */
+    function updateAxisMarks() {
+      if (camera.quaternion.equals(lastGizmoQuaternion)) return;
+      lastGizmoQuaternion.copy(camera.quaternion);
+      inverseCamera.copy(camera.quaternion).invert();
+      axisMarks = axisDefs.map((axis) => {
+        projected.copy(axis.direction).applyQuaternion(inverseCamera);
+        return { key: axis.key, label: axis.label, color: axis.color, positive: axis.label !== "", view: axis.view, x: projected.x, y: -projected.y, depth: projected.z };
+      }).sort((a, b) => a.depth - b.depth);
+    }
+
     const render = (now = performance.now()) => {
       if (disposed) return;
       frame = requestAnimationFrame(render);
       stepCameraTween(now);
       orbit.update();
+      updateAxisMarks();
       renderer.render(world, camera);
     };
     render();
@@ -489,6 +531,7 @@
         scene;
         selectedId;
         selectedIds;
+        shading;
         syncEntities();
       });
       $effect(() => {
@@ -544,18 +587,59 @@
   });
 </script>
 
+<svelte:window onpointerdown={closeMenuOutside} onkeydown={(event) => { if (event.key === "Escape") openMenu = null; }} />
+
 <div class="viewport" bind:this={host} aria-label="3D scene viewport">
   {#if marquee}
     <div class="selection-marquee" style={`left:${marquee.left}px;top:${marquee.top}px;width:${marquee.width}px;height:${marquee.height}px`}></div>
   {/if}
-  <div class="view-controls" role="toolbar" aria-label="Camera view">
-    <button class:active={activeView === "perspective"} title="Perspective view" aria-label="Perspective view" onclick={() => viewControls?.setView("perspective")}><Box size={13} /></button>
-    {#each viewButtons as item (item.view)}
-      <button class="text" class:secondary={item.secondary} class:active={activeView === item.view} title={item.label} aria-label={item.label} onclick={() => viewControls?.setView(item.view)}>{item.short}</button>
-    {/each}
-    <span class="divider"></span>
-    <button title="Frame selected (F)" aria-label="Frame selected" disabled={!selectedId} onclick={() => viewControls?.frame()}><Focus size={13} /></button>
-    <button title="Reset camera" aria-label="Reset camera" onclick={() => viewControls?.setView("home")}><House size={13} /></button>
+  <div class="view-menus">
+    <div class="view-menu">
+      <button class="menu-trigger" aria-haspopup="menu" aria-expanded={openMenu === "view"} title="Camera view" onclick={() => (openMenu = openMenu === "view" ? null : "view")}>
+        {viewLabel}<ChevronDown size={13} />
+      </button>
+      {#if openMenu === "view"}
+        <div class="menu" role="menu" aria-label="Camera view">
+          {#each viewOptions as item (item.view)}
+            <button role="menuitemradio" aria-checked={activeView === item.view} class:active={activeView === item.view} onclick={() => { viewControls?.setView(item.view); openMenu = null; }}>{item.label}</button>
+          {/each}
+        </div>
+      {/if}
+    </div>
+    <div class="view-menu">
+      <button class="menu-trigger" aria-haspopup="menu" aria-expanded={openMenu === "shading"} title="Shading mode" onclick={() => (openMenu = openMenu === "shading" ? null : "shading")}>
+        {shadingLabel}<ChevronDown size={13} />
+      </button>
+      {#if openMenu === "shading"}
+        <div class="menu" role="menu" aria-label="Shading mode">
+          {#each shadingOptions as item (item.value)}
+            <button role="menuitemradio" aria-checked={shading === item.value} class:active={shading === item.value} onclick={() => { shading = item.value; openMenu = null; }}>{item.label}</button>
+          {/each}
+        </div>
+      {/if}
+    </div>
+  </div>
+  <div class="view-nav">
+    <svg class="axis-gizmo" viewBox="-37 -37 74 74" role="group" aria-label="View axes">
+      <circle class="gizmo-face" r="36" />
+      {#each axisMarks as mark (mark.key)}
+        {#if mark.positive}<line x1="0" y1="0" x2={mark.x * 24} y2={mark.y * 24} stroke={mark.color} stroke-width="1.6" />{/if}
+      {/each}
+      {#each axisMarks as mark (mark.key)}
+        <g class="axis-mark" transform={`translate(${mark.x * 24} ${mark.y * 24})`} role="button" tabindex="0" aria-label={`${mark.positive ? "" : "Negative "}${mark.key.replace("-", "").toUpperCase()} axis view`} onclick={() => viewControls?.setView(mark.view)} onkeydown={(event) => { if (event.key === "Enter" || event.key === " ") { event.preventDefault(); viewControls?.setView(mark.view); } }}>
+          {#if mark.positive}
+            <circle r="8" fill={mark.color} />
+            <text dy="0.35em">{mark.label}</text>
+          {:else}
+            <circle r="5" fill="#18181b" stroke={mark.color} stroke-width="1.2" />
+          {/if}
+        </g>
+      {/each}
+    </svg>
+    <div class="nav-buttons">
+      <button title="Frame selected (F)" aria-label="Frame selected" disabled={!selectedId} onclick={() => viewControls?.frame()}><Focus size={15} /></button>
+      <button title="Reset camera" aria-label="Reset camera" onclick={() => viewControls?.setView("home")}><House size={15} /></button>
+    </div>
   </div>
   {#if overlay}{@render overlay()}{/if}
 </div>
@@ -580,46 +664,103 @@
     pointer-events: none;
   }
 
-  .view-controls {
+  /* Sits beside the host's tool rail in the top-left corner. */
+  .view-menus {
+    position: absolute;
+    z-index: 3;
+    top: 10px;
+    left: 56px;
+    display: flex;
+    gap: 6px;
+  }
+
+  .view-menu { position: relative; }
+
+  .menu-trigger {
+    display: flex;
+    height: 28px;
+    align-items: center;
+    gap: 6px;
+    padding: 0 9px 0 11px;
+    border: 1px solid #ffffff14;
+    border-radius: 7px;
+    background: #18181bd9;
+    backdrop-filter: blur(6px);
+    color: #e4e4e7;
+    font: 12px 'DM Sans', sans-serif;
+    cursor: pointer;
+    transition: background .12s, border-color .12s;
+  }
+
+  .menu-trigger :global(svg) { color: #a1a1aa; }
+  .menu-trigger:hover, .menu-trigger[aria-expanded="true"] { border-color: #ffffff26; background: #232327e6; }
+
+  .menu {
+    position: absolute;
+    top: calc(100% + 4px);
+    left: 0;
+    display: flex;
+    min-width: 100%;
+    flex-direction: column;
+    padding: 3px;
+    border: 1px solid #ffffff1a;
+    border-radius: 7px;
+    background: #18181b;
+    box-shadow: 0 8px 22px #0008;
+  }
+
+  .menu button {
+    padding: 5px 10px;
+    border: 0;
+    border-radius: 5px;
+    background: transparent;
+    color: #c4c4cc;
+    font: 12px 'DM Sans', sans-serif;
+    text-align: left;
+    white-space: nowrap;
+    cursor: pointer;
+  }
+
+  .menu button:hover { background: #ffffff12; color: #fff; }
+  .menu button.active { background: #3b3566; color: #e1dbff; }
+
+  .view-nav {
     position: absolute;
     z-index: 2;
     top: 10px;
     right: 10px;
     display: flex;
+    flex-direction: column;
     align-items: center;
-    gap: 2px;
-    padding: 3px;
-    border: 1px solid #ffffff14;
-    border-radius: 8px;
-    background: #15161cd9;
-    backdrop-filter: blur(6px);
-    box-shadow: 0 6px 18px #0006;
+    gap: 7px;
   }
 
-  .view-controls button {
+  .axis-gizmo { width: 74px; height: 74px; overflow: visible; }
+  .gizmo-face { fill: #18181bb3; stroke: #ffffff14; }
+  .axis-mark { cursor: pointer; outline: none; }
+  .axis-mark text { fill: #18181b; font: 600 9px 'DM Sans', sans-serif; text-anchor: middle; pointer-events: none; }
+  .axis-mark:hover circle, .axis-mark:focus-visible circle { stroke: #fff; stroke-width: 1.4; }
+
+  .nav-buttons { display: flex; gap: 4px; }
+
+  .nav-buttons button {
     display: grid;
-    min-width: 26px;
-    height: 24px;
+    width: 32px;
+    height: 32px;
     place-items: center;
-    padding: 0 6px;
-    border: 1px solid transparent;
-    border-radius: 5px;
-    background: transparent;
-    color: #b1aebd;
-    font: 9.5px 'DM Sans', sans-serif;
+    padding: 0;
+    border: 1px solid #ffffff14;
+    border-radius: 7px;
+    background: #18181bd9;
+    backdrop-filter: blur(6px);
+    color: #d4d4d8;
     cursor: pointer;
     transition: background .12s, color .12s;
   }
 
-  .view-controls button:hover:not(:disabled) { background: #ffffff12; color: #fff; }
-  .view-controls button.active { border-color: #7d6ff066; background: #3b3566; color: #e1dbff; }
-  .view-controls button:disabled { opacity: .35; cursor: default; }
-  .view-controls button:focus-visible { outline: 2px solid #a99bff; outline-offset: 1px; }
-  .view-controls .divider { width: 1px; height: 16px; margin: 0 3px; background: #ffffff18; }
-
-  @media (max-width: 1100px) {
-    .view-controls .secondary:not(.active) { display: none; }
-  }
+  .nav-buttons button:hover:not(:disabled) { background: #232327e6; color: #fff; }
+  .nav-buttons button:disabled { opacity: .35; cursor: default; }
+  .menu-trigger:focus-visible, .menu button:focus-visible, .nav-buttons button:focus-visible { outline: 2px solid #a99bff; outline-offset: 1px; }
 
   .viewport :global(canvas) {
     display: block;
