@@ -1539,7 +1539,7 @@ when clicked
         </div>
       {/if}
       <div class="stage" bind:this={stageHost} style={stageContentStyle()} use:observeStageSize>
-        <Viewport scene={viewportScene} {selectedId} {selectedIds} {mode} {frameToken} {focusToken} {gridVisible} {space} {snap} onSelect={viewportSelect} onSelectMany={selectEntities} onTransform={updateTransform} onModeChange={(nextMode) => setMode(nextMode, "key")} onContextMenu={(id, x, y, position) => openEntityMenu(id, x, y, position, id ? "object" : "viewport")}>
+        <Viewport scene={viewportScene} {selectedId} {selectedIds} {mode} {frameToken} {focusToken} {gridVisible} {space} {snap} canDrag={playState === "stopped"} onSelect={viewportSelect} onSelectMany={selectEntities} onTransform={updateTransform} onModeChange={(nextMode) => setMode(nextMode, "key")} onContextMenu={(id, x, y, position) => openEntityMenu(id, x, y, position, id ? "object" : "viewport")}>
           {#snippet overlay()}
             <div class="tool-rail" role="toolbar" aria-label="Transform tools" aria-orientation="vertical">
               {#each railTools as item (item.mode)}

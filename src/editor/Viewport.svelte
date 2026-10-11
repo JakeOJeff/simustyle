@@ -38,11 +38,13 @@
     space: "world" | "local";
     /** Snap moves to 0.5 m, turns to 15°, and scaling to 0.1 steps. */
     snap: boolean;
+    /** Press-and-drag objects to slide them across surfaces (off during Play). */
+    canDrag?: boolean;
     /** Extra floating controls drawn over the canvas (tool rail, create shelf). */
     overlay?: Snippet;
   }
 
-  let { scene, selectedId, selectedIds, mode, onSelect, onSelectMany, onTransform, onModeChange, onContextMenu, frameToken, focusToken, gridVisible, space, snap, overlay }: Props = $props();
+  let { scene, selectedId, selectedIds, mode, onSelect, onSelectMany, onTransform, onModeChange, onContextMenu, frameToken, focusToken, gridVisible, space, snap, canDrag = true, overlay }: Props = $props();
   let host: HTMLDivElement;
   let marquee: { left: number; top: number; width: number; height: number } | null = $state(null);
   let viewControls: { setView(view: ViewPreset): void; frame(): void } | null = null;
@@ -299,10 +301,122 @@
     let cameraGesture: string | null = null;
     orbit.addEventListener("change", () => { cameraGesture ??= pointerButton === 0 ? "camera-orbit" : pointerButton === 1 ? "camera-pan" : pointerButton === null ? "camera-zoom" : null; });
     orbit.addEventListener("end", () => { if (cameraGesture) emitTutorial(cameraGesture); cameraGesture = null; });
+    // Roblox-style dragging: press on an object and move the mouse to slide it across the
+    // ground and the tops of other objects. A press without movement still just selects.
+    type ObjectDrag = { id: string; pointerId: number; object: THREE.Object3D; started: boolean; offset: THREE.Vector3; bottom: number; halfSize: THREE.Vector3; ignore: Set<THREE.Object3D> };
+    let objectDrag: ObjectDrag | null = null;
+    let hoverQueued = false;
+    let lastHover: PointerEvent | null = null;
+    const up = new THREE.Vector3(0, 1, 0);
+
+    function setCursor(cursor: string) {
+      if (renderer.domElement.style.cursor !== cursor) renderer.domElement.style.cursor = cursor;
+    }
+    function pickableMeshes(): THREE.Object3D[] {
+      return [...[...entityObjects.values()].filter((object) => object instanceof THREE.Mesh), ...markerObjects.values()];
+    }
+    /** The open hand shows over anything that can be dragged. */
+    function updateHoverCursor() {
+      hoverQueued = false;
+      if (!lastHover || objectDrag?.started || marqueeStart || gizmo.dragging) return;
+      if (!canDrag || gizmo.axis !== null || lastHover.buttons !== 0) { setCursor(""); return; }
+      setPointer(lastHover);
+      raycaster.setFromCamera(pointer, camera);
+      setCursor(pickEntity() ? "grab" : "");
+    }
+    function beginObjectDrag(event: PointerEvent): boolean {
+      if (!canDrag || event.button !== 0 || event.ctrlKey || event.metaKey || event.altKey || gizmo.dragging || gizmo.axis !== null) return false;
+      setPointer(event);
+      raycaster.setFromCamera(pointer, camera);
+      const hit = raycaster.intersectObjects(pickableMeshes(), false)[0];
+      const id: string | undefined = hit?.object.userData.markerFor ?? hit?.object.userData.entityId;
+      const object = id ? entityObjects.get(id) : undefined;
+      if (!hit || !id || !object) return false;
+      object.updateWorldMatrix(true, true);
+      const bounds = new THREE.Box3().setFromObject(object);
+      const origin = object.getWorldPosition(new THREE.Vector3());
+      const size = bounds.isEmpty() ? new THREE.Vector3(0.5, 0.5, 0.5) : bounds.getSize(new THREE.Vector3());
+      const ignore = new Set<THREE.Object3D>();
+      object.traverse((child) => { ignore.add(child); });
+      objectDrag = {
+        id, pointerId: event.pointerId, object, started: false,
+        offset: new THREE.Vector3(origin.x - hit.point.x, 0, origin.z - hit.point.z),
+        bottom: bounds.isEmpty() ? 0 : origin.y - bounds.min.y,
+        halfSize: size.multiplyScalar(0.5),
+        ignore
+      };
+      // Keep the camera still: a left-drag that starts on an object moves the object instead.
+      orbitWasEnabled = orbit.enabled;
+      orbit.enabled = false;
+      renderer.domElement.setPointerCapture(event.pointerId);
+      return true;
+    }
+    /** Where the dragged object should go: resting on the surface under the cursor. */
+    function dragTarget(drag: ObjectDrag): THREE.Vector3 | null {
+      raycaster.setFromCamera(pointer, camera);
+      const surfaces = pickableMeshes().filter((object) => !drag.ignore.has(object) && !object.userData.markerFor);
+      const hit = raycaster.intersectObjects(surfaces, false)[0];
+      let point: THREE.Vector3 | null;
+      let normal = up.clone();
+      if (hit) {
+        point = hit.point.clone();
+        if (hit.face) normal = hit.face.normal.clone().transformDirection(hit.object.matrixWorld);
+      } else point = raycaster.ray.intersectPlane(groundPlane, new THREE.Vector3());
+      if (!point) return null;
+      if (normal.y > 0.5) {
+        // Tops and the ground: keep the grab offset and sit the object's base on the surface.
+        return new THREE.Vector3(point.x + drag.offset.x, point.y + drag.bottom, point.z + drag.offset.z);
+      }
+      // Side faces: push the object out from the face so it stands beside it, never below the floor.
+      const out = new THREE.Vector3(normal.x, 0, normal.z).normalize();
+      const reach = Math.abs(out.x) * drag.halfSize.x + Math.abs(out.z) * drag.halfSize.z;
+      return new THREE.Vector3(point.x + out.x * reach, Math.max(drag.bottom, point.y - drag.halfSize.y + drag.bottom), point.z + out.z * reach);
+    }
+    function emitDrag(drag: ObjectDrag, phase: TransformPhase) {
+      const { position, rotation, scale } = drag.object;
+      onTransform(drag.id, {
+        position: [position.x, position.y, position.z],
+        rotation: [THREE.MathUtils.radToDeg(rotation.x), THREE.MathUtils.radToDeg(rotation.y), THREE.MathUtils.radToDeg(rotation.z)],
+        scale: [scale.x, scale.y, scale.z]
+      }, phase);
+    }
+    function moveObjectDrag(event: PointerEvent) {
+      const drag = objectDrag!;
+      if (!drag.started) {
+        if (Math.hypot(event.clientX - downX, event.clientY - downY) <= 4) return;
+        drag.started = true;
+        if (selectedId !== drag.id) onSelect(drag.id);
+        emitDrag(drag, "start");
+        setCursor("grabbing");
+      }
+      setPointer(event);
+      const target = dragTarget(drag);
+      if (!target) return;
+      if (snap) {
+        target.x = Math.round(target.x / 0.5) * 0.5;
+        target.z = Math.round(target.z / 0.5) * 0.5;
+      }
+      const parent = drag.object.parent ?? world;
+      parent.updateWorldMatrix(true, false);
+      drag.object.position.copy(parent.worldToLocal(target));
+      emitDrag(drag, "change");
+    }
+    function endObjectDrag(commit: boolean) {
+      const drag = objectDrag;
+      objectDrag = null;
+      orbit.enabled = orbitWasEnabled;
+      if (drag?.started) {
+        if (commit) emitDrag(drag, "end");
+        setCursor("grab");
+      }
+      return drag?.started ?? false;
+    }
+
     const pointerDown = (event: PointerEvent) => {
       pointerButton = event.button;
       downX = event.clientX;
       downY = event.clientY;
+      if (beginObjectDrag(event)) return;
       if (event.button === 0 && event.ctrlKey && !gizmo.dragging) {
         event.preventDefault();
         const rect = renderer.domElement.getBoundingClientRect();
@@ -312,20 +426,30 @@
         renderer.domElement.setPointerCapture(event.pointerId);
       }
     };
-    const pointerMove = (event: PointerEvent) => updateMarquee(event);
+    const pointerMove = (event: PointerEvent) => {
+      if (objectDrag?.pointerId === event.pointerId) { moveObjectDrag(event); return; }
+      updateMarquee(event);
+      lastHover = event;
+      if (!hoverQueued) { hoverQueued = true; requestAnimationFrame(updateHoverCursor); }
+    };
     const pointerUp = (event: PointerEvent) => {
       pointerButton = null;
+      if (objectDrag?.pointerId === event.pointerId && endObjectDrag(true)) return;
       if (marqueeStart?.pointerId === event.pointerId) { finishMarquee(event); return; }
       if (event.button === 0) pick(event);
     };
+    const pointerLeave = () => { lastHover = null; if (!objectDrag) setCursor(""); };
     const pointerCancel = () => {
       pointerButton = null;
+      if (objectDrag) endObjectDrag(true);
       if (!marqueeStart) return;
       marqueeStart = null;
       marquee = null;
       orbit.enabled = orbitWasEnabled;
     };
-    renderer.domElement.addEventListener("pointerdown", pointerDown);
+    // Capture phase, so a press on an object disables orbiting before OrbitControls sees it.
+    renderer.domElement.addEventListener("pointerdown", pointerDown, { capture: true });
+    renderer.domElement.addEventListener("pointerleave", pointerLeave);
     renderer.domElement.addEventListener("pointermove", pointerMove);
     renderer.domElement.addEventListener("pointerup", pointerUp);
     renderer.domElement.addEventListener("pointercancel", pointerCancel);
@@ -572,7 +696,8 @@
       cancelAnimationFrame(frame);
       stopSync();
       resizeObserver.disconnect();
-      renderer.domElement.removeEventListener("pointerdown", pointerDown);
+      renderer.domElement.removeEventListener("pointerdown", pointerDown, { capture: true });
+      renderer.domElement.removeEventListener("pointerleave", pointerLeave);
       renderer.domElement.removeEventListener("pointermove", pointerMove);
       renderer.domElement.removeEventListener("pointerup", pointerUp);
       renderer.domElement.removeEventListener("pointercancel", pointerCancel);

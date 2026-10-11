@@ -4,6 +4,13 @@ Record meaningful project changes during the event, newest first.
 
 ## Event build log
 
+### 2026-10-12T02:35:00+05:30 — Drag objects with the mouse
+
+- Changed: Press on an object in the viewport and drag to move it, like in Roblox Studio. It slides across the floor keeping the grab offset and rests its base on whatever surface is under the pointer. Dropping onto a side face places it beside that object instead. The cursor is an open hand over draggable objects and a closed hand while dragging. Snap rounds the drop point to 0.5 m. Each drag is one undo step. Dragging is off during Play, and gizmo handles take priority. Files: `src/editor/Viewport.svelte`, `src/App.svelte`, `docs/USER_GUIDE.md`, `src/editor/DocsPanel.svelte`.
+- Why: Requested direct, Roblox-style object dragging with a hand cursor.
+- Validation: `svelte-check` reports no errors or warnings. In headless Chrome against the dev server, hovering a new cube showed `grab`, dragging showed `grabbing`, the cube moved from (0, 0.5, 0) to (3.09, 0.5, -1.97) while staying on the floor, and one Ctrl+Z restored it.
+- Limitations: Only the object under the pointer moves, even when several are selected. A left-drag that starts on an object no longer orbits; start on empty space to orbit. In Move mode the gizmo's plane handles can cover a small object's center, so grab it near an edge or switch to Select (Q). Stacking on other objects was not checked in the browser.
+
 ### 2026-10-12T02:20:00+05:30 — Redesign editor panel windows
 
 - Changed: Panels are now rounded cards with a 6 px gap when docked. Each title bar has a grip, title, status text, and header actions (Scene: object count and New group; Console: Ready status and Clear). Scene panel: always-visible Filter field and a "No objects yet" empty state with Add object. Assistant: intro text, three one-click suggestions, and a composer with a round send button; Enter sends and Shift+Enter adds a new line. Console: short hint, play/pause/stop/help buttons, and a new `help` command. Inspector scene view: Physics (Collisions, Gravity, Earth/Moon/Zero presets, Step), Environment (Sky hex field, Ambient slider), and Grid (Snap, linked to the viewport snap). Timeline empty state: idle transport bar, seconds ruler, and "Nothing to animate yet". Added a K shortcut that keys the selected object's position at the playhead. Renamed the Hierarchy and AI panels to Scene and Assistant in tabs, docs, and the tutorial. Files: `src/App.svelte`, `src/app.css`, `src/editor/AIPanel.svelte`, `src/editor/Hierarchy.svelte`, `src/editor/Inspector.svelte`, `src/editor/Timeline.svelte`, `src/editor/DocsPanel.svelte`, `src/editor/tutorial/chapters.ts`, `docs/USER_GUIDE.md`.

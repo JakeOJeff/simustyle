@@ -116,6 +116,7 @@ when space is pressed
         <div><dt>Ctrl+G / Ctrl+Shift+G</dt><dd>Group / ungroup</dd></div>
         <div><dt>Q / W / E / R</dt><dd>Select / Move / Rotate / Scale</dd></div>
         <div><dt>F</dt><dd>Frame selected object</dd></div>
+        <div><dt>Drag an object</dt><dd>Slide it across the floor and onto other objects</dd></div>
         <div><dt>Ctrl+drag</dt><dd>Box-select in viewport</dd></div>
         <div><dt>Enter</dt><dd>Send Assistant prompt (Shift+Enter: new line)</dd></div>
         <div><dt>K</dt><dd>Key selected object's position at the playhead</dd></div>

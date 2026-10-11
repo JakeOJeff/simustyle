@@ -28,6 +28,8 @@ The top bar contains scene file actions, edit and view menus, transform tools, A
 
 Choose **Add** in the top bar to create a Cube, Sphere, Cylinder, Capsule, Cone, Plane, Point/Sun/Spot light, Camera, Script object, or Empty group. Lights and cameras show a small clickable wireframe marker; rotate a Sun or Spot light to aim it. New primitives are spaced around the origin. Select an object by clicking it in the viewport or its row in the Scene panel. The selected object's properties appear in Inspector.
 
+Press on an object and drag to move it, like in Roblox Studio: it slides across the floor and settles on top of other objects (or beside them when you drag onto a side). The pointer becomes an open hand over objects you can drag and a closed hand while dragging. Snap rounds the drop point to 0.5 m, and one undo puts the object back. Dragging is off during Play, and the gizmo handles take priority when the pointer is over them. A left-drag that starts on empty space still orbits the camera.
+
 Hold **Ctrl** and drag in the viewport to draw a selection box. Every object whose visible bounds intersect the box is selected. Ctrl-click or Shift-click rows in the Scene panel to add or remove items from the current selection.
 
 ### Transform objects
@@ -116,6 +118,7 @@ Choose **Export** in the top bar:
 | Ctrl+G / Ctrl+Shift+G | Group selection / ungroup selection |
 | Q / W / E / R | Select / Move / Rotate / Scale tool |
 | F | Frame selected object |
+| Drag an object in viewport | Move it across surfaces |
 | Ctrl+drag in viewport | Box-select intersecting objects |
 | Ctrl+click or Shift+click in the Scene panel | Extend selection |
 | Enter in Assistant prompt | Send the AI request (Shift+Enter for a new line) |
