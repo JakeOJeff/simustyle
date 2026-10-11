@@ -1,4 +1,7 @@
 <script lang="ts">
+  import TutorialPanel from "./TutorialPanel.svelte";
+  let helpView = $state<"tutorial" | "manual">("tutorial");
+
   const topics = [
     ["getting-started", "Getting started"], ["workspace", "Workspace"], ["scene-editing", "Scene editing"],
     ["hierarchy-inspector", "Hierarchy & Inspector"], ["scripts", "Scripts & Console"],
@@ -9,11 +12,20 @@
 
 <div class="docs-page">
   <header class="docs-intro">
-    <span class="eyebrow">SIMUSTYLE MANUAL</span>
+    <span class="eyebrow">SIMUSTYLE HELP</span>
     <h1>Build a scene, your way.</h1>
-    <p>Everything you need to create, script, animate, and export a SimuStyle scene.</p>
+    <p>Learn by trying the interactive chapters, or look up a feature in the manual.</p>
   </header>
 
+  <div class="help-tabs" role="tablist" aria-label="Help sections">
+    <button type="button" role="tab" aria-selected={helpView === "tutorial"} class:active={helpView === "tutorial"} onclick={() => helpView = "tutorial"}>Interactive tutorials</button>
+    <button type="button" role="tab" aria-selected={helpView === "manual"} class:active={helpView === "manual"} onclick={() => helpView = "manual"}>Manual</button>
+  </div>
+
+  {#if helpView === "tutorial"}
+    <div class="tutorial-view"><TutorialPanel /></div>
+  {:else}
+  <div class="manual-view">
   <nav class="docs-index" aria-label="Guide contents">
     {#each topics as [id, title]}
       <a href="#docs-{id}">{title}<span>›</span></a>
@@ -126,14 +138,21 @@ when space is pressed
     </section>
     <footer>SimuStyle · User guide</footer>
   </article>
+  </div>
+  {/if}
 </div>
 
 <style>
-  .docs-page{height:100%;overflow:auto;background:#17181f;color:#d8d6e0;font:11px/1.65 'DM Sans',sans-serif;scroll-behavior:smooth}
+  .docs-page{height:100%;display:flex;flex-direction:column;overflow:hidden;background:#17181f;color:#d8d6e0;font:11px/1.65 'DM Sans',sans-serif}
   .docs-intro{padding:24px 24px 17px;border-bottom:1px solid #ffffff12;background:linear-gradient(135deg,#242238,#191a21 65%)}
   .eyebrow{font:9px 'DM Mono',monospace;letter-spacing:.16em;color:#a99aff}
   h1{margin:8px 0 5px;color:#f0eef8;font-size:20px;line-height:1.25;font-weight:600;letter-spacing:-.03em}
   .docs-intro p{max-width:520px;margin:0;color:#9c99a9;font-size:11px}
+  .help-tabs{display:flex;gap:5px;padding:8px 22px;border-bottom:1px solid #ffffff10;background:#15161c}
+  .help-tabs button{border:1px solid transparent;border-radius:5px;background:transparent;color:#a7a4b2;padding:6px 10px;font:10px 'DM Sans',sans-serif;cursor:pointer}
+  .help-tabs button:hover,.help-tabs button.active{border-color:#8b7cf066;background:#29263b;color:#e4deff}
+  .tutorial-view{flex:1;min-height:0;overflow:hidden}
+  .manual-view{flex:1;min-height:0;overflow:auto;scroll-behavior:smooth}
   .docs-index{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:5px;padding:15px 22px;border-bottom:1px solid #ffffff0e}
   .docs-index a{display:flex;justify-content:space-between;gap:8px;padding:6px 8px;border:1px solid #ffffff0d;background:#1c1d25;color:#c8c5d3;text-decoration:none;font-size:10px}
   .docs-index a:hover{border-color:#8b7cf088;color:#fff}.docs-index span{color:#9888ff}
@@ -147,5 +166,5 @@ when space is pressed
   a{color:#b2a5ff}ul{margin:7px 0;padding-left:18px;color:#aaa7b6}li{margin:5px 0}
   .shortcuts{margin:8px 0}.shortcuts div{display:grid;grid-template-columns:minmax(130px, .8fr) 1.2fr;gap:12px;padding:5px 7px;border-bottom:1px solid #ffffff08}.shortcuts dt{color:#c9c3e0;font:9px 'DM Mono',monospace}.shortcuts dd{margin:0;color:#9693a2}
   footer{padding:17px 0;color:#6f6d7a;font:9px 'DM Mono',monospace;letter-spacing:.04em}
-  @media(max-width:520px){.docs-intro{padding:17px}.docs-index{padding:12px;grid-template-columns:1fr}.docs-content{padding-right:16px;padding-left:16px}.shortcuts div{grid-template-columns:110px 1fr}}
+  @media(max-width:520px){.docs-intro{padding:17px}.help-tabs{padding:8px 12px}.docs-index{padding:12px;grid-template-columns:1fr}.docs-content{padding-right:16px;padding-left:16px}.shortcuts div{grid-template-columns:110px 1fr}}
 </style>

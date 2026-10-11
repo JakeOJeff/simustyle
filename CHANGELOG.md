@@ -4,6 +4,13 @@ Record meaningful project changes during the event, newest first.
 
 ## Event build log
 
+### 2026-10-11T22:56:19+05:30 — Add optional interactive feature tutorials
+
+- Changed: Added 14 self-paced chapters to Docs covering navigation, object creation, transforms, hierarchy, Inspector, physics and joints, scripts and Console, Play, animation, AI, scene files, export, desktop, and editing shortcuts. Users can choose chapters, skip steps, reset or resume progress; progress is stored locally. Kept the reference manual available alongside tutorials. Files: `src/editor/TutorialPanel.svelte`, `src/editor/DocsPanel.svelte`, and `README.md`.
+- Why: Let users learn individual editor features by trying them in the app at their own pace.
+- Validation: Reviewed the tutorial chapter coverage, user-controlled progress behavior, and documentation links; ran `git diff --check`. No tests were run.
+- Limitations: Completion is self-reported by the user; the tutorial does not inspect scene state or automatically verify actions.
+
 ### 2026-10-11T22:47:49+05:30 — Add middle-button panning and contextual creation
 
 - Changed: Mapped middle-drag to viewport panning and reserved right-click for context menus. Added the toolbar's object choices to the context menu, placing them at the viewport pointer or as children of the clicked object; empty Hierarchy space creates root objects. Updated the README and in-app guide.
