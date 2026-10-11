@@ -4,6 +4,13 @@ Record meaningful project changes during the event, newest first.
 
 ## Event build log
 
+### 2026-10-11T06:23:00+05:30 — Stop the AI writing unsupported kill-brick commands
+
+- Changed: The script spec in the agent prompt now states that kill, respawn, reset, teleport, and warp do not exist, shows the `when I touch player` / `move it to 0 2 0` reset idiom, and says `if ... then` bodies go on the next indented line. Script errors sent back to the model (and shown to the user) now quote the rejected line, e.g. `line 2, column 8 in "kill it"`. Files: `src/ai/prompt.ts`, `src/ai/agent.ts`, `tests/ai/agent.test.ts`, and `AI_USAGE.md`.
+- Why: An obby request with kill bricks failed after 4 attempts with `Entity 'killbrick_1', line 2, column 8: Unexpected text after statement`. Probing the parser showed `kill it` produces exactly that error; the bare position gave the model nothing to correct.
+- Validation: `npx vitest run` (121 tests, 2 new) and `npm run typecheck` passed.
+- Limitations: Not retried against a live model; the cause is inferred from the error position because rejected replies are not logged.
+
 ### 2026-10-11T05:32:00+05:30 — Improve AI object creation and scene context
 
 - Changed: The scene agent's system prompt now describes components as one compact line each and the scene as one line per object (children indented, defaults omitted, compact JSON) with each mesh's size, the y range it occupies, and four free floor spots. It adds short guidance on mesh dimensions, resting and stacking, free-spot placement, multi-part objects as groups with relative children, colors, physics, and ids/names. A new `tidyCreates` step fixes create operations before validation: clashing ids (with later parent/Joint references in the batch), duplicate names, a missing Transform, unpositioned top-level objects (moved to a free spot), objects below the floor (lifted), and falling bodies created inside another object (raised on top); adjustments are appended to the reply summary. Correction retries now include the model's rejected reply, so it can fix only the reported errors; the dev proxy accepts assistant messages (the desktop shell already did). Corrected the Transform description to say it is parent-relative. Files: `src/ai/sceneContext.ts` (new), `src/ai/placement.ts` (new), `src/ai/prompt.ts`, `src/ai/agent.ts`, `src/ai/client.ts`, `src/App.svelte`, `vite.config.ts`, `src/scene/serialize.ts`, `src/registry/components/transform.ts`, `tests/ai/prompt.test.ts`, `tests/ai/placement.test.ts` (new), `README.md`, `docs/USER_GUIDE.md`, and `AI_USAGE.md`.
