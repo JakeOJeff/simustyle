@@ -66,7 +66,7 @@ move player above the box
 paint player blue
 ```
 
-Use Up and Down to recall command history. Commands that contain waits or glides finish immediately in the Console. The [Scripting reference](../README.md#scripting) lists supported sentences, targets, values, and examples.
+After each command, Console lists every created, changed, or removed object by name, for example `Created Ball2: red ball at 0 0.5 0`, `Crate: moved to 1 2 3, painted blue`, or `Removed Crate`. Use Up and Down to recall command history. Commands that contain waits or glides finish immediately in the Console. The [Scripting reference](../README.md#scripting) lists supported sentences, targets, values, and examples.
 
 ## Scripts
 

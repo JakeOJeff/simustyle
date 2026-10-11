@@ -4,6 +4,13 @@ Record meaningful project changes during the event, newest first.
 
 ## Event build log
 
+### 2026-10-11T06:31:00+05:30 — Name changed objects in Console after each command
+
+- Changed: After a command-bar command, Console now prints one line per created, changed, or removed object, using its name: `Created Ball2: red ball at 0 0.5 0`, `Crate: painted red`, `Crate: moved to 1 2 3`, `Crate: hidden`, `Removed Crate`. Moves, turns, scales, paint, hide/show, renames, reparenting, and added/removed components each have wording; any other field shows as `changed Component.field`. Named palette colors print by name, other colors as hex. Files: `src/scene/describeChanges.ts` (new), `src/App.svelte`, `tests/scene/describeChanges.test.ts` (new), `README.md`, `docs/USER_GUIDE.md`, and `AI_USAGE.md`.
+- Why: The participant wanted to see the name of the object a command created (e.g. Ball2) so they can refer to it, and the same feedback for every command.
+- Validation: `npx vitest run` (123 tests, 2 new), `npm run typecheck`, and `npx svelte-check` (0 errors/0 warnings) passed. Previewed output for add, scale, turn, and repeated `add red ball` through `ScriptRuntime.runOnce`.
+- Limitations: Not checked in the running app. During Play, the lines compare the scene before and after the command, so they could include physics motion from the same step. AI-panel edits do not print these lines.
+
 ### 2026-10-11T06:23:00+05:30 — Stop the AI writing unsupported kill-brick commands
 
 - Changed: The script spec in the agent prompt now states that kill, respawn, reset, teleport, and warp do not exist, shows the `when I touch player` / `move it to 0 2 0` reset idiom, and says `if ... then` bodies go on the next indented line. Script errors sent back to the model (and shown to the user) now quote the rejected line, e.g. `line 2, column 8 in "kill it"`. Files: `src/ai/prompt.ts`, `src/ai/agent.ts`, `tests/ai/agent.test.ts`, and `AI_USAGE.md`.

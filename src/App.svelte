@@ -24,6 +24,7 @@
   import { componentSchemas } from "./registry";
   import { Box, FileCode2, X } from "@lucide/svelte";
   import { applyOps } from "./scene/applyOps";
+  import { describeChanges } from "./scene/describeChanges";
   import { groupOps, reparentOps, ungroupOps, uniqueId } from "./scene/hierarchy";
   import { keyName } from "./lang/vocabulary";
   import { deserializeScene, serializeScene } from "./scene/serialize";
@@ -868,6 +869,7 @@ when clicked
     for (const entry of result.prints) log("print", entry.values.map(String).join(" "));
     for (const issue of result.issues) log("error", issue.message);
     const ops = scriptOps(scene, result.scene);
+    for (const line of describeChanges(scene, result.scene)) log("info", line);
     if (ops.length) {
       const applied = playState === "stopped" ? apply(ops) : (scene = result.scene, true);
       if (applied) message = `Ran: ${text}`;
