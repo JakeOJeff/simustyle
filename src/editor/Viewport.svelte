@@ -1,12 +1,15 @@
 <script lang="ts">
-  import { onMount, untrack } from "svelte";
+  import { onMount, untrack, type Snippet } from "svelte";
   import * as THREE from "three";
   import { OrbitControls } from "three/addons/controls/OrbitControls.js";
   import { TransformControls } from "three/addons/controls/TransformControls.js";
+  import { Box, Focus, House } from "@lucide/svelte";
+  import { easeProgress } from "../runtime/easing";
   import type { Entity, Scene, Vec3 } from "../scene/types";
 
   /** "select" picks objects without showing a transform gizmo. */
   type TransformMode = "select" | "translate" | "rotate" | "scale";
+  type ViewPreset = "perspective" | "home" | "top" | "front" | "right" | "back" | "left";
   type TransformPhase = "start" | "change" | "end";
   type TransformPatch = { position?: Vec3; rotation?: Vec3; scale?: Vec3 };
 
@@ -32,11 +35,23 @@
     space: "world" | "local";
     /** Snap moves to 0.5 m, turns to 15°, and scaling to 0.1 steps. */
     snap: boolean;
+    /** Extra floating controls drawn over the canvas (tool rail, create shelf). */
+    overlay?: Snippet;
   }
 
-  let { scene, selectedId, selectedIds, mode, onSelect, onSelectMany, onTransform, onModeChange, onContextMenu, frameToken, focusToken, gridVisible, space, snap }: Props = $props();
+  let { scene, selectedId, selectedIds, mode, onSelect, onSelectMany, onTransform, onModeChange, onContextMenu, frameToken, focusToken, gridVisible, space, snap, overlay }: Props = $props();
   let host: HTMLDivElement;
   let marquee: { left: number; top: number; width: number; height: number } | null = $state(null);
+  let viewControls: { setView(view: ViewPreset): void; frame(): void } | null = null;
+  /** The view preset the camera is in, or null after the user orbits freely. */
+  let activeView = $state<ViewPreset | null>("perspective");
+  const viewButtons: { view: ViewPreset; label: string; short: string; secondary?: boolean }[] = [
+    { view: "top", label: "Top view", short: "Top" },
+    { view: "front", label: "Front view", short: "Front" },
+    { view: "right", label: "Right view", short: "Right" },
+    { view: "back", label: "Back view", short: "Back", secondary: true },
+    { view: "left", label: "Left view", short: "Left", secondary: true }
+  ];
 
   function component(entity: Entity, name: string): Record<string, unknown> {
     return entity.components[name] ?? {};
@@ -106,6 +121,7 @@
     let orbitWasEnabled = true;
     let frame = 0;
     let disposed = false;
+    let cameraTween: { fromPosition: THREE.Vector3; toPosition: THREE.Vector3; fromTarget: THREE.Vector3; toTarget: THREE.Vector3; start: number; seconds: number } | null = null;
 
     function currentEntity(): Entity | undefined {
       return scene.entities.find((entity) => entity.id === selectedId);
@@ -221,18 +237,43 @@
       orbit.enabled = orbitWasEnabled;
       onSelectMany(ids);
     }
+    /** Glides the camera to a new view with an eased move instead of jumping. */
+    function flyTo(position: THREE.Vector3, target: THREE.Vector3, seconds = 0.45) {
+      cameraTween = { fromPosition: camera.position.clone(), toPosition: position, fromTarget: orbit.target.clone(), toTarget: target, start: performance.now(), seconds };
+    }
+    function stepCameraTween(now: number) {
+      if (!cameraTween) return;
+      const amount = Math.min(1, (now - cameraTween.start) / 1000 / cameraTween.seconds);
+      const eased = easeProgress("ease-in-out-cubic", amount);
+      camera.position.lerpVectors(cameraTween.fromPosition, cameraTween.toPosition, eased);
+      orbit.target.lerpVectors(cameraTween.fromTarget, cameraTween.toTarget, eased);
+      if (amount >= 1) cameraTween = null;
+    }
     function focusSelected() {
       const entity = currentEntity();
       const object = entity && entityObjects.get(entity.id);
       if (!object) return;
       const box = new THREE.Box3().setFromObject(object);
-      const target = box.isEmpty() ? object.position.clone() : box.getCenter(new THREE.Vector3());
+      const target = box.isEmpty() ? object.getWorldPosition(new THREE.Vector3()) : box.getCenter(new THREE.Vector3());
       const size = box.isEmpty() ? 1 : box.getSize(new THREE.Vector3()).length();
       const direction = camera.position.clone().sub(orbit.target).normalize();
-      orbit.target.copy(target);
-      camera.position.copy(target).add(direction.multiplyScalar(Math.max(2, size * 1.8)));
-      camera.updateProjectionMatrix();
+      flyTo(target.clone().add(direction.multiplyScalar(Math.max(2, size * 1.8))), target);
     }
+    /** Unity-style view presets that keep the current orbit distance and target. */
+    function setView(view: ViewPreset) {
+      const distance = Math.max(3, camera.position.distanceTo(orbit.target));
+      const target = view === "home" ? new THREE.Vector3(0, 0.8, 0) : orbit.target.clone();
+      const directions: Record<ViewPreset, THREE.Vector3> = {
+        perspective: new THREE.Vector3(7, 6, 9), home: new THREE.Vector3(7, 6, 9),
+        // A hair of z keeps OrbitControls from flipping when looking straight down.
+        top: new THREE.Vector3(0, 1, 0.0001), front: new THREE.Vector3(0, 0, 1), right: new THREE.Vector3(1, 0, 0), back: new THREE.Vector3(0, 0, -1), left: new THREE.Vector3(-1, 0, 0)
+      };
+      const reach = view === "home" ? Math.hypot(7, 5.2, 9) : distance;
+      flyTo(target.clone().add(directions[view].normalize().multiplyScalar(reach)), target);
+      activeView = view === "home" ? "perspective" : view;
+    }
+    viewControls = { setView, frame: focusSelected };
+    orbit.addEventListener("start", () => { cameraTween = null; activeView = null; });
     const pointerDown = (event: PointerEvent) => {
       downX = event.clientX;
       downY = event.clientY;
@@ -434,9 +475,10 @@
       orbit.update();
     }
 
-    const render = () => {
+    const render = (now = performance.now()) => {
       if (disposed) return;
       frame = requestAnimationFrame(render);
+      stepCameraTween(now);
       orbit.update();
       renderer.render(world, camera);
     };
@@ -473,6 +515,7 @@
 
     return () => {
       disposed = true;
+      viewControls = null;
       cancelAnimationFrame(frame);
       stopSync();
       resizeObserver.disconnect();
@@ -505,6 +548,16 @@
   {#if marquee}
     <div class="selection-marquee" style={`left:${marquee.left}px;top:${marquee.top}px;width:${marquee.width}px;height:${marquee.height}px`}></div>
   {/if}
+  <div class="view-controls" role="toolbar" aria-label="Camera view">
+    <button class:active={activeView === "perspective"} title="Perspective view" aria-label="Perspective view" onclick={() => viewControls?.setView("perspective")}><Box size={13} /></button>
+    {#each viewButtons as item (item.view)}
+      <button class="text" class:secondary={item.secondary} class:active={activeView === item.view} title={item.label} aria-label={item.label} onclick={() => viewControls?.setView(item.view)}>{item.short}</button>
+    {/each}
+    <span class="divider"></span>
+    <button title="Frame selected (F)" aria-label="Frame selected" disabled={!selectedId} onclick={() => viewControls?.frame()}><Focus size={13} /></button>
+    <button title="Reset camera" aria-label="Reset camera" onclick={() => viewControls?.setView("home")}><House size={13} /></button>
+  </div>
+  {#if overlay}{@render overlay()}{/if}
 </div>
 
 <style>
@@ -525,6 +578,47 @@
     border: 1px solid #70d8ff;
     background: #70d8ff24;
     pointer-events: none;
+  }
+
+  .view-controls {
+    position: absolute;
+    z-index: 2;
+    top: 10px;
+    right: 10px;
+    display: flex;
+    align-items: center;
+    gap: 2px;
+    padding: 3px;
+    border: 1px solid #ffffff14;
+    border-radius: 8px;
+    background: #15161cd9;
+    backdrop-filter: blur(6px);
+    box-shadow: 0 6px 18px #0006;
+  }
+
+  .view-controls button {
+    display: grid;
+    min-width: 26px;
+    height: 24px;
+    place-items: center;
+    padding: 0 6px;
+    border: 1px solid transparent;
+    border-radius: 5px;
+    background: transparent;
+    color: #b1aebd;
+    font: 9.5px 'DM Sans', sans-serif;
+    cursor: pointer;
+    transition: background .12s, color .12s;
+  }
+
+  .view-controls button:hover:not(:disabled) { background: #ffffff12; color: #fff; }
+  .view-controls button.active { border-color: #7d6ff066; background: #3b3566; color: #e1dbff; }
+  .view-controls button:disabled { opacity: .35; cursor: default; }
+  .view-controls button:focus-visible { outline: 2px solid #a99bff; outline-offset: 1px; }
+  .view-controls .divider { width: 1px; height: 16px; margin: 0 3px; background: #ffffff18; }
+
+  @media (max-width: 1100px) {
+    .view-controls .secondary:not(.active) { display: none; }
   }
 
   .viewport :global(canvas) {

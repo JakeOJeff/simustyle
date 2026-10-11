@@ -20,10 +20,16 @@
   import { chooseSceneToOpen, chooseSceneToSave, getDesktopAiSettings, isDesktopRuntime, readSceneFile, saveDesktopAiSettings, writeSceneFile } from "./platform/desktop";
   import { cacheRecentScene, loadRecentScenes, readCachedRecentScene, saveRecentScenes, type RecentSceneEntry } from "./platform/recentScenes";
   import type { VideoExportConfig, VideoExportProgress } from "./export/video";
-  import type { AnimationTrack, AnimationValue } from "./runtime/animator";
+  import type { AnimationTrack, AnimationValue, BezierPoints } from "./runtime/animator";
   import { AnimatorRuntime } from "./runtime/animator";
+  import { ANIMATION_PRESETS, presetOp } from "./runtime/animationPresets";
+  import PresetGallery from "./editor/animation/PresetGallery.svelte";
   import { componentSchemas } from "./registry";
-  import { Box, FileCode2, X } from "@lucide/svelte";
+  import {
+    BookOpen, Bot, Box, Camera, Circle, ClipboardPaste, Clapperboard, Cone, Copy, CopyPlus, Cylinder, FileCode, FileCode2, Flashlight, FolderPlus,
+    Group, Lightbulb, ListTree, Magnet, MousePointer2, Move, PencilLine, Pill, Plus, RotateCw, Scaling, Scissors, SlidersHorizontal, Sparkles, Square,
+    Sun, Terminal, Trash, Ungroup, ArrowUpFromLine, X
+  } from "@lucide/svelte";
   import { applyOps } from "./scene/applyOps";
   import { describeChanges } from "./scene/describeChanges";
   import { groupOps, localPosition, reparentOps, ungroupOps, uniqueId } from "./scene/hierarchy";
@@ -97,6 +103,7 @@
   let consoleLog: { kind: "info" | "error" | "print"; text: string }[] = $state([]);
   let contextMenu: { id: string | null; x: number; y: number; position: Vec3 | null; source: "object" | "viewport" | "hierarchy" } | null = $state(null);
   let contextAddOpen = $state(false);
+  let presetGallery: { entityId: string; anchor: DOMRect } | null = $state(null);
   let renameTarget: { id: string; name: string } | null = $state(null);
   let entityClipboard: Entity[] | null = $state.raw(null);
   const animatorPreview = new AnimatorRuntime();
@@ -353,12 +360,37 @@
     let track = tracks.find((candidate) => candidate.component === component && candidate.field === field);
     if (!track) { track = { component, field, keys: [] }; tracks.push(track); }
     const existing = track.keys.findIndex((key) => Math.abs(key.time - timelineTime) < 0.001);
-    const key = { time: timelineTime, value: structuredClone(value), interpolation: "linear" as const };
-    if (existing >= 0) track.keys[existing] = key;
-    else track.keys.push(key);
+    // Re-keying keeps the key's easing; a new key continues the easing of the key before it.
+    const before = [...track.keys].sort((a, b) => a.time - b.time).filter((key) => key.time < timelineTime).at(-1);
+    if (existing >= 0) track.keys[existing] = { ...track.keys[existing]!, value: structuredClone(value) };
+    else track.keys.push({ time: timelineTime, value: structuredClone(value), interpolation: before?.interpolation ?? "linear", ...(before?.bezier ? { bezier: [...before.bezier] as BezierPoints } : {}) });
     track.keys.sort((a, b) => a.time - b.time);
     changeTracks(selectedId, tracks);
     panelOpen.timeline = true;
+  }
+
+  function changeAnimator(entityId: string, fields: { loop?: boolean; duration?: number }) {
+    apply([{ op: "update", id: entityId, components: { Animator: fields } }]);
+  }
+
+  /** One-click preset: one undoable edit, then show it playing on the timeline. */
+  function applyAnimationPreset(entityId: string, presetId: string) {
+    const entity = scene.entities.find((candidate) => candidate.id === entityId);
+    if (!entity) return;
+    if (playState !== "stopped") { message = "Stop the simulation before adding animation."; return; }
+    const { op, error } = presetOp(presetId, entity);
+    if (!op) { message = error ?? "Could not apply that preset."; return; }
+    if (!apply([op])) return;
+    selectEntity(entityId);
+    timelineTime = 0;
+    if (!panelOpen.timeline) togglePanel("timeline");
+    message = `Added ${ANIMATION_PRESETS.find((preset) => preset.id === presetId)?.label ?? presetId} animation to ${entity.name}. Press Play on the timeline to preview.`;
+  }
+
+  function openPresetGallery(entityId: string | null, anchor: DOMRect) {
+    if (!entityId) { message = "Select an object to animate first."; return; }
+    if (playState !== "stopped") { message = "Stop the simulation before adding animation."; return; }
+    presetGallery = { entityId, anchor };
   }
 
   function pushAIMessage(aiMessage: AIPanelMessage) { aiMessages = [...aiMessages, aiMessage]; }
@@ -1299,7 +1331,18 @@ when clicked
     message = "Stepped one frame";
   }
 
-  const panelNames: EditorPanel[] = ["hierarchy", "inspector", "console", "ai", "timeline", "docs", "sceneLoader"];
+  const railTools: { mode: ToolMode; label: string; key: string; icon: typeof Move }[] = [
+    { mode: "select", label: "Select", key: "Q", icon: MousePointer2 },
+    { mode: "translate", label: "Move", key: "W", icon: Move },
+    { mode: "rotate", label: "Rotate", key: "E", icon: RotateCw },
+    { mode: "scale", label: "Scale", key: "R", icon: Scaling }
+  ];
+  const shelfPrimitives: { shape: PrimitiveShape; label: string; icon: typeof Box }[] = [
+    { shape: "box", label: "Cube", icon: Box }, { shape: "sphere", label: "Sphere", icon: Circle }, { shape: "cylinder", label: "Cylinder", icon: Cylinder },
+    { shape: "capsule", label: "Capsule", icon: Pill }, { shape: "cone", label: "Cone", icon: Cone }, { shape: "plane", label: "Plane", icon: Square }
+  ];
+
+  const panelNames: EditorPanel[] =["hierarchy", "inspector", "console", "ai", "timeline", "docs", "sceneLoader"];
   const panelLabels: Record<EditorPanel, string> = { hierarchy: "Hierarchy", inspector: "Inspector", console: "Console", ai: "AI", timeline: "Timeline", docs: "Docs", sceneLoader: "Scene Loader" };
 
   function togglePanel(name: string) {
@@ -1411,7 +1454,34 @@ when clicked
         </div>
       {/if}
       <div class="stage" bind:this={stageHost} style={stageContentStyle()} use:observeStageSize>
-        <Viewport scene={viewportScene} {selectedId} {selectedIds} {mode} {frameToken} {focusToken} {gridVisible} {space} {snap} onSelect={viewportSelect} onSelectMany={selectEntities} onTransform={updateTransform} onModeChange={(nextMode) => mode = nextMode} onContextMenu={(id, x, y, position) => openEntityMenu(id, x, y, position, id ? "object" : "viewport")} />
+        <Viewport scene={viewportScene} {selectedId} {selectedIds} {mode} {frameToken} {focusToken} {gridVisible} {space} {snap} onSelect={viewportSelect} onSelectMany={selectEntities} onTransform={updateTransform} onModeChange={(nextMode) => mode = nextMode} onContextMenu={(id, x, y, position) => openEntityMenu(id, x, y, position, id ? "object" : "viewport")}>
+          {#snippet overlay()}
+            <div class="tool-rail" role="toolbar" aria-label="Transform tools" aria-orientation="vertical">
+              {#each railTools as item (item.mode)}
+                <button class:active={mode === item.mode} aria-pressed={mode === item.mode} aria-label="{item.label} tool" data-tip="{item.label} ({item.key})" onclick={() => mode = item.mode}><item.icon size={15} /></button>
+              {/each}
+              <span class="rail-sep"></span>
+              <button class:active={snap} aria-pressed={snap} aria-label="Snap" data-tip="Snap: 0.5 m, 15°, 0.1" onclick={() => snap = !snap}><Magnet size={14} /></button>
+            </div>
+            {#if playState === "stopped"}
+              <div class="create-shelf" role="toolbar" aria-label="Create objects">
+                {#each shelfPrimitives as item (item.shape)}
+                  <button aria-label="Add {item.label}" data-tip={item.label} onclick={() => createPrimitive(item.shape)}><item.icon size={15} /></button>
+                {/each}
+                <span class="shelf-sep"></span>
+                <button aria-label="Add point light" data-tip="Point light" onclick={() => addLight("point")}><Lightbulb size={15} /></button>
+                <button aria-label="Add sun light" data-tip="Sun light" onclick={() => addLight("directional")}><Sun size={15} /></button>
+                <button aria-label="Add spot light" data-tip="Spot light" onclick={() => addLight("spot")}><Flashlight size={15} /></button>
+                <button aria-label="Add camera" data-tip="Camera" onclick={addCamera}><Camera size={15} /></button>
+                <span class="shelf-sep"></span>
+                <button aria-label="Add empty group" data-tip="Empty group" onclick={() => { selectEntity(null); groupSelection(); }}><FolderPlus size={15} /></button>
+                <button aria-label="Add script object" data-tip="Script object" onclick={addScriptObject}><FileCode size={15} /></button>
+                <span class="shelf-sep"></span>
+                <button class="shelf-animate" aria-label="Animate selected object" data-tip={selectedEntity ? `Animate ${selectedEntity.name}` : "Select an object to animate"} disabled={!selectedEntity} onclick={(event) => openPresetGallery(selectedId, event.currentTarget.getBoundingClientRect())}><Sparkles size={15} /></button>
+              </div>
+            {/if}
+          {/snippet}
+        </Viewport>
         {#if activeTab !== "scene" && openScripts.includes(activeTab)}
           {@const id = activeTab}
           <div class="scene-content-window" style={sceneContentStyle()}>
@@ -1443,7 +1513,7 @@ when clicked
           {#if panelOpen.inspector}
             <section class="panel-window" class:floating-panel={panelLayouts.inspector.dock === "floating"} style={panelWindowStyle("inspector")} use:rememberPanelSize={"inspector"}>
               <header class="panel-window-title"><button class="panel-drag-handle" type="button" aria-label="Drag Inspector panel to move or snap" onpointerdown={(event) => startPanelDrag(event, "inspector")}><strong>Inspector</strong><span>Drag to move or snap</span></button><button class="panel-close" type="button" aria-label="Close Inspector" onclick={() => panelOpen.inspector = false}><X size={13} /></button></header>
-              <div class="panel-window-body sidebar-panel-body"><Inspector {scene} entity={selectedEntity} onUpdate={updateComponent} onRemove={(component) => selectedId && apply([{ op: "update", id: selectedId, components: { [component]: null } }])} onAdd={addComponent} onKeyframe={addKeyframe} onOpenScript={() => selectedId && openScript(selectedId)} onRename={(name) => selectedId && apply([{ op: "update", id: selectedId, components: {}, name }])} onReparent={(parent) => selectedId && reparentEntity(selectedId, parent)} onSettings={updateSettings} onPhysics={(enabled) => selectedId && setPhysics(selectedId, enabled)} onCollision={(enabled) => selectedId && setCollision(selectedId, enabled)} /></div>
+              <div class="panel-window-body sidebar-panel-body"><Inspector {scene} entity={selectedEntity} onUpdate={updateComponent} onRemove={(component) => selectedId && apply([{ op: "update", id: selectedId, components: { [component]: null } }])} onAdd={addComponent} onKeyframe={addKeyframe} onOpenScript={() => selectedId && openScript(selectedId)} onRename={(name) => selectedId && apply([{ op: "update", id: selectedId, components: {}, name }])} onReparent={(parent) => selectedId && reparentEntity(selectedId, parent)} onSettings={updateSettings} onPhysics={(enabled) => selectedId && setPhysics(selectedId, enabled)} onCollision={(enabled) => selectedId && setCollision(selectedId, enabled)} playhead={timelineTime} onOpenTimeline={() => { if (!panelOpen.timeline) togglePanel("timeline"); else focusedPanel = "timeline"; }} onAnimate={(anchor) => openPresetGallery(selectedId, anchor)} /></div>
               <PanelResizeHandles panelName="Inspector" dock={panelLayouts.inspector.dock} onResizeStart={(event, edge) => startPanelResize(event, "inspector", edge)} />
             </section>
           {/if}
@@ -1475,7 +1545,7 @@ when clicked
           {#if panelOpen.timeline}
             <section class="panel-window" class:floating-panel={panelLayouts.timeline.dock === "floating"} style={panelWindowStyle("timeline")} use:rememberPanelSize={"timeline"}>
               <header class="panel-window-title"><button class="panel-drag-handle" type="button" aria-label="Drag Timeline panel to move or snap" onpointerdown={(event) => startPanelDrag(event, "timeline")}><strong>Timeline</strong><span>Drag to move or snap</span></button><button class="panel-close" type="button" aria-label="Close Timeline" onclick={() => panelOpen.timeline = false}><X size={13} /></button></header>
-              <div class="panel-window-body"><Timeline {scene} {selectedId} playhead={timelineTime} onPlayheadChange={(value) => timelineTime = value} onTrackChange={(tracks) => selectedId && changeTracks(selectedId, tracks)} /></div>
+              <div class="panel-window-body"><Timeline {scene} {selectedId} playhead={timelineTime} onPlayheadChange={(value) => timelineTime = value} onTrackChange={(tracks) => selectedId && changeTracks(selectedId, tracks)} onAnimatorChange={(fields) => selectedId && changeAnimator(selectedId, fields)} onApplyPreset={(presetId) => selectedId && applyAnimationPreset(selectedId, presetId)} /></div>
               <PanelResizeHandles panelName="Timeline" dock={panelLayouts.timeline.dock} onResizeStart={(event, edge) => startPanelResize(event, "timeline", edge)} />
             </section>
           {/if}
@@ -1516,12 +1586,12 @@ when clicked
         </div>
       </div>
       <div class="bottom-tabs" role="toolbar" aria-label="Show or hide editor panels">
-        <button class:selected={panelOpen.hierarchy} aria-pressed={panelOpen.hierarchy} onclick={() => panelOpen.hierarchy = !panelOpen.hierarchy}>Hierarchy</button>
-        <button class:selected={panelOpen.inspector} aria-pressed={panelOpen.inspector} onclick={() => panelOpen.inspector = !panelOpen.inspector}>Inspector</button>
-        <button class:selected={panelOpen.console} aria-pressed={panelOpen.console} onclick={() => panelOpen.console = !panelOpen.console}>Console</button>
-        <button class:selected={panelOpen.ai} aria-pressed={panelOpen.ai} onclick={() => panelOpen.ai = !panelOpen.ai}>AI</button>
-        <button class:selected={panelOpen.timeline} aria-pressed={panelOpen.timeline} onclick={() => panelOpen.timeline = !panelOpen.timeline}>Timeline</button>
-        <button class:selected={panelOpen.docs} aria-pressed={panelOpen.docs} onclick={() => togglePanel("docs")}>Docs</button>
+        <button class:selected={panelOpen.hierarchy} aria-pressed={panelOpen.hierarchy} onclick={() => panelOpen.hierarchy = !panelOpen.hierarchy}><ListTree size={12} /> Hierarchy</button>
+        <button class:selected={panelOpen.inspector} aria-pressed={panelOpen.inspector} onclick={() => panelOpen.inspector = !panelOpen.inspector}><SlidersHorizontal size={12} /> Inspector</button>
+        <button class:selected={panelOpen.console} aria-pressed={panelOpen.console} onclick={() => panelOpen.console = !panelOpen.console}><Terminal size={12} /> Console</button>
+        <button class:selected={panelOpen.ai} aria-pressed={panelOpen.ai} onclick={() => panelOpen.ai = !panelOpen.ai}><Bot size={12} /> AI</button>
+        <button class:selected={panelOpen.timeline} aria-pressed={panelOpen.timeline} onclick={() => panelOpen.timeline = !panelOpen.timeline}><Clapperboard size={12} /> Timeline</button>
+        <button class:selected={panelOpen.docs} aria-pressed={panelOpen.docs} onclick={() => togglePanel("docs")}><BookOpen size={12} /> Docs</button>
       </div>
     </section>
   </div>
@@ -1545,42 +1615,45 @@ when clicked
   {#if contextMenu}
     <button class="context-dismiss" type="button" aria-label="Close entity menu" onclick={() => contextMenu = null}></button>
     <div class="entity-context-menu" style={`left:${contextMenu.x}px;top:${contextMenu.y}px`} role="menu" aria-label="Entity actions" tabindex="-1" oncontextmenu={(event) => event.preventDefault()}>
-      <button role="menuitem" aria-expanded={contextAddOpen} onclick={() => contextAddOpen = !contextAddOpen}>Add <span class="context-chevron">{contextAddOpen ? "−" : "›"}</span></button>
+      <button role="menuitem" aria-expanded={contextAddOpen} onclick={() => contextAddOpen = !contextAddOpen}><Plus size={13} /> Add <span class="context-chevron">{contextAddOpen ? "−" : "›"}</span></button>
       {#if contextAddOpen}
-        <div class="context-add-list" aria-label="Add object">
-          <button role="menuitem" onclick={() => addContextPrimitive("box")}>Cube</button>
-          <button role="menuitem" onclick={() => addContextPrimitive("sphere")}>Sphere</button>
-          <button role="menuitem" onclick={() => addContextPrimitive("cylinder")}>Cylinder</button>
-          <button role="menuitem" onclick={() => addContextPrimitive("capsule")}>Capsule</button>
-          <button role="menuitem" onclick={() => addContextPrimitive("cone")}>Cone</button>
-          <button role="menuitem" onclick={() => addContextPrimitive("plane")}>Plane</button>
-          <div class="context-separator"></div>
-          <button role="menuitem" onclick={() => addContextLight("point")}>Point light</button>
-          <button role="menuitem" onclick={() => addContextLight("directional")}>Sun light</button>
-          <button role="menuitem" onclick={() => addContextLight("spot")}>Spot light</button>
-          <button role="menuitem" onclick={addContextCamera}>Camera</button>
-          <div class="context-separator"></div>
-          <button role="menuitem" onclick={addContextScript}>Script object</button>
-          <button role="menuitem" onclick={addContextGroup}>Empty group</button>
+        <div class="context-add-grid" aria-label="Add object">
+          {#each shelfPrimitives as item (item.shape)}
+            <button role="menuitem" title="Add {item.label}" onclick={() => addContextPrimitive(item.shape)}><item.icon size={15} /><span>{item.label}</span></button>
+          {/each}
+          <button role="menuitem" title="Add point light" onclick={() => addContextLight("point")}><Lightbulb size={15} /><span>Point</span></button>
+          <button role="menuitem" title="Add sun light" onclick={() => addContextLight("directional")}><Sun size={15} /><span>Sun</span></button>
+          <button role="menuitem" title="Add spot light" onclick={() => addContextLight("spot")}><Flashlight size={15} /><span>Spot</span></button>
+          <button role="menuitem" title="Add camera" onclick={addContextCamera}><Camera size={15} /><span>Camera</span></button>
+          <button role="menuitem" title="Add script object" onclick={addContextScript}><FileCode size={15} /><span>Script</span></button>
+          <button role="menuitem" title="Add empty group" onclick={addContextGroup}><FolderPlus size={15} /><span>Group</span></button>
         </div>
         <div class="context-separator"></div>
       {/if}
       {#if contextMenu.id}
-        <button role="menuitem" onclick={() => cutEntity(contextMenu!.id!)} disabled={playState !== "stopped"}>Cut</button>
-        <button role="menuitem" onclick={() => copyEntity(contextMenu!.id!)}>Copy</button>
+        <button role="menuitem" class="context-animate" onclick={(event) => { const id = contextMenu!.id!; const rect = event.currentTarget.getBoundingClientRect(); contextMenu = null; openPresetGallery(id, rect); }} disabled={playState !== "stopped"}><Sparkles size={13} /> Animate… <span class="context-chevron">›</span></button>
+        <div class="context-separator"></div>
+        <button role="menuitem" onclick={() => cutEntity(contextMenu!.id!)} disabled={playState !== "stopped"}><Scissors size={13} /> Cut</button>
+        <button role="menuitem" onclick={() => copyEntity(contextMenu!.id!)}><Copy size={13} /> Copy</button>
       {/if}
-      <button role="menuitem" onclick={() => pasteEntity(contextMenu?.position ?? null)} disabled={!entityClipboard || playState !== "stopped"}>Paste</button>
+      <button role="menuitem" onclick={() => pasteEntity(contextMenu?.position ?? null)} disabled={!entityClipboard || playState !== "stopped"}><ClipboardPaste size={13} /> Paste</button>
       {#if contextMenu.id}
         <div class="context-separator"></div>
-        <button role="menuitem" onclick={() => duplicateEntity(contextMenu!.id!)} disabled={playState !== "stopped"}>Duplicate</button>
-        <button role="menuitem" onclick={groupSelection} disabled={playState !== "stopped"}>Group{selectedIds.length > 1 ? ` ${selectedIds.length} objects` : ""} <kbd>Ctrl+G</kbd></button>
-        {#if scene.entities.some((entity) => entity.parent === contextMenu!.id)}<button role="menuitem" onclick={() => ungroupEntity(contextMenu!.id!)} disabled={playState !== "stopped"}>Ungroup <kbd>Ctrl+Shift+G</kbd></button>{/if}
-        {#if scene.entities.find((entity) => entity.id === contextMenu!.id)?.parent}<button role="menuitem" onclick={() => { reparentEntity(contextMenu!.id!, null); contextMenu = null; }} disabled={playState !== "stopped"}>Move out to top level</button>{/if}
-        <button role="menuitem" onclick={() => { const entity = scene.entities.find((candidate) => candidate.id === contextMenu!.id); if (entity) renameTarget = { id: entity.id, name: entity.name }; contextMenu = null; }} disabled={playState !== "stopped"}>Rename</button>
+        <button role="menuitem" onclick={() => duplicateEntity(contextMenu!.id!)} disabled={playState !== "stopped"}><CopyPlus size={13} /> Duplicate <kbd>Ctrl+D</kbd></button>
+        <button role="menuitem" onclick={groupSelection} disabled={playState !== "stopped"}><Group size={13} /> Group{selectedIds.length > 1 ? ` ${selectedIds.length}` : ""} <kbd>Ctrl+G</kbd></button>
+        {#if scene.entities.some((entity) => entity.parent === contextMenu!.id)}<button role="menuitem" onclick={() => ungroupEntity(contextMenu!.id!)} disabled={playState !== "stopped"}><Ungroup size={13} /> Ungroup <kbd>Ctrl+Shift+G</kbd></button>{/if}
+        {#if scene.entities.find((entity) => entity.id === contextMenu!.id)?.parent}<button role="menuitem" onclick={() => { reparentEntity(contextMenu!.id!, null); contextMenu = null; }} disabled={playState !== "stopped"}><ArrowUpFromLine size={13} /> Move out to top level</button>{/if}
+        <button role="menuitem" onclick={() => { const entity = scene.entities.find((candidate) => candidate.id === contextMenu!.id); if (entity) renameTarget = { id: entity.id, name: entity.name }; contextMenu = null; }} disabled={playState !== "stopped"}><PencilLine size={13} /> Rename <kbd>F2</kbd></button>
         <div class="context-separator"></div>
-        <button class="context-delete" role="menuitem" onclick={() => { if (deleteEntity(contextMenu!.id!)) contextMenu = null; }} disabled={playState !== "stopped"}>Delete</button>
+        <button class="context-delete" role="menuitem" onclick={() => { if (deleteEntity(contextMenu!.id!)) contextMenu = null; }} disabled={playState !== "stopped"}><Trash size={13} /> Delete <kbd>Del</kbd></button>
       {/if}
     </div>
+  {/if}
+  {#if presetGallery}
+    {@const galleryEntity = scene.entities.find((entity) => entity.id === presetGallery!.entityId)}
+    {#if galleryEntity}
+      <PresetGallery entity={galleryEntity} anchor={presetGallery.anchor} onApply={(presetId) => { const id = presetGallery!.entityId; presetGallery = null; applyAnimationPreset(id, presetId); }} onClose={() => presetGallery = null} />
+    {/if}
   {/if}
   {#if renameTarget}
     <div class="rename-overlay" role="presentation" onclick={(event) => { if (event.target === event.currentTarget) renameTarget = null; }}>
@@ -1651,12 +1724,42 @@ when clicked
   .scene-loader-empty{margin:0;color:#777583;font-size:10px;line-height:1.5}
   .context-dismiss{position:fixed;inset:0;z-index:30;border:0;background:transparent}
   .entity-context-menu{position:fixed;z-index:31;width:194px;max-height:75vh;overflow:auto;padding:5px;border:1px solid #383845;border-radius:8px;background:#1b1b23;box-shadow:0 12px 36px #0009}
-  .entity-context-menu button{display:block;width:100%;height:30px;padding:0 10px;border:0;border-radius:4px;background:transparent;color:#e6e3f1;text-align:left;font-size:11px;cursor:pointer}
+  .entity-context-menu button{display:flex;align-items:center;gap:8px;width:100%;height:30px;padding:0 10px;border:0;border-radius:4px;background:transparent;color:#e6e3f1;text-align:left;font-size:11px;cursor:pointer}
+  .entity-context-menu button :global(svg){flex:none;color:#a99aff}
   .entity-context-menu button:hover:not(:disabled){background:#302d40}
-  .context-add-list{margin:2px 0 4px 10px;padding-left:5px;border-left:1px solid #ffffff20}
-  .context-chevron{float:right;color:#9995a9}
+  .context-add-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:3px;margin:3px 0 4px}
+  .entity-context-menu .context-add-grid button{display:grid;justify-items:center;gap:3px;height:auto;padding:7px 2px 5px;border:1px solid #ffffff0b;border-radius:6px;background:#15161c}
+  .entity-context-menu .context-add-grid button:hover{border-color:#a99bff55;background:#2a2740}
+  .context-add-grid span{max-width:100%;overflow:hidden;color:#a7a4b3;font-size:8.5px;text-overflow:ellipsis;white-space:nowrap}
+  .context-chevron{margin-left:auto;color:#9995a9}
+  .entity-context-menu .context-animate{color:#e2dcff}
+  .entity-context-menu .context-animate :global(svg){color:#d8b4fe}
   .entity-context-menu button:disabled{opacity:.4;cursor:default}
-  .entity-context-menu kbd{float:right;color:#7d7a8a;font:9px 'DM Mono',monospace}
+  .entity-context-menu kbd{margin-left:auto;color:#7d7a8a;font:9px 'DM Mono',monospace}
+  .entity-context-menu .context-delete :global(svg){color:#ff9ba2}
+  .bottom-tabs button{gap:6px}
+  .bottom-tabs button :global(svg){opacity:.7}
+  .bottom-tabs button.selected :global(svg){opacity:1;color:#b9adff}
+  /* Viewport overlays: a Unity-style tool rail and a one-click create shelf. */
+  .tool-rail,.create-shelf{position:absolute;z-index:2;display:flex;gap:2px;padding:3px;border:1px solid #ffffff14;border-radius:9px;background:#15161cd9;backdrop-filter:blur(6px);box-shadow:0 6px 18px #0006}
+  .tool-rail{top:10px;left:10px;flex-direction:column}
+  .create-shelf{bottom:12px;left:50%;transform:translateX(-50%);align-items:center}
+  .tool-rail button,.create-shelf button{position:relative;display:grid;width:30px;height:30px;place-items:center;padding:0;border:1px solid transparent;border-radius:6px;background:transparent;color:#b6b3c2;cursor:pointer;transition:background .12s,color .12s,transform .12s}
+  .tool-rail button:hover:not(:disabled),.create-shelf button:hover:not(:disabled){background:#ffffff12;color:#fff}
+  .create-shelf button:hover:not(:disabled){transform:translateY(-2px)}
+  .create-shelf button:active:not(:disabled){transform:translateY(0) scale(.94)}
+  .tool-rail button.active{border-color:#7d6ff066;background:#3b3566;color:#e1dbff}
+  .create-shelf button:disabled{opacity:.35;cursor:default}
+  .create-shelf .shelf-animate:not(:disabled){color:#d8b4fe}
+  .create-shelf .shelf-animate:hover:not(:disabled){background:linear-gradient(135deg,#4a3f80,#5b3a7a);color:#fff}
+  .rail-sep{height:1px;margin:3px 4px;background:#ffffff18}
+  .shelf-sep{width:1px;height:18px;margin:0 3px;background:#ffffff18}
+  .tool-rail button:focus-visible,.create-shelf button:focus-visible{outline:2px solid #a99bff;outline-offset:1px}
+  /* Hover labels for icon-only buttons. */
+  .tool-rail button[data-tip]:hover::after,.create-shelf button[data-tip]:hover::after,.tool-rail button[data-tip]:focus-visible::after,.create-shelf button[data-tip]:focus-visible::after{content:attr(data-tip);position:absolute;z-index:3;padding:3px 7px;border:1px solid #ffffff18;border-radius:5px;background:#0d0d12;color:#ecebf3;font:10px 'DM Sans',sans-serif;white-space:nowrap;pointer-events:none}
+  .tool-rail button[data-tip]:hover::after,.tool-rail button[data-tip]:focus-visible::after{left:calc(100% + 8px);top:50%;transform:translateY(-50%)}
+  .create-shelf button[data-tip]:hover::after,.create-shelf button[data-tip]:focus-visible::after{bottom:calc(100% + 8px);left:50%;transform:translateX(-50%)}
+  @media (prefers-reduced-motion: reduce){.create-shelf button,.tool-rail button{transition:none}.create-shelf button:hover:not(:disabled){transform:none}}
   .menu-separator{height:1px;margin:4px 3px;background:#ffffff18}
   .entity-context-menu .context-delete{color:#ff9ba2}
   .context-separator{height:1px;margin:4px 3px;background:#ffffff18}

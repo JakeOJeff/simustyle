@@ -61,7 +61,7 @@ describe("Animator track validation", () => {
     expect(errors).toEqual(expect.arrayContaining([
       "scene.entities[0].components.Animator.tracks[0].keys[0].time: must be nonnegative",
       "scene.entities[0].components.Animator.tracks[0].keys[0].value: must be an array of three finite numbers",
-      "scene.entities[0].components.Animator.tracks[0].keys[0].interpolation: must be linear, ease-in-out, or step",
+      "scene.entities[0].components.Animator.tracks[0].keys[0].interpolation: must be linear, step, ease-in-out, bezier, or ease-<in|out|in-out>-<sine|quad|cubic|quart|quint|expo|circ|back|elastic|bounce>",
       "scene.entities[0].components.Animator.tracks[0].keys[1].time: must be a finite number",
       "scene.entities[0].components.Animator.tracks[1].keys[0].value: must be a #rrggbb color",
       "scene.entities[0].components.Animator.tracks[2].keys[0].value: must be a finite number"

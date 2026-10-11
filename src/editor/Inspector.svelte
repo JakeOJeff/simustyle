@@ -5,6 +5,12 @@
   import { parseScript } from "../lang/parser";
   import { typecheckScript } from "../lang/checker";
   import type { ScriptHandler } from "../lang/ast";
+  import { Atom, Camera, ChevronDown, ChevronRight, Clapperboard, Cuboid, Diamond, FileCode, Globe, Lightbulb, Link, Move3d, Palette, Plus, Shapes, Sparkles, X } from "@lucide/svelte";
+
+  const componentIcons: Record<string, typeof Move3d> = {
+    Transform: Move3d, Mesh: Shapes, Material: Palette, RigidBody: Atom, Collider: Cuboid, Joint: Link,
+    Light: Lightbulb, Camera, Script: FileCode, Animator: Clapperboard
+  };
 
   interface Props {
     scene: Scene;
@@ -21,9 +27,31 @@
     /** Quick switches: Physics adds/removes the RigidBody; Collision sets Collider.enabled. */
     onPhysics: (enabled: boolean) => void;
     onCollision: (enabled: boolean) => void;
+    /** Timeline playhead, so keyframe buttons can show whether a field is keyed right now. */
+    playhead?: number;
+    onOpenTimeline?: () => void;
+    /** Opens the animation preset gallery next to the clicked button. */
+    onAnimate?: (anchor: DOMRect) => void;
   }
 
-  let { scene, entity, onUpdate, onRemove, onAdd, onKeyframe, onOpenScript, onRename, onReparent, onSettings, onPhysics, onCollision }: Props = $props();
+  let { scene, entity, onUpdate, onRemove, onAdd, onKeyframe, onOpenScript, onRename, onReparent, onSettings, onPhysics, onCollision, playhead = 0, onOpenTimeline, onAnimate }: Props = $props();
+
+  /** "keyed": a key sits at the playhead; "animated": the field has a track; otherwise not animated. */
+  function keyState(component: string, field: string): "keyed" | "animated" | "none" {
+    const tracks = entity?.components.Animator?.tracks;
+    if (!Array.isArray(tracks)) return "none";
+    const track = tracks.find((candidate) => candidate?.component === component && candidate?.field === field);
+    if (!track || !Array.isArray(track.keys)) return "none";
+    return track.keys.some((key: { time?: unknown }) => typeof key.time === "number" && Math.abs(key.time - playhead) < 0.001) ? "keyed" : "animated";
+  }
+
+  function entityIcon(current: Entity): typeof Move3d {
+    if (current.components.Light) return Lightbulb;
+    if (current.components.Camera) return Camera;
+    if (current.components.Mesh) return Shapes;
+    if (current.components.Script) return FileCode;
+    return Globe;
+  }
 
   /** Plain names for components, so the panel reads as "Shape" and "Look" rather than schema names. */
   const friendly: Record<string, { title: string; hint: string }> = {
@@ -121,9 +149,13 @@
 <aside class="inspector panel">
   <div class="panel-heading"><span>INSPECTOR</span><span class="muted">{entity ? "ENTITY" : "—"}</span></div>
   {#if entity}
+    {@const EntityIcon = entityIcon(entity)}
     <div class="entity-heading">
-      <div class="entity-icon">◇</div>
+      <div class="entity-icon"><EntityIcon size={15} /></div>
       <div class="entity-title"><strong>{entity.name}</strong><small>{entity.id}</small></div>
+      {#if onAnimate && entity.components.Transform}
+        <button class="heading-action animate" title="Animate with a preset" aria-label="Animate {entity.name} with a preset" onclick={(event) => onAnimate(event.currentTarget.getBoundingClientRect())}><Sparkles size={14} /></button>
+      {/if}
     </div>
     <label class="name-field">
       <span>NAME</span>
@@ -152,11 +184,13 @@
     {#each Object.entries(entity.components) as [component, fields] (component)}
       {@const schema = componentSchemas[component]}
       {#if schema}
+        {@const ComponentIcon = componentIcons[component] ?? Shapes}
         <section class="component-card">
           <div class="component-title">
-            <button class="collapse" aria-label="Toggle {component}" onclick={() => openComponents[component] = !(openComponents[component] ?? true)}>{(openComponents[component] ?? true) ? "⌄" : "›"}</button>
+            <button class="collapse" aria-label="Toggle {component}" aria-expanded={openComponents[component] ?? true} onclick={() => openComponents[component] = !(openComponents[component] ?? true)}>{#if openComponents[component] ?? true}<ChevronDown size={13} />{:else}<ChevronRight size={13} />{/if}</button>
+            <span class="component-icon"><ComponentIcon size={13} /></span>
             <span title={friendly[component]?.hint ?? schema.description}>{friendly[component]?.title ?? component}</span>
-            <button class="remove-component" title="Remove {component}" onclick={() => onRemove(component)}>×</button>
+            <button class="remove-component" title="Remove {component}" aria-label="Remove {component}" onclick={() => onRemove(component)}><X size={13} /></button>
           </div>
           {#if openComponents[component] ?? true}
             <div class="fields">
@@ -174,7 +208,10 @@
                 {#if !(component === "Script" && fieldName === "source")}
                 <div class="inspector-animatable-field">
                   {@render fieldControl(fieldName, field, fields[fieldName] ?? field.default, scene, (value, phase) => update(component, fieldName, value, phase))}
-                  {#if keyframeable(field)}<button class="keyframe-button" aria-label="Add keyframe for {component}.{fieldName}" title="Add keyframe at current playhead" onclick={() => onKeyframe(component, fieldName)}>◇</button>{/if}
+                  {#if keyframeable(field)}
+                    {@const keyStatus = keyState(component, fieldName)}
+                    <button class="keyframe-button key-{keyStatus}" aria-label="{keyStatus === 'keyed' ? 'Update' : 'Add'} keyframe for {component}.{fieldName}" title={keyStatus === "keyed" ? "Keyed at the playhead: click to update it with this value" : keyStatus === "animated" ? "Animated: click to add a key at the playhead" : "Add a keyframe at the playhead"} onclick={() => onKeyframe(component, fieldName)}><Diamond size={11} fill={keyStatus === "keyed" ? "currentColor" : "none"} /></button>
+                  {/if}
                 </div>
                 {/if}
               {/each}
@@ -205,7 +242,14 @@
                 {/if}
               {/if}
               {#if schema.managedFields}
-                {#if component !== "Script"}<div class="managed-hint">Tracks are edited in the timeline.</div>{/if}
+                {#if component === "Animator"}
+                  {@const trackCount = Array.isArray(fields.tracks) ? fields.tracks.length : 0}
+                  <div class="animator-actions">
+                    <span class="managed-hint">{trackCount ? `${trackCount} animated propert${trackCount === 1 ? "y" : "ies"}` : "No tracks yet"}</span>
+                    {#if onOpenTimeline}<button onclick={onOpenTimeline}><Clapperboard size={12} /> Timeline</button>{/if}
+                    {#if onAnimate}<button class="accent" onclick={(event) => onAnimate(event.currentTarget.getBoundingClientRect())}><Sparkles size={12} /> Presets</button>{/if}
+                  </div>
+                {:else if component !== "Script"}<div class="managed-hint">Tracks are edited in the timeline.</div>{/if}
               {/if}
             </div>
           {/if}
@@ -224,7 +268,7 @@
         <option value="">Add a feature…</option>
         {#each addableSchemas() as schema (schema.name)}<option value={schema.name}>{friendly[schema.name]?.title ?? schema.name} — {friendly[schema.name]?.hint ?? schema.description}</option>{/each}
       </select>
-      <button disabled={!addComponent} onclick={() => { onAdd(addComponent); addComponent = ""; }}>＋</button>
+      <button disabled={!addComponent} aria-label="Add feature" onclick={() => { onAdd(addComponent); addComponent = ""; }}><Plus size={15} /></button>
     </div>
   {:else}
     <div class="empty-inspector"><span>◇</span><p>Select an object in the viewport or the Scene panel to see and change it here.</p></div>
@@ -274,5 +318,10 @@
   .add-script-card{margin:4px 12px 0;padding:11px;border:1px dashed #7fd1ff40;border-radius:7px;background:#16202a}.add-script-card strong{font-size:11px;color:#d9eefa}.add-script-card p{margin:5px 0 4px;color:#9fb4c2;font-size:10.5px;line-height:1.5}
   .field-label{text-transform:none!important;letter-spacing:.02em!important;font-size:10px!important}
   .open-script{width:100%;height:30px;margin:6px 0 4px;border:1px solid #7fd1ff40;border-radius:5px;background:#1f2f3a;color:#a9def7;font-size:10.5px;cursor:pointer}.open-script:hover{background:#26394a}
-  .inspector-animatable-field{position:relative}.inspector-animatable-field .field-row{padding-right:22px}.keyframe-button{position:absolute;right:0;top:5px;width:20px;height:23px;border:0;background:none;color:#777583;font-size:17px;cursor:pointer}.keyframe-button:hover{color:#b2a5ff}
+  .inspector-animatable-field{position:relative}.inspector-animatable-field .field-row{padding-right:22px}.keyframe-button{position:absolute;right:0;top:5px;display:grid;width:20px;height:23px;place-items:center;padding:0;border:0;border-radius:4px;background:none;color:#5f5d6b;cursor:pointer;transition:color .12s,background .12s}.keyframe-button:hover{background:#ffffff0c;color:#b2a5ff}.keyframe-button.key-animated{color:#9d8ff0}.keyframe-button.key-keyed{color:#d2c8ff;filter:drop-shadow(0 0 4px #a99bff99)}
+  .component-title .collapse,.component-title .remove-component{display:grid;place-items:center;height:22px;padding:0;border-radius:4px}.component-title .remove-component{width:22px}.component-title .collapse:hover,.component-title .remove-component:hover{background:#ffffff0c}
+  .component-icon{display:grid;place-items:center;color:#a99aff}
+  .entity-heading .heading-action{display:grid;width:28px;height:28px;margin-left:auto;place-items:center;padding:0;border:1px solid #8b7cff44;border-radius:7px;background:linear-gradient(135deg,#2f2850,#26223f);color:#d8b4fe;cursor:pointer}.entity-heading .heading-action:hover{background:linear-gradient(135deg,#4a3f80,#5b3a7a);color:#fff}
+  .animator-actions{display:flex;flex-wrap:wrap;align-items:center;gap:5px;padding:4px 0}.animator-actions .managed-hint{flex:1;padding:0}.animator-actions button{display:flex;align-items:center;gap:5px;height:25px;padding:0 9px;border:1px solid #ffffff14;border-radius:5px;background:#1f2029;color:#cfcbe0;font-size:10px;cursor:pointer}.animator-actions button:hover{background:#2a2838;color:#fff}.animator-actions button.accent{border-color:#8b7cff55;background:#2d2950;color:#e2dcff}
+  .add-component-row button{display:grid;place-items:center}
 </style>

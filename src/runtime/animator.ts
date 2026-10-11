@@ -2,15 +2,19 @@ import { componentSchemas } from "../registry";
 import { validateFieldValue } from "../scene/validate";
 import { applyOps } from "../scene/applyOps";
 import type { Entity, Scene, SceneOp, Vec3 } from "../scene/types";
+import type { FieldSchema } from "../registry/types";
+import { easeProgress, isBezierPoints, isInterpolation, type AnimationInterpolation, type BezierPoints } from "./easing";
 
-export type AnimationInterpolation = "linear" | "ease-in-out" | "step";
+export type { AnimationInterpolation, BezierPoints } from "./easing";
 export type AnimationValue = number | Vec3 | string;
 
 export interface AnimationKey {
   time: number;
   value: AnimationValue;
-  /** Interpolation from this key to the next; omitted values use linear. */
+  /** Easing from this key to the next; omitted values use linear. */
   interpolation?: AnimationInterpolation;
+  /** Control points used when interpolation is "bezier". */
+  bezier?: BezierPoints;
 }
 
 export interface AnimationTrack {
@@ -36,7 +40,8 @@ function isAnimationValue(value: unknown): value is AnimationValue {
 
 function mixColor(from: string, to: string, amount: number): string {
   const channel = (color: string, offset: number) => Number.parseInt(color.slice(offset, offset + 2), 16);
-  const result = [1, 3, 5].map((offset) => Math.round(channel(from, offset) + (channel(to, offset) - channel(from, offset)) * amount));
+  // Overshooting eases (back, elastic) can push channels past 0..255.
+  const result = [1, 3, 5].map((offset) => Math.max(0, Math.min(255, Math.round(channel(from, offset) + (channel(to, offset) - channel(from, offset)) * amount))));
   return `#${result.map((value) => value.toString(16).padStart(2, "0")).join("")}`;
 }
 
@@ -64,11 +69,19 @@ export function evaluateTrack(track: AnimationTrack, timeSeconds: number): Anima
     const span = second.time - first.time;
     if (span <= 0) return second.value;
     if (first.interpolation === "step") return first.value;
-    let amount = Math.max(0, Math.min(1, (timeSeconds - first.time) / span));
-    if (first.interpolation === "ease-in-out") amount = amount * amount * (3 - 2 * amount);
+    const amount = easeProgress(first.interpolation, (timeSeconds - first.time) / span, first.bezier);
     return mixValue(first.value, second.value, amount);
   }
   return last.value;
+}
+
+/** Keeps eased values inside the field's valid range, so overshoot never fails validation. */
+function clampToField(field: FieldSchema, value: AnimationValue): AnimationValue {
+  if (field.type === "float" && typeof value === "number") return Math.max(field.min, Math.min(field.max, value));
+  if (field.type === "vec3" && Array.isArray(value)) {
+    return value.map((part) => Math.max(field.min ?? -Infinity, Math.min(field.max ?? Infinity, part))) as Vec3;
+  }
+  return value;
 }
 
 function tracksFor(entity: Entity, warnings: string[]): AnimationTrack[] {
@@ -94,8 +107,8 @@ function tracksFor(entity: Entity, warnings: string[]): AnimationTrack[] {
     let malformed = false;
     for (const key of raw.keys) {
       if (!isRecord(key) || typeof key.time !== "number" || !Number.isFinite(key.time) || key.time < 0 ||
-          !isAnimationValue(key.value) || (key.interpolation !== undefined &&
-            key.interpolation !== "linear" && key.interpolation !== "ease-in-out" && key.interpolation !== "step")) {
+          !isAnimationValue(key.value) || (key.interpolation !== undefined && !isInterpolation(key.interpolation)) ||
+          (key.bezier !== undefined && !isBezierPoints(key.bezier))) {
         malformed = true;
         break;
       }
@@ -104,7 +117,12 @@ function tracksFor(entity: Entity, warnings: string[]): AnimationTrack[] {
         malformed = true;
         break;
       }
-      keys.push({ time: key.time, value: key.value, interpolation: key.interpolation as AnimationInterpolation | undefined });
+      keys.push({
+        time: key.time,
+        value: key.value,
+        interpolation: key.interpolation as AnimationInterpolation | undefined,
+        ...(key.bezier ? { bezier: key.bezier as BezierPoints } : {})
+      });
     }
     if (malformed || keys.length === 0) {
       warnings.push(`${label} has invalid or missing keys and was skipped.`);
@@ -141,7 +159,8 @@ export function evaluateAnimations(scene: Scene, timeSeconds: number): AnimatorR
       }
       const value = evaluateTrack(track, time);
       if (value === undefined) continue;
-      (changes[track.component] ??= {})[track.field] = value;
+      const field = componentSchemas[track.component]!.fields[track.field]!;
+      (changes[track.component] ??= {})[track.field] = clampToField(field, value);
     }
     if (Object.keys(changes).length) ops.push({ op: "update", id: entity.id, components: changes });
   }

@@ -4,6 +4,13 @@ Record meaningful project changes during the event, newest first.
 
 ## Event build log
 
+### 2026-10-11T23:20:00+05:30 — Add easing curves, animation presets, and iconized editor controls
+
+- Changed: Added a shared easing engine (Sine, Quad, Cubic, Quart, Quint, Expo, Circ, Back, Elastic, Bounce in In/Out/In-Out, plus Linear, Smooth, Step, and custom cubic-bezier) used by the editor, animator, and HTML export. Rebuilt Timeline with icon transport, Loop and length controls, eased curves drawn on each segment, key shapes per easing, a selected-key bar, snapping key drags, and double-click insert-on-curve. Added an easing picker with a live motion preview and a draggable bezier editor, and 13 one-click animation presets with live preview cards. Added a viewport tool rail, create shelf, and camera view bar with eased transitions; icons in the context menu, bottom tabs, Inspector sections, and keyframe-state diamonds; and an Animate button in the top bar. Fixed `localPosition`, which multiplied a matrix by a vector and broke right-click placement under a parent. Files: `src/runtime/easing.ts`, `src/runtime/animationPresets.ts`, `src/editor/animation/*`, `src/editor/Timeline.svelte`, `src/editor/Viewport.svelte`, `src/editor/Inspector.svelte`, `src/editor/TopBar.svelte`, `src/App.svelte`, `src/scene/hierarchy.ts`.
+- Why: Make animation and object creation faster and more visual, in the style of Unity and Panzoid.
+- Validation: `tsc --noEmit` and `svelte-check` report no errors; 142 of 143 tests pass, including new easing and preset tests. The remaining failure (`compiles the README example`) predates this change. Drove the dev build in headless Chrome to add objects, apply presets, change easing, edit a bezier, and insert keys, with no page errors.
+- Limitations: The AI scene context still lists only the original interpolation field; adding all easing names exceeded the prompt-size budget test. The tutorial's animation chapter still mentions only the original three easings.
+
 ### 2026-10-11T22:56:19+05:30 — Add optional interactive feature tutorials
 
 - Changed: Added 14 self-paced chapters to Docs covering navigation, object creation, transforms, hierarchy, Inspector, physics and joints, scripts and Console, Play, animation, AI, scene files, export, desktop, and editing shortcuts. Users can choose chapters, skip steps, reset or resume progress; progress is stored locally. Kept the reference manual available alongside tutorials. Files: `src/editor/TutorialPanel.svelte`, `src/editor/DocsPanel.svelte`, and `README.md`.

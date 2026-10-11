@@ -1,7 +1,8 @@
 <script lang="ts">
-  import { onMount } from "svelte";
+  import { onMount, tick } from "svelte";
+  import { portal } from "./animation/portal";
 
-  type TutorialStep = { title: string; instruction: string };
+  type TutorialStep = { title: string; instruction: string; target?: string; targetLabel?: string };
   type TutorialChapter = { id: string; title: string; summary: string; steps: TutorialStep[] };
 
   const chapters: TutorialChapter[] = [
@@ -12,14 +13,15 @@
       { title: "Find a panel", instruction: "Use the panel tabs along the bottom to show and hide Hierarchy, Inspector, Console, AI, Timeline, and Docs. Your layout is saved on this device." }
     ] },
     { id: "create-select", title: "Create and select objects", summary: "Add scene objects and place them where you want.", steps: [
-      { title: "Add a primitive", instruction: "Choose Add in the top bar and create a Cube or Sphere. Select it in the Scene view or Hierarchy." },
+      { title: "Open the Add menu", instruction: "Click Add in the top bar. This menu contains the shapes, lights, cameras, and groups you can create.", target: "add-menu", targetLabel: "Add" },
+      { title: "Create a Cube", instruction: "Click Cube in the menu. A cube is a basic 3D shape you can move, resize, and use as a building block.", target: "add-cube", targetLabel: "Cube" },
       { title: "Add at the pointer", instruction: "Right-click empty space in the Scene view, open Add, and choose a shape. It is placed at the pointer's ground or surface position." },
       { title: "Add as a child", instruction: "Right-click an object in the Scene view or a row in Hierarchy. Choose Add and create a child object." },
       { title: "Add lights and a camera", instruction: "Use Add to create a Point, Sun, or Spot light and a Camera. Select their wireframe markers; rotate a Sun or Spot light to aim it." },
       { title: "Select several objects", instruction: "Ctrl-drag in the Scene view to box-select. In Hierarchy, Ctrl-click or Shift-click rows to extend the selection." }
     ] },
     { id: "transform", title: "Transform tools", summary: "Move, rotate, scale, and frame objects.", steps: [
-      { title: "Move an object", instruction: "Select an object, choose Move in the toolbar (or press W), and drag a gizmo axis." },
+      { title: "Choose the Move tool", instruction: "Click Move in the center toolbar. It lets you reposition the selected object by dragging its colored axis handles.", target: "move-tool", targetLabel: "Move tool" },
       { title: "Rotate and scale", instruction: "Switch to Rotate (E) and Scale (R), then drag the gizmo. Q returns to Select." },
       { title: "Change gizmo space and snapping", instruction: "Toggle World/Local space and the magnet Snap button. Try moving with snapping on and off." },
       { title: "Frame the selection", instruction: "Select an object and press F to bring it into view. Toggle the grid with the grid button." }
@@ -51,7 +53,7 @@
       { title: "Inspect errors and history", instruction: "Try Up and Down to recall commands. Compile and runtime script errors are shown inline and in Console." }
     ] },
     { id: "play", title: "Play and debug", summary: "Run, pause, step through, and restore a simulation.", steps: [
-      { title: "Start Play", instruction: "Press Play to run scripts, animation, and physics together." },
+      { title: "Start Play", instruction: "Click Play to run the scene. Scripts, animation, and physics begin running together.", target: "play", targetLabel: "Play" },
       { title: "Pause and step", instruction: "Pause the simulation, then use Step to advance one frame at a time." },
       { title: "Read Console output", instruction: "While Play runs, watch Console for script output, warnings, and errors." },
       { title: "Stop and restore", instruction: "Press Stop. The scene returns to the snapshot from before Play." }
@@ -98,6 +100,8 @@
   let ready = $state(false);
   let activeChapter = $state<string | null>(null);
   let stepIndex = $state(0);
+  let targetRect = $state<DOMRect | null>(null);
+  let targetMissing = $state(false);
   let chapter = $derived(chapters.find((item) => item.id === activeChapter) ?? null);
   let totalSteps = $derived(chapters.reduce((total, item) => total + item.steps.length, 0));
   let completedSteps = $derived(Object.values(progress).reduce((total, steps) => total + steps.length, 0));
@@ -115,6 +119,36 @@
       progress = {};
     }
     ready = true;
+    const observer = new MutationObserver(updateTarget);
+    observer.observe(document.body, { childList: true, subtree: true });
+    window.addEventListener("resize", updateTarget);
+    window.addEventListener("scroll", updateTarget, true);
+    const timer = window.setInterval(updateTarget, 350);
+    return () => {
+      observer.disconnect();
+      window.removeEventListener("resize", updateTarget);
+      window.removeEventListener("scroll", updateTarget, true);
+      window.clearInterval(timer);
+    };
+  });
+
+  function updateTarget() {
+    const key = chapter?.steps[stepIndex]?.target;
+    if (!key) { targetRect = null; targetMissing = false; return; }
+    const element = document.querySelector<HTMLElement>(`[data-tutorial-target="${key}"]`);
+    if (!element || !element.isConnected || element.getClientRects().length === 0) {
+      targetRect = null;
+      targetMissing = true;
+      return;
+    }
+    const rect = element.getBoundingClientRect();
+    if (!targetRect || rect.left !== targetRect.left || rect.top !== targetRect.top || rect.width !== targetRect.width || rect.height !== targetRect.height) targetRect = rect;
+    targetMissing = false;
+  }
+
+  $effect(() => {
+    if (chapter?.steps[stepIndex]?.target) void tick().then(updateTarget);
+    else { targetRect = null; targetMissing = false; }
   });
 
   $effect(() => {
@@ -157,7 +191,7 @@
   <header class="tutorial-header">
     <span class="tutorial-eyebrow">OPTIONAL INTERACTIVE GUIDE</span>
     <h1>Learn SimuStyle by doing</h1>
-    <p>Choose a chapter, try each action in the editor, and mark it done when you are ready. Skip anything or leave whenever you like. Your progress is saved on this device.</p>
+    <p>Choose a chapter and follow the on-screen pointer to the exact control. Each guide explains what to click and what it does; mark the step done when you have tried it.</p>
     <div class="overall-progress"><span>{completedSteps} of {totalSteps} steps</span><progress value={completedSteps} max={totalSteps}></progress><button type="button" onclick={resetProgress} disabled={!completedSteps && !activeChapter}>Reset</button></div>
   </header>
 
@@ -181,9 +215,10 @@
         <p class="chapter-summary">{chapter.summary}</p>
         <div class="step-progress"><progress value={(progress[chapter.id]?.length ?? 0)} max={chapter.steps.length}></progress><span>Step {stepIndex + 1} of {chapter.steps.length}</span></div>
         <article class="step-card">
-          <span class="step-label">TRY THIS IN THE EDITOR</span>
+          <span class="step-label">{step.target ? "FOLLOW THE POINTER" : "TRY THIS IN THE EDITOR"}</span>
           <h3>{step.title}</h3>
           <p>{step.instruction}</p>
+          {#if step.target && targetMissing}<p class="target-hint" role="status">Waiting for {step.targetLabel} to appear. Keep this guide open and the pointer will find it when it is visible.</p>{/if}
           {#if done}<p class="done-note" role="status">You marked this step complete.</p>{/if}
           <div class="step-actions">
             <button type="button" class="primary-action" onclick={markStepDone}>{stepIndex === chapter.steps.length - 1 ? "Complete chapter" : "Done, next step"}</button>
@@ -201,7 +236,7 @@
         <div class="chapter-welcome">
           <span class="step-label">PICK UP WHERE YOU LIKE</span>
           <h2>Choose a chapter</h2>
-          <p>Every chapter is self-contained. Start at the beginning, jump straight to a feature, or use the manual instead. Nothing in this tutorial changes your scene automatically.</p>
+          <p>Every chapter is self-contained. Start at the beginning or jump to a feature. When a step has a pointer, click the highlighted control, then return here and choose Done, next step.</p>
           <div class="chapter-cards">
             {#each chapters as item (item.id)}
               {@const done = progress[item.id]?.length ?? 0}
@@ -215,6 +250,17 @@
     </section>
   </div>
 </div>
+
+{#if chapter && chapter.steps[stepIndex]?.target && targetRect}
+  {@const guideStep = chapter.steps[stepIndex]}
+  {@const bubbleLeft = Math.max(12, Math.min(targetRect.left, window.innerWidth - 312))}
+  {@const bubbleTop = targetRect.bottom + 12 + 104 < window.innerHeight ? targetRect.bottom + 12 : Math.max(12, targetRect.top - 116)}
+  <div class="tutorial-target-ring" use:portal aria-hidden="true" style={`left:${targetRect.left - 5}px;top:${targetRect.top - 5}px;width:${targetRect.width + 10}px;height:${targetRect.height + 10}px`}></div>
+  <aside class="tutorial-callout" use:portal aria-live="polite" style={`left:${bubbleLeft}px;top:${bubbleTop}px`}>
+    <span class="callout-pointer" aria-hidden="true">👆</span>
+    <div><strong>Click {guideStep.targetLabel}</strong><p>{guideStep.instruction}</p></div>
+  </aside>
+{/if}
 
 <style>
   .tutorial-page{height:100%;overflow:auto;background:#17181f;color:#d8d6e0;font:11px/1.55 'DM Sans',sans-serif}
@@ -230,6 +276,8 @@
   .tutorial-content{min-width:0;padding:18px clamp(16px,4vw,34px) 30px}.tutorial-topline{display:flex;justify-content:space-between;align-items:center;color:#777584;font:9px 'DM Mono',monospace}.tutorial-content .back-button{padding:3px 7px;background:transparent;color:#aaa4c9}
   h2{margin:13px 0 2px;color:#eeeaf8;font-size:16px;font-weight:600}.chapter-summary{margin:0;color:#9996a5}.step-progress{display:flex;align-items:center;gap:10px;margin:17px 0 9px;color:#83808f;font-size:9px}.step-progress progress{flex:1}
   .step-card{padding:18px;border:1px solid #ffffff14;border-radius:9px;background:linear-gradient(145deg,#20212a,#1b1c23)}.step-card h3{margin:9px 0 7px;color:#f0edf8;font-size:14px;font-weight:600}.step-card p{max-width:650px;margin:0;color:#b0adbb;line-height:1.7}.step-card .done-note{margin-top:12px;color:#9fd3ae}.step-actions{display:flex;flex-wrap:wrap;gap:7px;margin-top:17px}.tutorial-content button.primary-action{border-color:#8374dc;background:#51477c;color:#fff}.tutorial-content button:hover:not(:disabled){border-color:#8d7df0;color:#fff}
+  .step-card .target-hint{margin-top:10px;color:#e6c88c}.tutorial-target-ring{position:fixed;z-index:1001;border:2px solid #b6aaff;border-radius:8px;box-shadow:0 0 0 9999px #09081055,0 0 0 5px #9b8cff55,0 0 20px #a99aff;pointer-events:none;animation:target-pulse 1.6s ease-in-out infinite}.tutorial-callout{position:fixed;z-index:1002;display:flex;gap:10px;width:290px;padding:12px 14px;border:1px solid #a99aff;border-radius:9px;background:#29263b;color:#f4f1ff;box-shadow:0 8px 32px #0009;pointer-events:none}.callout-pointer{font-size:21px;line-height:1}.tutorial-callout strong{font-size:11px}.tutorial-callout p{margin:4px 0 0;color:#c6c1d6;font-size:10px;line-height:1.5}
+  @keyframes target-pulse{50%{box-shadow:0 0 0 9999px #09081044,0 0 0 8px #9b8cff22,0 0 24px #a99aff}}
   .step-map{display:flex;flex-wrap:wrap;gap:6px;margin-top:13px}.step-map button{width:25px;height:25px;padding:0;border-radius:50%;font:9px 'DM Mono',monospace}.step-map button.current{border-color:#a99aff;background:#39334f;color:#fff}.step-map button.complete{border-color:#527b5b;color:#a9dfb5}.chapter-done{color:#9fd3ae}
   .chapter-welcome{max-width:750px;margin:auto}.chapter-welcome h2{margin-top:8px}.chapter-welcome>p{max-width:650px;color:#9996a5}.chapter-cards{display:grid;grid-template-columns:repeat(auto-fit,minmax(190px,1fr));gap:8px;margin-top:18px}.chapter-cards button{display:flex;flex-direction:column;align-items:flex-start;gap:5px;min-height:92px;text-align:left}.chapter-cards button span{color:#e4e0ef;font-size:11px}.chapter-cards button small{flex:1;color:#92909e;line-height:1.45}.chapter-cards progress{width:100%}
   @media(max-width:600px){.tutorial-layout{grid-template-columns:1fr}.chapter-list{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));border-right:0;border-bottom:1px solid #ffffff10}.chapter-list button{min-width:0}.chapter-title{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.tutorial-header{padding:16px}.tutorial-content{padding:16px}}

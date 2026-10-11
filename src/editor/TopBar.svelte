@@ -18,7 +18,7 @@
 <script lang="ts">
   import type { Snippet } from "svelte";
   import type { PlayState } from "../runtime/physics";
-  import { BookOpen, Box, Boxes, Camera, ChevronDown, Circle, Code, Cone, Cylinder, FileCode, Flashlight, FolderPlus, Globe, Grid3X3, Lightbulb, Magnet, MousePointer2, Move, Pause, Play, Plus, Redo2, RotateCw, Scaling, SkipForward, Square, Sun, Undo2 } from "@lucide/svelte";
+  import { BookOpen, Box, Boxes, Camera, ChevronDown, Circle, Clapperboard, Code, Cone, Cylinder, FileCode, Flashlight, FolderPlus, Globe, Grid3X3, Lightbulb, Magnet, MousePointer2, Move, Pause, Play, Plus, Redo2, RotateCw, Scaling, SkipForward, Square, Sun, Undo2 } from "@lucide/svelte";
 
   interface Props {
     sceneName: string;
@@ -152,7 +152,7 @@
   <div class="tb-center">
     <div class="tb-segment" role="toolbar" aria-label="Transform tool">
       {#each tools as item (item.mode)}
-        <button class="tb-icon" class:active={tool === item.mode} aria-pressed={tool === item.mode} aria-label="{item.label} tool" title="{item.label} ({item.key})" onclick={() => actions.setTool(item.mode)}><item.icon size={15} /></button>
+        <button class="tb-icon" class:active={tool === item.mode} aria-pressed={tool === item.mode} aria-label="{item.label} tool" data-tutorial-target={item.mode === "translate" ? "move-tool" : undefined} title="{item.label} ({item.key})" onclick={() => actions.setTool(item.mode)}><item.icon size={15} /></button>
       {/each}
     </div>
     <button class="tb-pill" title="Gizmo axes: {space === 'world' ? 'world' : 'object'} space. Click to switch." aria-label="Gizmo space: {space}" onclick={actions.toggleSpace}><Globe size={14} /> <span class="tb-label">{space === "world" ? "World" : "Local"}</span></button>
@@ -165,11 +165,11 @@
 
   <div class="tb-right">
     <div class="tb-menu-root">
-      <button class="tb-text" aria-haspopup="menu" aria-expanded={openMenu === "add"} disabled={!editable} onclick={() => toggle("add")}><Plus size={14} /> <span class="tb-label">Add</span> <ChevronDown size={12} /></button>
+      <button class="tb-text" data-tutorial-target="add-menu" aria-haspopup="menu" aria-expanded={openMenu === "add"} disabled={!editable} onclick={() => toggle("add")}><Plus size={14} /> <span class="tb-label">Add</span> <ChevronDown size={12} /></button>
       {#if openMenu === "add"}
         <div class="tb-menu align-right" role="menu" aria-label="Add to scene">
           {#each primitives as item (item.shape)}
-            <button role="menuitem" onclick={() => run(() => actions.addPrimitive(item.shape))}><item.icon size={14} /> {item.label}</button>
+            <button role="menuitem" data-tutorial-target={item.shape === "box" ? "add-cube" : undefined} onclick={() => run(() => actions.addPrimitive(item.shape))}><item.icon size={14} /> {item.label}</button>
           {/each}
           <div class="tb-sep"></div>
           {#each lights as item (item.kind)}
@@ -182,8 +182,9 @@
         </div>
       {/if}
     </div>
-    <button class="tb-text" title="Open the selected object's script (or a scene script)" onclick={actions.openScript}><Code size={14} /> <span class="tb-label">Script</span></button>
-    <button class="tb-text" title="Open the SimuStyle user guide" aria-label="Open Docs" aria-pressed={panels.find((panel) => panel.name === "docs")?.open ?? false} onclick={() => actions.togglePanel("docs")}><BookOpen size={14} /> <span class="tb-label">Docs</span></button>
+    <button class="tb-text" title="Open the selected object's script (or a scene script)" onclick={actions.openScript}><Code size={14} /> <span class="tb-label tb-label-secondary">Script</span></button>
+    <button class="tb-text" class:active={panels.find((panel) => panel.name === "timeline")?.open ?? false} title="Animation timeline: keyframes, easing curves, and presets" aria-label="Animate" aria-pressed={panels.find((panel) => panel.name === "timeline")?.open ?? false} onclick={() => actions.togglePanel("timeline")}><Clapperboard size={14} /> <span class="tb-label tb-label-secondary">Animate</span></button>
+    <button class="tb-text" title="Open the SimuStyle user guide" aria-label="Open Docs" aria-pressed={panels.find((panel) => panel.name === "docs")?.open ?? false} onclick={() => actions.togglePanel("docs")}><BookOpen size={14} /> <span class="tb-label tb-label-secondary">Docs</span></button>
     <div class="tb-transport" role="group" aria-label="Simulation">
       <span class="tb-clock" aria-label="Play time">{clock}<small>f {frame}</small></span>
       <button class="tb-icon" title="Stop and restore the scene" aria-label="Stop" disabled={playState === "stopped"} onclick={actions.stop}><Square size={12} /></button>
@@ -193,7 +194,7 @@
       {:else if playState === "paused"}
         <button class="tb-play" onclick={actions.resume}><Play size={13} fill="currentColor" /> Resume</button>
       {:else}
-        <button class="tb-play" disabled={playStarting} onclick={actions.play}><Play size={13} fill="currentColor" /> {playStarting ? "Starting…" : "Play"}</button>
+      <button class="tb-play" data-tutorial-target="play" disabled={playStarting} onclick={actions.play}><Play size={13} fill="currentColor" /> {playStarting ? "Starting…" : "Play"}</button>
       {/if}
     </div>
     <span class="tb-divider"></span>
@@ -222,7 +223,7 @@
   .tb-icon{width:30px;padding:0}
   .tb-segment{display:flex;gap:2px;padding:3px;border:1px solid #ffffff10;border-radius:8px;background:#111115}
   .tb-segment .tb-icon{height:26px;width:28px}
-  .tb-icon.active{background:#3b3566;border-color:#7d6ff066;color:#cfc8ff}
+  .tb-icon.active,.tb-text.active{background:#3b3566;border-color:#7d6ff066;color:#cfc8ff}
   .tb-pill{height:34px;padding:0 12px;border:1px solid #ffffff10;border-radius:8px;background:#111115}
   .tb-transport{display:flex;align-items:center;gap:4px;padding:3px 3px 3px 10px;border:1px solid #ffffff10;border-radius:8px;background:#111115}
   .tb-clock{display:inline-flex;align-items:baseline;gap:7px;margin-right:6px;font:11px 'DM Mono',monospace;color:#e2e0ea;font-variant-numeric:tabular-nums}
@@ -237,6 +238,8 @@
   .tb-menu kbd{margin-left:auto;color:#7d7b88;font:9px 'DM Mono',monospace}
   .tb-check{width:12px;color:#a99aff}
   .tb-sep{height:1px;margin:4px 3px;background:#ffffff14}
+  /* Script, Animate, and Docs go icon-only first so the right cluster never runs into the center tools. */
+  @media(max-width:1600px){.tb-label-secondary{display:none}}
   @media(max-width:1280px){.tb-status{display:none}}
   @media(max-width:1100px){.tb-label,.tb-clock small{display:none}.tb-scene strong{max-width:110px}.topbar{gap:6px}}
   @media(max-width:900px){.tb-scene strong{display:none}}

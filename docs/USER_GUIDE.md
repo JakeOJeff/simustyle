@@ -20,7 +20,7 @@ The top bar contains scene file actions, edit and view menus, transform tools, A
 - Drag a window title bar to move it. Drop it near an edge to snap it there; keep it away from edges to leave it floating.
 - Resize a floating window from any edge or corner. Resize a snapped window from its edge facing the center of the editor.
 - Snapped windows reserve their space so the Scene viewport and script editor fit between them. The current window layout is saved on this device.
-- The Scene viewport is the 3D work area. Drag with the mouse to orbit, use the wheel to zoom, and use the right mouse button to pan the view. Selecting or transforming an object does not orbit the camera.
+- The Scene viewport is the 3D work area. Drag with the left mouse button to orbit, use the wheel to zoom, and drag with the middle button to pan. The view bar in the top-right corner switches between Perspective, Top, Front, Right, Back, and Left views, frames the selection, and resets the camera. The tool rail on the left switches Select, Move, Rotate, and Scale, and the shelf along the bottom adds shapes, lights, a camera, groups, script objects, or opens animation presets in one click. Selecting or transforming an object does not orbit the camera.
 
 ## Build and edit a scene
 
@@ -92,7 +92,7 @@ In the browser development server, set `AI_API_KEY` and `AI_MODEL` in the ignore
 
 ## Animate and simulate
 
-Click the keyframe diamond next to an animatable Inspector field to add a key at the current playhead. In Timeline, drag a diamond to retime a key, click a track lane to seek, or use Left/Right (Shift for finer steps) and Home/End when a lane is focused. The timeline's Play/Pause and Stop controls preview the selected object's animation while editing. Tracks support Linear, Ease In Out, and Step interpolation. Transform animation on dynamic rigid bodies is skipped with a Console warning; animate static or kinematic transforms instead.
+Open Timeline with **Animate** in the top bar. **Presets** add one-click motion (Bounce, Float, Spin, Swing, Pulse, Shake, Wobble, Pop In, Drop In, Slide In, Color Cycle, Glow Pulse, Flicker) starting from the object's current pose; open them from the timeline, the Inspector header, the viewport shelf, or the right-click **Animate…** item. Click the keyframe diamond next to an animatable Inspector field to key its value at the playhead (a filled diamond means a key is already there), or use **Property** in the timeline. Drag keys to retime them (snapping to 0.1 s; hold Alt for free timing), double-click a lane to insert a key on the existing curve, and click a lane to seek; focused lanes support Left/Right (Shift for finer steps) and Home/End. Each segment draws its easing; click the curve chip or the selected key's easing button to pick Linear, Smooth, Step, a custom cubic-bezier with draggable handles, or Sine, Quad, Cubic, Quart, Quint, Expo, Circ, Back, Elastic, or Bounce in In, Out, or In-Out. Key shapes show the easing: diamond for linear, circle for eased, square for hold. The header holds transport, previous/next key, Loop, and length; **Key all** keys every track at the playhead. Transform animation on dynamic rigid bodies is skipped with a Console warning; animate static or kinematic transforms instead.
 
 Use **Play** to run scripts, animation, and physics. **Pause** freezes the simulation; **Step** advances one 60 fps frame while paused; **Stop** restores the scene to its pre-Play state. Script compilation errors appear in the editor and Console.
 

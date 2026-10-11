@@ -1,5 +1,6 @@
 import { componentSchemas } from "../registry";
 import type { FieldSchema } from "../registry/types";
+import { isBezierPoints, isInterpolation } from "../runtime/easing";
 import { DEFAULT_SCENE_SETTINGS, type Entity, type Scene, type SceneSettings } from "./types";
 
 const settingSchemas: Record<keyof SceneSettings, FieldSchema> = {
@@ -59,8 +60,11 @@ function validateAnimationTracks(value: unknown, path: string, errors: string[])
       } else if (key.time < 0) {
         errors.push(`${keyPath}.time: must be nonnegative`);
       }
-      if (key.interpolation !== undefined && key.interpolation !== "linear" && key.interpolation !== "ease-in-out" && key.interpolation !== "step") {
-        errors.push(`${keyPath}.interpolation: must be linear, ease-in-out, or step`);
+      if (key.interpolation !== undefined && !isInterpolation(key.interpolation)) {
+        errors.push(`${keyPath}.interpolation: must be linear, step, ease-in-out, bezier, or ease-<in|out|in-out>-<sine|quad|cubic|quart|quint|expo|circ|back|elastic|bounce>`);
+      }
+      if (key.bezier !== undefined && !isBezierPoints(key.bezier)) {
+        errors.push(`${keyPath}.bezier: must be [x1, y1, x2, y2] with x values in 0..1 and y values in -2..3`);
       }
       if (keyField) {
         const validValue = keyField.type === "float"

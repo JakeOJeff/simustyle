@@ -5,6 +5,8 @@
 - 2026-10-10: A batch validates against its final candidate scene and commits atomically, allowing related components to be created together.
 - 2026-10-10: Animator `tracks` are registry-managed timeline data and stay out of the ordinary schema-driven inspector fields.
 - 2026-10-10: Animation tracks reference registry float, vec3, and color fields; keys use seconds and optional linear, ease-in-out, or step interpolation (linear is the default). Scrubbing evaluates the saved scene without mutating it.
+- 2026-10-11: Keys also accept `ease-<in|out|in-out>-<family>` names and `bezier` with `[x1, y1, x2, y2]` points (x in 0..1, y in -2..3); `ease-in-out` keeps its original smoothstep curve. Overshooting values are clamped to each field's range during evaluation, so Back, Elastic, and bezier curves never fail validation.
+- 2026-10-11: Animation presets are pure functions that build tracks from the object's current values and apply as one undoable Animator update; they replace tracks for the same property and adopt their own length and looping only when they are the object's sole animation.
 - 2026-10-10: During Play, scripts read the latest physics-synchronized scene, collision handler edits apply after physics sync, and animation applies last each rendered frame; Stop still restores the pre-play snapshot.
 - 2026-10-10: Entity reparenting uses an optional `parent` field on update operations so hierarchy drag-and-drop stays validated, atomic, and undoable through `applyOps`.
 - 2026-10-10: The physics world uses the scene's fixed timestep and a built-in static ground collider at y=0; Play owns a scene snapshot and Stop restores it exactly.
