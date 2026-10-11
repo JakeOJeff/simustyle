@@ -27,7 +27,7 @@ Open the local URL printed by Vite. Hierarchy, Inspector, Console, AI, and Timel
 
 ## AI assistant review
 
-The scene assistant builds a draft, runs game-start scripts and five short ticks on an isolated copy, then makes a separate second pass against the request and captured script Console output. It applies only after the second result passes scene, script, and runtime checks. The preview does not render the scene or run Rapier physics, so visual appearance and physics behavior still need review in the editor. Expand **Checked before apply** in the assistant response to inspect its script output and runtime issues.
+The scene assistant builds a draft, runs game-start scripts and five short ticks on an isolated copy, then makes a separate second pass against the request and captured script Console output. If the second pass fails validation, it gets up to four correction retries (six AI calls total when the first draft succeeds immediately). It applies only after the second result passes scene, script, and runtime checks. The preview does not render the scene or run Rapier physics, so visual appearance and physics behavior still need review in the editor. Expand **Checked before apply** in the assistant response to inspect its script output and runtime issues.
 
 ## Groups and parents
 

@@ -4,6 +4,13 @@ Record meaningful project changes during the event, newest first.
 
 ## Event build log
 
+### 2026-10-11T07:54:00+05:30 — Increase scene assistant review retries
+
+- Changed: Increased second-pass review correction retries from two to four in `src/ai/agent.ts`; documented the retry behavior in `README.md`.
+- Why: The scene assistant was discarding otherwise valid drafts after exhausting its review correction budget.
+- Validation: Reviewed the retry loop and documentation diff; `git diff --check` passed. Automated tests were not run.
+- Limitations: More retries consume more provider requests and do not help when the configured model or provider rejects the request. A first draft that succeeds immediately can now use up to six AI calls total.
+
 ### 2026-10-11T07:45:00+05:30 — Fix random move coordinates and show color hover swatches
 
 - Changed: The script parser now reads `random` after `move ... to` as a numeric coordinate expression, and the AI script guide shows the accepted random-range syntax. Hovering a color token now shows its swatch and hex value. Files: `src/lang/parser.ts`, `src/ai/prompt.ts`, `src/editor/ScriptEditor.svelte`, tests, README, and `docs/USER_GUIDE.md`.
@@ -395,3 +402,4 @@ Record meaningful project changes during the event, newest first.
 - Why: Give participants a consistent starting point for event rules, basic coding patterns, documented changes, and regular commits.
 - Validation: Checked local Markdown links, event detail consistency, required documents, and diff whitespace before publishing.
 - Limitations: Documentation scaffolding only; no participant project, application, or working demo was included at template setup.
+

@@ -134,7 +134,7 @@ export async function runSceneAgent(scene: Scene, userPrompt: string, dependenci
   previousReply = "";
   let reviewed: SceneAgentReply | null = null;
   let reviewedResult: ReturnType<typeof applyOps> | null = null;
-  const reviewRetries = 2;
+  const reviewRetries = 4;
   for (let reviewAttempt = 1; reviewAttempt <= reviewRetries + 1; reviewAttempt += 1) {
     attempts += 1;
     dependencies.onProgress?.(reviewAttempt === 1 ? "Building and checking the second pass…" : `Correcting the second pass (${reviewAttempt - 1}/${reviewRetries})…`);
