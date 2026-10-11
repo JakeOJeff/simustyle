@@ -4,6 +4,13 @@ Record meaningful project changes during the event, newest first.
 
 ## Event build log
 
+### 2026-10-12T00:05:00+05:30 — Redesign the viewport create shelf
+
+- Changed: Replaced the icon-only create shelf with labelled controls: a shape split button (last-used shape; menu adds other shapes, empty groups, and script objects), a light split button (point, sun, spot), Camera, an Import menu (scene file, recent scenes), and a Generate button that opens the AI panel. Removed the shelf's Animate button; presets stay in the timeline, Inspector header, and right-click menu. Files: `src/App.svelte`, `src/editor/DocsPanel.svelte`, `docs/USER_GUIDE.md`.
+- Why: Match the requested shelf design and make the common create actions readable at a glance.
+- Validation: `tsc --noEmit` and `svelte-check` report no errors.
+- Limitations: Import opens a scene file in place of the current scene; it does not merge models or scenes. Below 1100 px the shelf hides its text labels.
+
 ### 2026-10-11T23:45:00+05:30 — Replace viewport view bar with view menus and axis gizmo
 
 - Changed: Replaced the top-right camera view bar with a Perspective view menu (Perspective, Top, Bottom, Front, Back, Right, Left) and a Shaded/Wireframe menu in the top-left, next to the tool rail. Added a clickable axis gizmo in the top-right that follows the camera, with Frame selected and Reset camera buttons below it. Files: `src/editor/Viewport.svelte`, `docs/USER_GUIDE.md`.

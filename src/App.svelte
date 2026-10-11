@@ -28,7 +28,7 @@
   import {
     BookOpen, Bot, Box, Camera, Circle, ClipboardPaste, Clapperboard, Cone, Copy, CopyPlus, Cylinder, FileCode, FileCode2, Flashlight, FolderPlus,
     Group, Lightbulb, ListTree, Magnet, MousePointer2, Move, PencilLine, Pill, Plus, RotateCw, Scaling, Scissors, SlidersHorizontal, Sparkles, Square,
-    Sun, Terminal, Trash, Ungroup, ArrowUpFromLine, X
+    Sun, Terminal, Trash, Ungroup, ArrowUpFromLine, X, ChevronDown, FolderInput, FolderOpen, History
   } from "@lucide/svelte";
   import { applyOps } from "./scene/applyOps";
   import { describeChanges } from "./scene/describeChanges";
@@ -50,6 +50,10 @@
   let focusToken = $state(0);
   let space: "world" | "local" = $state("world");
   let snap = $state(false);
+  /** Shelf split buttons remember the last shape and light picked from their menus. */
+  let shelfShape = $state<PrimitiveShape>("box");
+  let shelfLight = $state<LightKind>("point");
+  let shelfMenu = $state<"shape" | "light" | "import" | null>(null);
   const emptyHistory: SceneOp[][] = [];
   let undoStack: SceneOp[][] = $state.raw(emptyHistory);
   let redoStack: SceneOp[][] = $state.raw([]);
@@ -1342,6 +1346,21 @@ when clicked
     { shape: "capsule", label: "Capsule", icon: Pill }, { shape: "cone", label: "Cone", icon: Cone }, { shape: "plane", label: "Plane", icon: Square }
   ];
 
+  const shelfLights: { kind: LightKind; label: string; icon: typeof Box }[] = [
+    { kind: "point", label: "Point light", icon: Lightbulb }, { kind: "directional", label: "Sun light", icon: Sun }, { kind: "spot", label: "Spot light", icon: Flashlight }
+  ];
+  const activeShelfShape = $derived(shelfPrimitives.find((item) => item.shape === shelfShape) ?? shelfPrimitives[0]);
+  const activeShelfLight = $derived(shelfLights.find((item) => item.kind === shelfLight) ?? shelfLights[0]);
+
+  function closeShelfMenuOutside(event: PointerEvent) {
+    if (shelfMenu && !(event.target as Element | null)?.closest?.(".shelf-group")) shelfMenu = null;
+  }
+
+  function openAIPanel() {
+    if (!panelOpen.ai) togglePanel("ai");
+    else focusedPanel = "ai";
+  }
+
   const panelNames: EditorPanel[] =["hierarchy", "inspector", "console", "ai", "timeline", "docs", "sceneLoader"];
   const panelLabels: Record<EditorPanel, string> = { hierarchy: "Hierarchy", inspector: "Inspector", console: "Console", ai: "AI", timeline: "Timeline", docs: "Docs", sceneLoader: "Scene Loader" };
 
@@ -1412,7 +1431,7 @@ when clicked
 </script>
 
 <svelte:head><title>SimuStyle — Scene Editor</title></svelte:head>
-<svelte:window onpointermove={movePanelDrag} onpointerup={endPanelDrag} onkeydown={windowKeyDown} onkeyup={windowKeyUp} />
+<svelte:window onpointermove={movePanelDrag} onpointerup={endPanelDrag} onpointerdown={closeShelfMenuOutside} onkeydown={(event) => { if (event.key === "Escape" && shelfMenu) { shelfMenu = null; return; } windowKeyDown(event); }} onkeyup={windowKeyUp} />
 
 <main class="editor" class:simulation-playing={playState === "playing"} class:simulation-paused={playState === "paused"}>
   <TopBar
@@ -1465,19 +1484,43 @@ when clicked
             </div>
             {#if playState === "stopped"}
               <div class="create-shelf" role="toolbar" aria-label="Create objects">
-                {#each shelfPrimitives as item (item.shape)}
-                  <button aria-label="Add {item.label}" data-tip={item.label} onclick={() => createPrimitive(item.shape)}><item.icon size={15} /></button>
-                {/each}
+                <div class="shelf-group">
+                  <button class="shelf-main" aria-label="Add {activeShelfShape.label}" onclick={() => createPrimitive(activeShelfShape.shape)}><activeShelfShape.icon size={16} /><span>{activeShelfShape.label}</span></button>
+                  <button class="shelf-caret" aria-label="More shapes" aria-haspopup="menu" aria-expanded={shelfMenu === "shape"} onclick={() => shelfMenu = shelfMenu === "shape" ? null : "shape"}><ChevronDown size={13} /></button>
+                  {#if shelfMenu === "shape"}
+                    <div class="shelf-menu" role="menu" aria-label="Add shape">
+                      {#each shelfPrimitives as item (item.shape)}
+                        <button role="menuitem" class:active={shelfShape === item.shape} onclick={() => { shelfShape = item.shape; shelfMenu = null; createPrimitive(item.shape); }}><item.icon size={14} />{item.label}</button>
+                      {/each}
+                      <span class="shelf-menu-sep"></span>
+                      <button role="menuitem" onclick={() => { shelfMenu = null; selectEntity(null); groupSelection(); }}><FolderPlus size={14} />Empty group</button>
+                      <button role="menuitem" onclick={() => { shelfMenu = null; addScriptObject(); }}><FileCode size={14} />Script object</button>
+                    </div>
+                  {/if}
+                </div>
+                <div class="shelf-group">
+                  <button class="shelf-main" aria-label="Add {activeShelfLight.label}" onclick={() => addLight(activeShelfLight.kind)}><activeShelfLight.icon size={16} /><span>{activeShelfLight.label}</span></button>
+                  <button class="shelf-caret" aria-label="More lights" aria-haspopup="menu" aria-expanded={shelfMenu === "light"} onclick={() => shelfMenu = shelfMenu === "light" ? null : "light"}><ChevronDown size={13} /></button>
+                  {#if shelfMenu === "light"}
+                    <div class="shelf-menu" role="menu" aria-label="Add light">
+                      {#each shelfLights as item (item.kind)}
+                        <button role="menuitem" class:active={shelfLight === item.kind} onclick={() => { shelfLight = item.kind; shelfMenu = null; addLight(item.kind); }}><item.icon size={14} />{item.label}</button>
+                      {/each}
+                    </div>
+                  {/if}
+                </div>
+                <button class="shelf-main" aria-label="Add camera" onclick={addCamera}><Camera size={16} /><span>Camera</span></button>
+                <div class="shelf-group">
+                  <button class="shelf-main" aria-label="Import" aria-haspopup="menu" aria-expanded={shelfMenu === "import"} onclick={() => shelfMenu = shelfMenu === "import" ? null : "import"}><FolderInput size={16} /><span>Import</span><ChevronDown size={13} /></button>
+                  {#if shelfMenu === "import"}
+                    <div class="shelf-menu" role="menu" aria-label="Import">
+                      <button role="menuitem" onclick={() => { shelfMenu = null; openScenePicker(); }}><FolderOpen size={14} />Scene file…</button>
+                      <button role="menuitem" onclick={() => { shelfMenu = null; showSceneLoader(); }}><History size={14} />Recent scenes</button>
+                    </div>
+                  {/if}
+                </div>
                 <span class="shelf-sep"></span>
-                <button aria-label="Add point light" data-tip="Point light" onclick={() => addLight("point")}><Lightbulb size={15} /></button>
-                <button aria-label="Add sun light" data-tip="Sun light" onclick={() => addLight("directional")}><Sun size={15} /></button>
-                <button aria-label="Add spot light" data-tip="Spot light" onclick={() => addLight("spot")}><Flashlight size={15} /></button>
-                <button aria-label="Add camera" data-tip="Camera" onclick={addCamera}><Camera size={15} /></button>
-                <span class="shelf-sep"></span>
-                <button aria-label="Add empty group" data-tip="Empty group" onclick={() => { selectEntity(null); groupSelection(); }}><FolderPlus size={15} /></button>
-                <button aria-label="Add script object" data-tip="Script object" onclick={addScriptObject}><FileCode size={15} /></button>
-                <span class="shelf-sep"></span>
-                <button class="shelf-animate" aria-label="Animate selected object" data-tip={selectedEntity ? `Animate ${selectedEntity.name}` : "Select an object to animate"} disabled={!selectedEntity} onclick={(event) => openPresetGallery(selectedId, event.currentTarget.getBoundingClientRect())}><Sparkles size={15} /></button>
+                <button class="shelf-generate" aria-label="Generate with AI" onclick={openAIPanel}><Sparkles size={16} /><span>Generate</span></button>
               </div>
             {/if}
           {/snippet}
@@ -1741,25 +1784,33 @@ when clicked
   .bottom-tabs button :global(svg){opacity:.7}
   .bottom-tabs button.selected :global(svg){opacity:1;color:#b9adff}
   /* Viewport overlays: a Unity-style tool rail and a one-click create shelf. */
-  .tool-rail,.create-shelf{position:absolute;z-index:2;display:flex;gap:2px;padding:3px;border:1px solid #ffffff14;border-radius:9px;background:#15161cd9;backdrop-filter:blur(6px);box-shadow:0 6px 18px #0006}
-  .tool-rail{top:10px;left:10px;flex-direction:column}
-  .create-shelf{bottom:12px;left:50%;transform:translateX(-50%);align-items:center}
-  .tool-rail button,.create-shelf button{position:relative;display:grid;width:30px;height:30px;place-items:center;padding:0;border:1px solid transparent;border-radius:6px;background:transparent;color:#b6b3c2;cursor:pointer;transition:background .12s,color .12s,transform .12s}
-  .tool-rail button:hover:not(:disabled),.create-shelf button:hover:not(:disabled){background:#ffffff12;color:#fff}
-  .create-shelf button:hover:not(:disabled){transform:translateY(-2px)}
-  .create-shelf button:active:not(:disabled){transform:translateY(0) scale(.94)}
+  .tool-rail{position:absolute;z-index:2;top:10px;left:10px;display:flex;flex-direction:column;gap:2px;padding:3px;border:1px solid #ffffff14;border-radius:9px;background:#15161cd9;backdrop-filter:blur(6px);box-shadow:0 6px 18px #0006}
+  .tool-rail button{position:relative;display:grid;width:30px;height:30px;place-items:center;padding:0;border:1px solid transparent;border-radius:6px;background:transparent;color:#b6b3c2;cursor:pointer;transition:background .12s,color .12s}
+  .tool-rail button:hover:not(:disabled){background:#ffffff12;color:#fff}
   .tool-rail button.active{border-color:#7d6ff066;background:#3b3566;color:#e1dbff}
-  .create-shelf button:disabled{opacity:.35;cursor:default}
-  .create-shelf .shelf-animate:not(:disabled){color:#d8b4fe}
-  .create-shelf .shelf-animate:hover:not(:disabled){background:linear-gradient(135deg,#4a3f80,#5b3a7a);color:#fff}
   .rail-sep{height:1px;margin:3px 4px;background:#ffffff18}
-  .shelf-sep{width:1px;height:18px;margin:0 3px;background:#ffffff18}
-  .tool-rail button:focus-visible,.create-shelf button:focus-visible{outline:2px solid #a99bff;outline-offset:1px}
-  /* Hover labels for icon-only buttons. */
-  .tool-rail button[data-tip]:hover::after,.create-shelf button[data-tip]:hover::after,.tool-rail button[data-tip]:focus-visible::after,.create-shelf button[data-tip]:focus-visible::after{content:attr(data-tip);position:absolute;z-index:3;padding:3px 7px;border:1px solid #ffffff18;border-radius:5px;background:#0d0d12;color:#ecebf3;font:10px 'DM Sans',sans-serif;white-space:nowrap;pointer-events:none}
-  .tool-rail button[data-tip]:hover::after,.tool-rail button[data-tip]:focus-visible::after{left:calc(100% + 8px);top:50%;transform:translateY(-50%)}
-  .create-shelf button[data-tip]:hover::after,.create-shelf button[data-tip]:focus-visible::after{bottom:calc(100% + 8px);left:50%;transform:translateX(-50%)}
-  @media (prefers-reduced-motion: reduce){.create-shelf button,.tool-rail button{transition:none}.create-shelf button:hover:not(:disabled){transform:none}}
+  .tool-rail button:focus-visible{outline:2px solid #a99bff;outline-offset:1px}
+  /* Hover labels for icon-only rail buttons. */
+  .tool-rail button[data-tip]:hover::after,.tool-rail button[data-tip]:focus-visible::after{content:attr(data-tip);position:absolute;z-index:3;left:calc(100% + 8px);top:50%;transform:translateY(-50%);padding:3px 7px;border:1px solid #ffffff18;border-radius:5px;background:#0d0d12;color:#ecebf3;font:10px 'DM Sans',sans-serif;white-space:nowrap;pointer-events:none}
+  .create-shelf{position:absolute;z-index:3;bottom:12px;left:50%;transform:translateX(-50%);display:flex;align-items:center;gap:4px;max-width:calc(100% - 24px);padding:5px;border:1px solid #ffffff14;border-radius:12px;background:#18181be6;backdrop-filter:blur(8px);box-shadow:0 8px 22px #0007}
+  .shelf-group{position:relative;display:flex;align-items:center}
+  .create-shelf button{display:flex;height:34px;align-items:center;gap:8px;padding:0 12px;border:0;border-radius:8px;background:transparent;color:#d4d4d8;font:13px 'DM Sans',sans-serif;white-space:nowrap;cursor:pointer;transition:background .12s,color .12s}
+  .create-shelf button:hover,.create-shelf button[aria-expanded="true"]{background:#ffffff10;color:#fff}
+  .create-shelf .shelf-main :global(svg){color:#a1a1aa}
+  .create-shelf .shelf-main:hover :global(svg){color:#fff}
+  .shelf-group:has(.shelf-caret) .shelf-main{border-radius:8px 0 0 8px}
+  .create-shelf .shelf-caret{width:24px;justify-content:center;padding:0;border-radius:0 8px 8px 0;color:#8f8f99}
+  .shelf-sep{width:1px;height:22px;margin:0 4px;background:#ffffff18}
+  .create-shelf .shelf-generate{padding:0 16px;background:#7c6cf0;color:#fff;font-weight:600}
+  .create-shelf .shelf-generate:hover{background:#8b7cf6}
+  .create-shelf button:focus-visible{outline:2px solid #a99bff;outline-offset:1px}
+  .shelf-menu{position:absolute;bottom:calc(100% + 8px);left:0;display:flex;min-width:160px;flex-direction:column;padding:4px;border:1px solid #ffffff1a;border-radius:9px;background:#18181b;box-shadow:0 10px 24px #0009}
+  .create-shelf .shelf-menu button{height:30px;gap:9px;padding:0 10px;color:#c4c4cc;font-size:12px}
+  .create-shelf .shelf-menu button.active{background:#3b3566;color:#e1dbff}
+  .shelf-menu-sep{height:1px;margin:4px 3px;background:#ffffff18}
+  /* Narrow stages keep the shelf on one row by dropping the text labels. */
+  @media (max-width: 1100px){.create-shelf .shelf-main span{display:none}.create-shelf .shelf-main{padding:0 10px}}
+  @media (prefers-reduced-motion: reduce){.create-shelf button,.tool-rail button{transition:none}}
   .menu-separator{height:1px;margin:4px 3px;background:#ffffff18}
   .entity-context-menu .context-delete{color:#ff9ba2}
   .context-separator{height:1px;margin:4px 3px;background:#ffffff18}
