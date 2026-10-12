@@ -272,6 +272,8 @@ export interface AgentStepsProps {
   /** The scene's centre line, as a fraction of frame height. */
   centerY?: number;
   fontFamily?: string;
+  /** Face for the log lines only, e.g. a mono to match an app's progress text. Defaults to `fontFamily`. */
+  stepFontFamily?: string;
   theme?: Partial<SnapCnTheme>;
   mode?: "light" | "dark";
   speed?: number;
@@ -483,6 +485,7 @@ export function AgentSteps({
   accentColor,
   centerY = 0.5,
   fontFamily,
+  stepFontFamily,
   theme: themeOverride,
   mode,
   speed = 1,
@@ -491,6 +494,7 @@ export function AgentSteps({
   const { fps, height, width } = useVideoConfig();
   const t = useSnapCnTheme(themeOverride, mode);
   const face = resolveFont(fontFamily ?? t.fontFamily) ?? SANS;
+  const stepFace = resolveFont(stepFontFamily) ?? face;
   const steps = toSteps(stepsInput);
 
   const fc = frame * speed;
@@ -679,7 +683,7 @@ export function AgentSteps({
                         running and done labels carry the same ink per glyph
                         (ratio 1.04, which is the two strings' own width ratio).
                         Only the icon is faint while a step runs. */}
-                    <span style={{ ...label, color: muted }}>
+                    <span style={{ ...label, fontFamily: stepFace, color: muted }}>
                       {isDone ? step.done : step.running}
                     </span>
                   </div>

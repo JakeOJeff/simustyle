@@ -12,7 +12,7 @@ import { EndCardScene } from "./scenes/EndCardScene";
 import { FeaturesScene } from "./scenes/FeaturesScene";
 import { HookScene } from "./scenes/HookScene";
 import { OutroScene } from "./scenes/OutroScene";
-import { PromptScene } from "./scenes/PromptScene";
+import { AssistantScene } from "./scenes/AssistantScene";
 
 export const RemotionRoot: React.FC = () => {
   return (
@@ -26,7 +26,7 @@ export const RemotionRoot: React.FC = () => {
           width={1920}
           height={1080}
           defaultProps={{
-            headline: "Make games in",
+            headline: "Script in",
             words: "C++, JavaScript, C#, GDScript, Lua, Python, Rust, English.",
           }}
         />
@@ -40,16 +40,13 @@ export const RemotionRoot: React.FC = () => {
           defaultProps={{ lead: "Introducing", subject: "SimuStyle" }}
         />
         <Composition
-          id="Prompt"
-          component={PromptScene}
-          durationInFrames={105}
+          id="Assistant"
+          component={AssistantScene}
+          durationInFrames={140}
           fps={30}
           width={1920}
           height={1080}
-          defaultProps={{
-            greeting: "What should we build?",
-            text: "A mini-golf hole with a spinning windmill",
-          }}
+          defaultProps={{ text: "Build a small mini-golf hole I can play, with a windmill that spins forever" }}
         />
         <Composition
           id="Build"
@@ -59,8 +56,8 @@ export const RemotionRoot: React.FC = () => {
           width={1920}
           height={1080}
           defaultProps={{
-            query: "A mini-golf hole with a spinning windmill",
-            result: "Scene built · 1 undoable edit",
+            query: "Build a small mini-golf hole I can play, with a windmill that spins forever",
+            result: "Built a playable mini-golf hole · Undo this change",
           }}
         />
         <Composition
@@ -74,7 +71,7 @@ export const RemotionRoot: React.FC = () => {
             clip: "play",
             meta: playClip,
             camera: [{ at: 30, duration: 30, zoom: 1.7, x: 0.56, y: 0.36 }],
-            caption: "Press Play. It's already a game.",
+            caption: "Press Play. Physics and scripts run live.",
             captionAt: 44,
           }}
         />
@@ -93,7 +90,7 @@ export const RemotionRoot: React.FC = () => {
               { at: 46, duration: 24, zoom: 1.35, x: 0.5, y: 0.55 },
               { at: 118, duration: 25, zoom: 1 },
             ],
-            caption: "Or just type what you want.",
+            caption: "Or type commands in plain English.",
             captionAt: 10,
           }}
         />
@@ -112,7 +109,7 @@ export const RemotionRoot: React.FC = () => {
               { at: 134, duration: 22, zoom: 1.5, x: 0.5, y: 0.38 },
               { at: 196, duration: 25, zoom: 1.8, x: 0.43, y: 0.3 },
             ],
-            caption: "Typos? Fixed on your machine.",
+            caption: "Write it sloppy. AI Parse fixes it.",
             captionAt: 140,
           }}
         />
@@ -132,12 +129,12 @@ export const RemotionRoot: React.FC = () => {
         <Composition
           id="Features"
           component={FeaturesScene}
-          durationInFrames={135}
+          durationInFrames={140}
           fps={30}
           width={1920}
           height={1080}
           defaultProps={{
-            script: "Real physics. / Keyframe animation. | Runs in your browser. / Or on Windows. | Free.",
+            script: "A 3D sandbox / with real physics. | AI agents / that build with you. | A script language / AI can fix.",
           }}
         />
         <Composition
@@ -167,8 +164,8 @@ export const RemotionRoot: React.FC = () => {
       <Composition
         id="SimuStyleProduct"
         component={ProductVideo}
-        durationInFrames={1376}
-        fps={30}
+        durationInFrames={1406}
+        fps={29.92}
         width={1920}
         height={1080}
       />

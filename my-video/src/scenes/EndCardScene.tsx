@@ -7,8 +7,7 @@ import {
   useVideoConfig,
   type InteractivitySchema,
 } from "remotion";
-import { FONTS } from "../lib/snap-cn-ui";
-import { accent } from "../brand";
+import { accent, dmSans } from "../brand";
 
 type EndCardProps = {
   readonly wordmark: string;
@@ -26,7 +25,7 @@ const EndCardInner: React.FC<EndCardProps> = ({ wordmark, url, note }) => {
         backgroundColor: "#0a0a0b",
         alignItems: "center",
         justifyContent: "center",
-        fontFamily: FONTS.Inter,
+        fontFamily: dmSans,
       }}
     >
       <Interactive.Div

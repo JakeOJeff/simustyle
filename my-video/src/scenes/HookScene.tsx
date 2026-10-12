@@ -1,6 +1,6 @@
 import { Interactive, type InteractivitySchema } from "remotion";
 import { WordWheel } from "../components/snap-cn/word-wheel";
-import { brand } from "../brand";
+import { brand, dmSans } from "../brand";
 
 type HookProps = {
   readonly headline: string;
@@ -10,11 +10,11 @@ type HookProps = {
 // The reel starts on the first word and stops on the last one, so the punchline goes last.
 const HookInner: React.FC<HookProps> = ({ headline, words }) => {
   const rows = words.split(",").filter((w) => w.trim()).length;
-  return <WordWheel headline={headline} words={words} spin={rows - 1} theme={brand} mode="dark" />;
+  return <WordWheel headline={headline} words={words} spin={rows - 1} fontFamily={dmSans} theme={brand} mode="dark" />;
 };
 
 const hookSchema = {
-  headline: { type: "string", default: "Make games in", description: "Fixed lead-in" },
+  headline: { type: "string", default: "Script in", description: "Fixed lead-in" },
   words: {
     type: "string",
     default: "C++, JavaScript, C#, GDScript, Lua, Python, Rust, English.",

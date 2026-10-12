@@ -10,10 +10,10 @@ const FeaturesInner: React.FC<FeaturesProps> = ({ script }) => {
   return (
     <PunchLines
       script={script}
-      styles="slide,slide,punch"
-      sizes="1,1,2.4"
-      holds="42,42,48"
-      accentBeat={3}
+      styles="slide"
+      sizes="1"
+      holds="44,44,52"
+      accentBeat={2}
       accentColor={accent}
       theme={brand}
       mode="dark"
@@ -24,7 +24,7 @@ const FeaturesInner: React.FC<FeaturesProps> = ({ script }) => {
 const featuresSchema = {
   script: {
     type: "string",
-    default: "Real physics. / Keyframe animation. | Runs in your browser. / Or on Windows. | Free.",
+    default: "A 3D sandbox / with real physics. | AI agents / that build with you. | A script language / AI can fix.",
     description: "Cards split by |, lines by /",
   },
 } as const satisfies InteractivitySchema;

@@ -15,8 +15,7 @@ import {
   ScreenRecording,
   type CameraMove,
 } from "../components/snap-cn/screen-recording";
-import { FONTS } from "../lib/snap-cn-ui";
-import { accent, brand } from "../brand";
+import { accent, brand, dmSans } from "../brand";
 
 /** What capture/capture.mjs writes next to each clip: its length and every real click. */
 export type ClipMeta = {
@@ -116,7 +115,7 @@ const EditorShotInner: React.FC<EditorShotProps> = ({ clip, meta, camera, captio
           boxShadow: "0 0 0 1px #ffffff1f, 0 20px 60px #00000099",
           backdropFilter: "blur(12px)",
           color: "#fafafa",
-          fontFamily: FONTS.Inter,
+          fontFamily: dmSans,
           fontSize: 38,
           fontWeight: 600,
           letterSpacing: "-0.02em",

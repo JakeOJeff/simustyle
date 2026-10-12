@@ -1,6 +1,6 @@
 import { Interactive, staticFile, type InteractivitySchema } from "remotion";
 import { CaptureReveal } from "../components/snap-cn/capture-reveal";
-import { brand } from "../brand";
+import { brand, dmSans } from "../brand";
 
 type EditorProps = {
   readonly headline: string;
@@ -16,6 +16,7 @@ const EditorInner: React.FC<EditorProps> = ({ headline, capturing, copied }) => 
       headline={headline}
       capturing={capturing}
       copied={copied}
+      fontFamily={dmSans}
       theme={brand}
       mode="dark"
     />
