@@ -97,7 +97,7 @@
   <div class="tb-left">
     <div class="tb-menu-root">
       <button class="tb-scene" data-tutorial-target="scene-menu" aria-haspopup="menu" aria-expanded={openMenu === "scene"} title="Scene file" onclick={() => toggle("scene")}>
-        <span class="tb-logo">S</span>
+        <img class="tb-logo" src="/src-tauri/icons/Logo.png" alt="" />
         <strong>{sceneName}</strong>
         <span class="tb-status" class:unsaved={!saved}><i></i>{saved ? "Saved" : "Unsaved"}</span>
         <ChevronDown size={13} />
@@ -214,7 +214,7 @@
   .tb-menu-root{position:relative}
   .tb-scene{padding:0 6px 0 2px;gap:8px;color:#e9e9ec}
   .tb-scene strong{font-size:12px;font-weight:600;max-width:180px;overflow:hidden;text-overflow:ellipsis}
-  .tb-logo{display:grid;place-items:center;width:24px;height:24px;border-radius:6px;background:#7c6cf0;color:#fff;font-size:12px;font-weight:700}
+  .tb-logo{display:block;width:24px;height:24px;object-fit:cover;border-radius:6px}
   .tb-status{display:inline-flex;align-items:center;gap:5px;color:#8e8e99;font-size:10px}
   .tb-status i{width:6px;height:6px;border-radius:50%;background:#3fcf8e}
   .tb-status.unsaved i{background:#e5a345}
