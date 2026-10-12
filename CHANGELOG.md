@@ -4,6 +4,13 @@ Record meaningful project changes during the event, newest first.
 
 ## Event build log
 
+### 2026-10-12T23:45:00+05:30 — Product video uses real editor footage
+
+- Changed: The video now cuts the snapcn motion-graphic beats against real footage of the SimuStyle editor. It has three recorded shots: pressing Play on a mini-golf scene (the ball rolls past the spinning windmill to the hole), typing `create a purple ball… called "Bouncy"`, `paint Bouncy yellow` and `move Bouncy up 1` into the console, and typing a sloppy script that ✦ Parse fixes locally ("no AI call"), applied with Use rewrite. Each shot plays in a floating window with snapcn Screen Recording camera pushes, a Cursor Track cursor placed on the real click positions, and a caption. Also added a Font Shuffle "Introducing SimuStyle" title. Capture Reveal now uses a frame of the real scene. The stylized terminal scene was removed because the real Parse shot replaces it. Video is 46 s. New capture rig in `my-video/capture/`: `capture.mjs` drives the editor in Remotion's headless Chrome under a stepped clock (one screenshot per 30 fps frame, so physics and the viewport are smooth), blocks `/api/ai/chat` so capturing never spends credits, encodes `public/clips/*.mp4` and writes the click logs to `src/clips/*.json`. `minigolf.json` is the scene it loads. Files: `my-video/capture/**`, `my-video/src/**`, `my-video/public/clips/*`, `my-video/public/editor-minigolf.jpg`, `my-video/tsconfig.json`, `my-video/package.json`.
+- Why: Requested that the video show actual components from the editor, mixed with the motion-graphic style, so it feels like the product.
+- Validation: All three clips were captured from the dev server and their key frames checked. Stills confirm the cursor lands on Play and Parse through the camera zooms. `npm run lint` passes and `npx remotion render SimuStyleProduct` produced `my-video/out/simustyle-product.mp4` (8.8 MB).
+- Limitations: The prompt and agent-steps beats are still motion graphics, not a live AI run, because the capture blocks AI calls. The ball's `say "Hole in one!"` doesn't show in the console during the play shot. Recapturing needs the dev server on port 5199 (`npm run dev -- --port 5199 --strictPort` at the repo root).
+
 ### 2026-10-12T23:35:00+05:30 — Product video loads in Studio from any folder
 
 - Changed: The video's `@/…` imports (scenes, `brand.ts`, and the snapcn components) are now relative paths. Files: `my-video/src/**`.

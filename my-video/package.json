@@ -25,6 +25,7 @@
     "@types/web": "0.0.166",
     "eslint": "9.39.5",
     "prettier": "3.8.1",
+    "puppeteer-core": "24.43.1",
     "tailwindcss": "4.3.3",
     "typescript": "5.9.3"
   },

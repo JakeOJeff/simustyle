@@ -12,7 +12,7 @@ type EditorProps = {
 const EditorInner: React.FC<EditorProps> = ({ headline, capturing, copied }) => {
   return (
     <CaptureReveal
-      src={staticFile("editor.png")}
+      src={staticFile("editor-minigolf.jpg")}
       headline={headline}
       capturing={capturing}
       copied={copied}
