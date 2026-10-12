@@ -63,7 +63,7 @@ export const RemotionRoot: React.FC = () => {
         <Composition
           id="EditorPlay"
           component={EditorShot}
-          durationInFrames={175}
+          durationInFrames={193}
           fps={30}
           width={1920}
           height={1080}
@@ -71,14 +71,17 @@ export const RemotionRoot: React.FC = () => {
             clip: "play",
             meta: playClip,
             camera: [{ at: 30, duration: 30, zoom: 1.7, x: 0.56, y: 0.36 }],
-            caption: "Press Play. Physics and scripts run live.",
+            title: "Press Play.",
+            caption: "Physics and scripts run live.",
             captionAt: 44,
+            reveal: "blur",
+            captionReveal: "words",
           }}
         />
         <Composition
           id="EditorCommands"
           component={EditorShot}
-          durationInFrames={145}
+          durationInFrames={163}
           fps={30}
           width={1920}
           height={1080}
@@ -90,14 +93,17 @@ export const RemotionRoot: React.FC = () => {
               { at: 46, duration: 24, zoom: 1.35, x: 0.5, y: 0.55 },
               { at: 118, duration: 25, zoom: 1 },
             ],
-            caption: "Or type commands in plain English.",
-            captionAt: 10,
+            title: "Type commands",
+            caption: "in plain English.",
+            captionAt: 12,
+            reveal: "track",
+            captionReveal: "words",
           }}
         />
         <Composition
           id="EditorParse"
           component={EditorShot}
-          durationInFrames={226}
+          durationInFrames={244}
           fps={30}
           width={1920}
           height={1080}
@@ -109,8 +115,11 @@ export const RemotionRoot: React.FC = () => {
               { at: 134, duration: 22, zoom: 1.5, x: 0.5, y: 0.38 },
               { at: 196, duration: 25, zoom: 1.8, x: 0.43, y: 0.3 },
             ],
-            caption: "Write it sloppy. AI Parse fixes it.",
-            captionAt: 140,
+            title: "Write it sloppy.",
+            caption: "AI Parse fixes it.",
+            captionAt: 136,
+            reveal: "spring",
+            captionReveal: "decode",
           }}
         />
         <Composition
@@ -134,7 +143,12 @@ export const RemotionRoot: React.FC = () => {
           width={1920}
           height={1080}
           defaultProps={{
-            script: "A 3D sandbox / with real physics. | AI agents / that build with you. | A script language / AI can fix.",
+            one: "A 3D sandbox",
+            oneSub: "with real physics.",
+            two: "AI agents",
+            twoSub: "that build with you.",
+            three: "A script language",
+            threeSub: "AI can fix.",
           }}
         />
         <Composition
@@ -164,7 +178,7 @@ export const RemotionRoot: React.FC = () => {
       <Composition
         id="SimuStyleProduct"
         component={ProductVideo}
-        durationInFrames={1406}
+        durationInFrames={1460}
         fps={29.92}
         width={1920}
         height={1080}

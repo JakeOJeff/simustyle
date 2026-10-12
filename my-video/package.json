@@ -8,6 +8,7 @@
   "dependencies": {
     "@remotion/cli": "4.0.535",
     "@remotion/google-fonts": "4.0.535",
+    "@remotion/media": "4.0.535",
     "@remotion/tailwind-v4": "4.0.535",
     "@remotion/transitions": "4.0.535",
     "class-variance-authority": "^0.7.1",
