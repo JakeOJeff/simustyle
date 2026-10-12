@@ -1,64 +1,54 @@
-import { linearTiming, springTiming, TransitionSeries } from "@remotion/transitions";
-import { fade } from "@remotion/transitions/fade";
-import { slide } from "@remotion/transitions/slide";
+import { TransitionSeries } from "@remotion/transitions";
 import { useVideoConfig } from "remotion";
-import { AssistantScene } from "./scenes/AssistantScene";
-import { CtaScene } from "./scenes/CtaScene";
+import { BuildScene } from "./scenes/BuildScene";
 import { EditorScene } from "./scenes/EditorScene";
+import { EndCardScene } from "./scenes/EndCardScene";
+import { FeaturesScene } from "./scenes/FeaturesScene";
 import { HookScene } from "./scenes/HookScene";
-import { IntroScene } from "./scenes/IntroScene";
+import { OutroScene } from "./scenes/OutroScene";
 import { ParseScene } from "./scenes/ParseScene";
-import { ScriptScene } from "./scenes/ScriptScene";
+import { PromptScene } from "./scenes/PromptScene";
 
+// Hard cuts between scenes; each snapcn scene carries its own camera motion.
 export const ProductVideo: React.FC = () => {
   const { fps } = useVideoConfig();
 
   return (
     <TransitionSeries>
-      <TransitionSeries.Sequence name="Intro" durationInFrames={105} premountFor={fps}>
-        <IntroScene tagline="Plain-English 3D worlds, powered by AI" />
-      </TransitionSeries.Sequence>
-      <TransitionSeries.Transition presentation={fade()} timing={linearTiming({ durationInFrames: 15 })} />
-      <TransitionSeries.Sequence name="Hook" durationInFrames={90} premountFor={fps}>
-        <HookScene lineOne="You describe it." lineTwo="We make it real." />
-      </TransitionSeries.Sequence>
-      <TransitionSeries.Transition
-        presentation={slide({ direction: "from-right" })}
-        timing={springTiming({ config: { damping: 200 }, durationInFrames: 15 })}
-      />
-      <TransitionSeries.Sequence name="AI Parse" durationInFrames={210} premountFor={fps}>
-        <ParseScene eyebrow="✦ AI Parse" title="Type it how you'd say it. SimuStyle makes it run." />
-      </TransitionSeries.Sequence>
-      <TransitionSeries.Transition
-        presentation={slide({ direction: "from-right" })}
-        timing={springTiming({ config: { damping: 200 }, durationInFrames: 15 })}
-      />
-      <TransitionSeries.Sequence name="Scene assistant" durationInFrames={180} premountFor={fps}>
-        <AssistantScene
-          eyebrow="Scene assistant"
-          title="Describe a whole scene. Get a playable one."
-          prompt={
-            'Build a small mini-golf hole I can play. A white ball that rolls with physics, a windmill whose red blades spin forever, and a hole with a flag. When the ball reaches the hole, say "Hole in one!"'
-          }
+      <TransitionSeries.Sequence name="Hook" durationInFrames={75} premountFor={fps}>
+        <HookScene
+          headline="Make games in"
+          words="C++, JavaScript, C#, GDScript, Lua, Python, Rust, English."
         />
       </TransitionSeries.Sequence>
-      <TransitionSeries.Transition
-        presentation={slide({ direction: "from-bottom" })}
-        timing={springTiming({ config: { damping: 200 }, durationInFrames: 15 })}
-      />
-      <TransitionSeries.Sequence name="Editor" durationInFrames={195} premountFor={fps}>
-        <EditorScene eyebrow="Everything in one editor" title="From empty scene to playable demo." />
+      <TransitionSeries.Sequence name="Prompt" durationInFrames={105} premountFor={fps}>
+        <PromptScene greeting="What should we build?" text="A mini-golf hole with a spinning windmill" />
       </TransitionSeries.Sequence>
-      <TransitionSeries.Transition
-        presentation={slide({ direction: "from-right" })}
-        timing={springTiming({ config: { damping: 200 }, durationInFrames: 15 })}
-      />
-      <TransitionSeries.Sequence name="Scripting" durationInFrames={165} premountFor={fps}>
-        <ScriptScene eyebrow="Scripting" title="Logic you can read out loud." />
+      <TransitionSeries.Sequence name="Build" durationInFrames={140} premountFor={fps}>
+        <BuildScene query="A mini-golf hole with a spinning windmill" result="Scene built · 1 undoable edit" />
       </TransitionSeries.Sequence>
-      <TransitionSeries.Transition presentation={fade()} timing={linearTiming({ durationInFrames: 15 })} />
-      <TransitionSeries.Sequence name="Call to action" durationInFrames={150} premountFor={fps}>
-        <CtaScene headline="Build your first world today." url="simustyle.curiousengine.org" />
+      <TransitionSeries.Sequence name="AI Parse" durationInFrames={165} premountFor={fps}>
+        <ParseScene intro="*type it* how you'd *say it.*" />
+      </TransitionSeries.Sequence>
+      <TransitionSeries.Sequence name="Editor" durationInFrames={130} premountFor={fps}>
+        <EditorScene
+          headline="ship it | anywhere."
+          capturing="Exporting scene..."
+          copied="Exported to GLB, HTML & WebM."
+        />
+      </TransitionSeries.Sequence>
+      <TransitionSeries.Sequence name="Features" durationInFrames={135} premountFor={fps}>
+        <FeaturesScene script="Real physics. / Keyframe animation. | Runs in your browser. / Or on Windows. | Free." />
+      </TransitionSeries.Sequence>
+      <TransitionSeries.Sequence name="Wordmark" durationInFrames={45} premountFor={fps}>
+        <OutroScene word="simustyle." />
+      </TransitionSeries.Sequence>
+      <TransitionSeries.Sequence name="End card" durationInFrames={90} premountFor={fps}>
+        <EndCardScene
+          wordmark="simustyle"
+          url="simustyle.curiousengine.org"
+          note="Free forever · No account needed"
+        />
       </TransitionSeries.Sequence>
     </TransitionSeries>
   );

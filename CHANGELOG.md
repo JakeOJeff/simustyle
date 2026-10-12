@@ -4,6 +4,13 @@ Record meaningful project changes during the event, newest first.
 
 ## Event build log
 
+### 2026-10-12T23:20:00+05:30 — Product video rebuilt with snapcn components
+
+- Changed: Replaced the first cut (logo, gradient glow, hand-built cards) with a minimal 29.5-second video on a flat near-black page in SimuStyle purple. It cuts between eight scenes built on snapcn Remotion components: a Word Wheel hook ("Make games in" spins through C++, JavaScript, Lua… and stops on "English."), Prompt Zoom typing a mini-golf prompt, Agent Steps narrating the build, Terminal Simulator for AI Parse, Capture Reveal with the editor screenshot ("ship it anywhere."), Punch Lines for features, then a Wordmark Cut and a plain end card with the URL. No logo. Set up the project for snapcn: `components.json`, the `@/` alias in `tsconfig.json` and `remotion.config.ts`, Tailwind v4, and `src/index.css`. The components' source is in `my-video/src/components/snap-cn/` and `my-video/src/lib/`. Files: `my-video/src/**`, `my-video/components.json`, `my-video/remotion.config.ts`, `my-video/tsconfig.json`, `my-video/package.json`.
+- Why: Feedback that the first version was boring, the hook was weak, and it should drop the logo and gradient for a clean, modern look built on components like snapcn's.
+- Validation: `npm run lint` (eslint + tsc) passes. Every scene was checked on a 16-frame contact sheet, and timing was fixed where text overflowed or a scene was cut early. `npx remotion render SimuStyleProduct` produced `my-video/out/simustyle-product.mp4` (3.5 MB).
+- Limitations: No music or voiceover. Prompt Zoom crops long prompts after its 2.5× push, so prompts over ~45 characters run off the edge. Terminal lines over ~28 characters are clipped too.
+
 ### 2026-10-12T23:05:00+05:30 — Product video made with Remotion
 
 - Changed: Added the `my-video/` Remotion project with a 33-second 1920×1080 product video (`SimuStyleProduct`) in seven scenes: logo intro, "You describe it. We make it real.", AI Parse turning loose wording into valid code, the scene assistant typing a mini-golf prompt, an editor tour that highlights the hierarchy, physics, timeline and export, plain-English scripting with a live coin counter, and a closing call to action with the site URL. It uses the landing page's colors, DM Sans/DM Mono, the new logo and `editor.png`. Each scene is also registered as its own composition with editable text props. The empty `Composition.tsx` placeholder was removed. Files: `my-video/src/**`, `my-video/public/logo.png`, `my-video/public/editor.png`.

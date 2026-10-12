@@ -1,88 +1,25 @@
-import {
-  Easing,
-  Interactive,
-  interpolate,
-  useCurrentFrame,
-  useVideoConfig,
-  type InteractivitySchema,
-} from "remotion";
-import { Backdrop } from "../Backdrop";
-import { colors, sans } from "../theme";
+import { Interactive, type InteractivitySchema } from "remotion";
+import { WordWheel } from "@/components/snap-cn/word-wheel";
+import { brand } from "../brand";
 
 type HookProps = {
-  readonly lineOne: string;
-  readonly lineTwo: string;
+  readonly headline: string;
+  readonly words: string;
 };
 
-const HookInner: React.FC<HookProps> = ({ lineOne, lineTwo }) => {
-  const frame = useCurrentFrame();
-  const { fps } = useVideoConfig();
-
-  return (
-    <>
-      <Backdrop />
-      <Interactive.Div
-        name="Headline"
-        style={{
-          position: "absolute",
-          inset: 0,
-          display: "flex",
-          flexDirection: "column",
-          alignItems: "center",
-          justifyContent: "center",
-          gap: 10,
-          fontFamily: sans,
-          fontSize: 140,
-          fontWeight: 700,
-          letterSpacing: -5,
-          lineHeight: 1.05,
-        }}
-      >
-        <Interactive.Div
-          name="Line one"
-          style={{
-            color: colors.text,
-            opacity: interpolate(frame, [0, 0.5 * fps], [0, 1], {
-              extrapolateLeft: "clamp",
-              extrapolateRight: "clamp",
-            }),
-            translate: interpolate(frame, [0, 0.8 * fps], ["0px 50px", "0px 0px"], {
-              extrapolateLeft: "clamp",
-              extrapolateRight: "clamp",
-              easing: Easing.bezier(0.16, 1, 0.3, 1),
-            }),
-          }}
-        >
-          {lineOne}
-        </Interactive.Div>
-        <Interactive.Div
-          name="Line two"
-          style={{
-            backgroundImage: `linear-gradient(90deg, ${colors.accent}, #e3dcff, ${colors.accent})`,
-            backgroundClip: "text",
-            WebkitBackgroundClip: "text",
-            color: "transparent",
-            opacity: interpolate(frame, [0.7 * fps, 1.2 * fps], [0, 1], {
-              extrapolateLeft: "clamp",
-              extrapolateRight: "clamp",
-            }),
-            translate: interpolate(frame, [0.7 * fps, 1.5 * fps], ["0px 50px", "0px 0px"], {
-              extrapolateLeft: "clamp",
-              extrapolateRight: "clamp",
-              easing: Easing.bezier(0.16, 1, 0.3, 1),
-            }),
-          }}
-        >
-          {lineTwo}
-        </Interactive.Div>
-      </Interactive.Div>
-    </>
-  );
+// The reel starts on the first word and stops on the last one, so the punchline goes last.
+const HookInner: React.FC<HookProps> = ({ headline, words }) => {
+  const rows = words.split(",").filter((w) => w.trim()).length;
+  return <WordWheel headline={headline} words={words} spin={rows - 1} theme={brand} mode="dark" />;
 };
 
 const hookSchema = {
-  lineOne: { type: "string", default: "You describe it.", description: "First line" },
-  lineTwo: { type: "string", default: "We make it real.", description: "Second line" },
+  headline: { type: "string", default: "Make games in", description: "Fixed lead-in" },
+  words: {
+    type: "string",
+    default: "C++, JavaScript, C#, GDScript, Lua, Python, Rust, English.",
+    description: "Reel words, comma separated; it stops on the last",
+  },
 } as const satisfies InteractivitySchema;
 
 export const HookScene = Interactive.withSchema({

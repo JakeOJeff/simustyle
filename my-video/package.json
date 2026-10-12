@@ -8,17 +8,24 @@
   "dependencies": {
     "@remotion/cli": "4.0.535",
     "@remotion/google-fonts": "4.0.535",
+    "@remotion/tailwind-v4": "4.0.535",
     "@remotion/transitions": "4.0.535",
+    "class-variance-authority": "^0.7.1",
+    "cn": "^0.4.0",
+    "culori": "^4.0.2",
     "react": "19.2.3",
     "react-dom": "19.2.3",
     "remotion": "4.0.535"
   },
   "devDependencies": {
     "@remotion/eslint-config-flat": "4.0.535",
+    "@tailwindcss/postcss": "4.3.3",
+    "@types/culori": "^4.0.1",
     "@types/react": "19.2.7",
     "@types/web": "0.0.166",
     "eslint": "9.39.5",
     "prettier": "3.8.1",
+    "tailwindcss": "4.3.3",
     "typescript": "5.9.3"
   },
   "scripts": {
