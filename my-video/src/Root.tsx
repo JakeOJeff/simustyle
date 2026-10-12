@@ -2,6 +2,7 @@ import "./index.css";
 import { Composition, Folder } from "remotion";
 import { ProductVideo } from "./ProductVideo";
 import { BuildScene } from "./scenes/BuildScene";
+import { ColdOpenScene } from "./scenes/ColdOpenScene";
 import commandClip from "./clips/command.json";
 import playClip from "./clips/play.json";
 import scriptClip from "./clips/script.json";
@@ -19,9 +20,18 @@ export const RemotionRoot: React.FC = () => {
     <>
       <Folder name="Scenes">
         <Composition
+          id="ColdOpen"
+          component={ColdOpenScene}
+          durationInFrames={60}
+          fps={30}
+          width={1920}
+          height={1080}
+          defaultProps={{ build: "Build it.", play: "Play it.", fix: "Fix it." }}
+        />
+        <Composition
           id="Hook"
           component={HookScene}
-          durationInFrames={75}
+          durationInFrames={90}
           fps={30}
           width={1920}
           height={1080}
@@ -33,7 +43,7 @@ export const RemotionRoot: React.FC = () => {
         <Composition
           id="Introducing"
           component={IntroTitleScene}
-          durationInFrames={100}
+          durationInFrames={90}
           fps={30}
           width={1920}
           height={1080}
@@ -42,7 +52,7 @@ export const RemotionRoot: React.FC = () => {
         <Composition
           id="Assistant"
           component={AssistantScene}
-          durationInFrames={140}
+          durationInFrames={120}
           fps={30}
           width={1920}
           height={1080}
@@ -51,7 +61,7 @@ export const RemotionRoot: React.FC = () => {
         <Composition
           id="Build"
           component={BuildScene}
-          durationInFrames={140}
+          durationInFrames={120}
           fps={30}
           width={1920}
           height={1080}
@@ -63,17 +73,18 @@ export const RemotionRoot: React.FC = () => {
         <Composition
           id="EditorPlay"
           component={EditorShot}
-          durationInFrames={193}
+          durationInFrames={180}
           fps={30}
           width={1920}
           height={1080}
           defaultProps={{
             clip: "play",
             meta: playClip,
-            camera: [{ at: 30, duration: 30, zoom: 1.7, x: 0.56, y: 0.36 }],
+            camera: [],
+            focus: { at: 27, duration: 24, rect: { x: 0.278, y: 0.057, w: 0.445, h: 0.537 }, drift: 0.04 },
             title: "Press Play.",
             caption: "Physics and scripts run live.",
-            captionAt: 44,
+            captionAt: 40,
             reveal: "blur",
             captionReveal: "words",
           }}
@@ -81,7 +92,7 @@ export const RemotionRoot: React.FC = () => {
         <Composition
           id="EditorCommands"
           component={EditorShot}
-          durationInFrames={163}
+          durationInFrames={165}
           fps={30}
           width={1920}
           height={1080}
@@ -103,7 +114,7 @@ export const RemotionRoot: React.FC = () => {
         <Composition
           id="EditorParse"
           component={EditorShot}
-          durationInFrames={244}
+          durationInFrames={240}
           fps={30}
           width={1920}
           height={1080}
@@ -125,7 +136,7 @@ export const RemotionRoot: React.FC = () => {
         <Composition
           id="Export"
           component={EditorScene}
-          durationInFrames={130}
+          durationInFrames={135}
           fps={30}
           width={1920}
           height={1080}
@@ -138,7 +149,7 @@ export const RemotionRoot: React.FC = () => {
         <Composition
           id="Features"
           component={FeaturesScene}
-          durationInFrames={140}
+          durationInFrames={135}
           fps={30}
           width={1920}
           height={1080}
@@ -174,11 +185,11 @@ export const RemotionRoot: React.FC = () => {
           }}
         />
       </Folder>
-      {/* Sum of the scene durations above; hard cuts, so nothing overlaps. */}
+      {/* Sum of the scene durations; hard cuts, each on a beat of the music (15 frames). */}
       <Composition
         id="SimuStyleProduct"
         component={ProductVideo}
-        durationInFrames={1460}
+        durationInFrames={1470}
         fps={29.92}
         width={1920}
         height={1080}

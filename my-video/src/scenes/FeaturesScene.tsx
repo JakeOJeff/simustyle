@@ -100,13 +100,13 @@ const FeaturesInner: React.FC<FeaturesProps> = ({ one, oneSub, two, twoSub, thre
         </Card>
       </Sequence>
 
-      <Sequence name="Agents" from={46} durationInFrames={48} premountFor={fps}>
+      <Sequence name="Agents" from={45} durationInFrames={48} premountFor={fps}>
         {/* Rises off the top as its subline blows away. */}
         <Card
           style={{
-            opacity: interpolate(frame, [86, 94], [1, 0], { ...clamp, easing: EASE_IN }),
-            translate: interpolate(frame, [82, 94], ["0px 0px", "0px -70px"], { ...clamp, easing: EASE_IN }),
-            filter: `blur(${interpolate(frame, [84, 94], [0, 12], { ...clamp, easing: EASE_IN })}px)`,
+            opacity: interpolate(frame, [85, 93], [1, 0], { ...clamp, easing: EASE_IN }),
+            translate: interpolate(frame, [81, 93], ["0px 0px", "0px -70px"], { ...clamp, easing: EASE_IN }),
+            filter: `blur(${interpolate(frame, [83, 93], [0, 12], { ...clamp, easing: EASE_IN })}px)`,
           }}
         >
           <SpringScaleIn
@@ -123,11 +123,11 @@ const FeaturesInner: React.FC<FeaturesProps> = ({ one, oneSub, two, twoSub, thre
         </Card>
       </Sequence>
 
-      <Sequence name="Script" from={92} durationInFrames={48} premountFor={fps}>
+      <Sequence name="Script" from={90} durationInFrames={45} premountFor={fps}>
         <Card
           style={{
             gap: 26,
-            opacity: interpolate(frame, [134, 140], [1, 0], clamp),
+            opacity: interpolate(frame, [129, 135], [1, 0], clamp),
           }}
         >
           <TrackingIn
@@ -150,7 +150,7 @@ const FeaturesInner: React.FC<FeaturesProps> = ({ one, oneSub, two, twoSub, thre
               revealDuration={22}
               charset="{}[]()<>;:=+-*/#$_"
               style={{
-                opacity: interpolate(frame, [104, 110], [0, 1], clamp),
+                opacity: interpolate(frame, [102, 108], [0, 1], clamp),
               }}
             />
           </Sequence>

@@ -1,3 +1,4 @@
+import { Video } from "@remotion/media";
 import {
   AbsoluteFill,
   Easing,
@@ -15,8 +16,8 @@ import { SoftBlurIn } from "../components/remocn/soft-blur-in";
 import { SpringScaleIn } from "../components/remocn/spring-scale-in";
 import { TrackingIn } from "../components/remocn/tracking-in";
 import { CursorTrack, type CursorWaypoint } from "../components/snap-cn/cursor-track";
-import { cameraPoseAt, clampFocus, ScreenRecording, type CameraMove } from "../components/snap-cn/screen-recording";
-import { accent, brand, dmMono, dmSans, editor } from "../brand";
+import { CAMERA_EASE, cameraPoseAt, clampFocus, type CameraMove } from "../components/snap-cn/screen-recording";
+import { accent, dmMono, dmSans, editor } from "../brand";
 
 /** What capture/capture.mjs writes next to each clip: its length and every real click. */
 export type ClipMeta = {
@@ -35,7 +36,7 @@ export function cursorPath(meta: ClipMeta): CursorWaypoint[] {
 }
 
 /** Frames the title holds alone, full size, before the footage rises in under it. */
-export const EDITOR_INTRO = 18;
+export const EDITOR_INTRO = 15;
 
 const LIFT = 26; // title rising to the header while the window comes up
 const OUTRO = 12; // everything settles back into the page
@@ -43,8 +44,45 @@ const EASE_OUT = Easing.bezier(0.16, 1, 0.3, 1);
 const EASE_IN = Easing.bezier(0.64, 0, 0.78, 0);
 const clamp = { extrapolateLeft: "clamp", extrapolateRight: "clamp" } as const;
 
-// Final window rect: 75% of the frame, under a one-line header.
+// The box the window fits inside, under a one-line header; a 16:9 shot fills it exactly.
 const WIN = { left: 240, top: 214, width: 1440, height: 810 };
+const WIN_CX = WIN.left + WIN.width / 2;
+const WIN_CY = WIN.top + WIN.height / 2;
+
+/** A region of the source, as fractions of its width and height. */
+type Rect = { x: number; y: number; w: number; h: number };
+
+/**
+ * Crop the window down to one panel of the editor. From `at`, over `duration` frames (footage
+ * clock), the visible region eases from the camera's to `rect` and the window reshapes to its
+ * aspect, so everything around the panel slides out of frame. It then drifts in by `drift`.
+ */
+export type Focus = {
+  readonly at: number;
+  readonly duration: number;
+  readonly rect: Rect;
+  readonly drift?: number;
+};
+
+const lerp = (a: number, b: number, t: number) => a + (b - a) * t;
+
+/** The region of the source on screen at a footage frame. */
+function visibleRect(frame: number, camera: CameraMove[], focus: Focus | undefined, end: number): Rect {
+  const pose = cameraPoseAt(frame, camera);
+  const w = 1 / pose.zoom;
+  const cam = { x: clampFocus(pose.x, pose.zoom) - w / 2, y: clampFocus(pose.y, pose.zoom) - w / 2, w, h: w };
+  if (!focus) return cam;
+  const t = interpolate(frame, [focus.at, focus.at + focus.duration], [0, 1], { ...clamp, easing: CAMERA_EASE });
+  const k = interpolate(frame, [focus.at + focus.duration, end], [1, 1 - (focus.drift ?? 0)], clamp);
+  const { x, y, w: fw, h: fh } = focus.rect;
+  const target = { x: x + (fw * (1 - k)) / 2, y: y + (fh * (1 - k)) / 2, w: fw * k, h: fh * k };
+  return {
+    x: lerp(cam.x, target.x, t),
+    y: lerp(cam.y, target.y, t),
+    w: lerp(cam.w, target.w, t),
+    h: lerp(cam.h, target.h, t),
+  };
+}
 const TITLE_SIZE = 108;
 const HEADER_SCALE = 0.56;
 const HEADER_Y = 112;
@@ -72,6 +110,7 @@ type EditorShotProps = {
   readonly clip: string;
   readonly meta: ClipMeta;
   readonly camera: CameraMove[];
+  readonly focus?: Focus;
   readonly title: string;
   readonly caption: string;
   readonly captionAt: number;
@@ -87,6 +126,7 @@ const EditorShotInner: React.FC<EditorShotProps> = ({
   clip,
   meta,
   camera,
+  focus,
   title,
   caption,
   captionAt,
@@ -98,9 +138,14 @@ const EditorShotInner: React.FC<EditorShotProps> = ({
 
   // Camera and cursor run on the footage's clock, which starts when the window does.
   const footageFrame = frame - EDITOR_INTRO;
-  const pose = cameraPoseAt(footageFrame, camera);
-  const tx = (0.5 - clampFocus(pose.x, pose.zoom) * pose.zoom) * 100;
-  const ty = (0.5 - clampFocus(pose.y, pose.zoom) * pose.zoom) * 100;
+  const view = visibleRect(footageFrame, camera, focus, durationInFrames - EDITOR_INTRO);
+
+  // Fit the region's aspect inside the window box, then size the footage so the region fills it.
+  const aspect = (view.w * 16) / (view.h * 9);
+  const winW = Math.min(WIN.width, WIN.height * aspect);
+  const winH = winW / aspect;
+  const vidW = winW / view.w;
+  const vidH = winH / view.h;
 
   const captionFrom = EDITOR_INTRO + captionAt;
   const captionSize = TITLE_SIZE * 0.92;
@@ -125,10 +170,10 @@ const EditorShotInner: React.FC<EditorShotProps> = ({
         <div
           style={{
             position: "absolute",
-            left: WIN.left - 160,
-            top: WIN.top + 120,
-            width: WIN.width + 320,
-            height: WIN.height,
+            left: WIN_CX - winW / 2 - 160,
+            top: WIN_CY - winH / 2 + 120,
+            width: winW + 320,
+            height: winH,
             borderRadius: "50%",
             background: `radial-gradient(closest-side, ${editor.accentFill}40, transparent)`,
             filter: "blur(60px)",
@@ -141,10 +186,10 @@ const EditorShotInner: React.FC<EditorShotProps> = ({
           name="Window"
           style={{
             position: "absolute",
-            left: WIN.left,
-            top: WIN.top,
-            width: WIN.width,
-            height: WIN.height,
+            left: WIN_CX - winW / 2,
+            top: WIN_CY - winH / 2,
+            width: winW,
+            height: winH,
             borderRadius: 16,
             overflow: "hidden",
             backgroundColor: editor.window,
@@ -168,24 +213,31 @@ const EditorShotInner: React.FC<EditorShotProps> = ({
           }}
         >
           <Sequence name="Footage" from={EDITOR_INTRO} premountFor={fps}>
-            <ScreenRecording
-              src={staticFile(`clips/${clip}.mp4`)}
-              sourceAspect={16 / 9}
-              camera={camera}
-              entrance="none"
-              theme={brand}
-              mode="dark"
-            />
             <div
               style={{
                 position: "absolute",
-                inset: 0,
-                transformOrigin: "0 0",
-                transform: `translate(${tx}%, ${ty}%) scale(${pose.zoom})`,
+                left: -view.x * vidW,
+                top: -view.y * vidH,
+                width: vidW,
+                height: vidH,
               }}
             >
-              {/* CursorTrack places itself in full-frame pixels; the window is 0.75 of the frame. */}
-              <div style={{ position: "absolute", width: 1920, height: 1080, scale: "0.75", transformOrigin: "0 0" }}>
+              <Video
+                src={staticFile(`clips/${clip}.mp4`)}
+                muted
+                objectFit="fill"
+                style={{ position: "absolute", inset: 0, width: "100%", height: "100%" }}
+              />
+              {/* CursorTrack places itself in full-frame pixels, so scale a 1920x1080 layer onto the footage. */}
+              <div
+                style={{
+                  position: "absolute",
+                  width: 1920,
+                  height: 1080,
+                  scale: `${vidW / 1920}`,
+                  transformOrigin: "0 0",
+                }}
+              >
                 <CursorTrack path={cursorPath(meta)} mode="dark" ringColor={accent} />
               </div>
             </div>

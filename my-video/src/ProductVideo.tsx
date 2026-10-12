@@ -6,6 +6,7 @@ import playClip from "./clips/play.json";
 import scriptClip from "./clips/script.json";
 import { AssistantScene } from "./scenes/AssistantScene";
 import { BuildScene } from "./scenes/BuildScene";
+import { ColdOpenScene } from "./scenes/ColdOpenScene";
 import { EditorScene } from "./scenes/EditorScene";
 import { EditorShot } from "./scenes/EditorShot";
 import { EndCardScene } from "./scenes/EndCardScene";
@@ -21,21 +22,18 @@ export const ProductVideo: React.FC = () => {
 
   return (
     <>
-      <Audio
-        name="Music"
-        src={staticFile("music.mp3")}
-        volume={0.7}
-        premountFor={fps}
-        from={29}
-      />
+      <Audio name="Music" src={staticFile("music.mp3")} volume={0.7} premountFor={fps} />
       <TransitionSeries>
-        <TransitionSeries.Sequence name="Hook" durationInFrames={75} premountFor={fps}>
+        <TransitionSeries.Sequence name="Cold open" durationInFrames={60} premountFor={fps}>
+          <ColdOpenScene build="Build it." play="Play it." fix="Fix it." />
+        </TransitionSeries.Sequence>
+        <TransitionSeries.Sequence name="Hook" durationInFrames={90} premountFor={fps}>
           <HookScene headline="Script in" words="C++, JavaScript, C#, GDScript, Lua, Python, Rust, English." />
         </TransitionSeries.Sequence>
-        <TransitionSeries.Sequence name="Introducing" durationInFrames={100} premountFor={fps}>
+        <TransitionSeries.Sequence name="Introducing" durationInFrames={90} premountFor={fps}>
           <IntroTitleScene lead="Introducing" subject="SimuStyle" />
         </TransitionSeries.Sequence>
-        <TransitionSeries.Sequence name="What it is" durationInFrames={140} premountFor={fps}>
+        <TransitionSeries.Sequence name="What it is" durationInFrames={135} premountFor={fps}>
           <FeaturesScene
             one="A 3D sandbox"
             oneSub="with real physics."
@@ -45,28 +43,29 @@ export const ProductVideo: React.FC = () => {
             threeSub="AI can fix."
           />
         </TransitionSeries.Sequence>
-        <TransitionSeries.Sequence name="Assistant" durationInFrames={140} premountFor={fps}>
+        <TransitionSeries.Sequence name="Assistant" durationInFrames={120} premountFor={fps}>
           <AssistantScene text="Build a small mini-golf hole I can play, with a windmill that spins forever" />
         </TransitionSeries.Sequence>
-        <TransitionSeries.Sequence name="Agent at work" durationInFrames={140} premountFor={fps}>
+        <TransitionSeries.Sequence name="Agent at work" durationInFrames={120} premountFor={fps}>
           <BuildScene
             query="Build a small mini-golf hole I can play, with a windmill that spins forever"
             result="Built a playable mini-golf hole · Undo this change"
           />
         </TransitionSeries.Sequence>
-        <TransitionSeries.Sequence name="Editor · Play" durationInFrames={193} premountFor={fps}>
+        <TransitionSeries.Sequence name="Editor · Play" durationInFrames={180} premountFor={fps}>
           <EditorShot
             clip="play"
             meta={playClip}
-            camera={[{ at: 30, duration: 30, zoom: 1.7, x: 0.56, y: 0.36 }]}
+            camera={[]}
+            focus={{ at: 27, duration: 24, rect: { x: 0.278, y: 0.057, w: 0.445, h: 0.537 }, drift: 0.04 }}
             title="Press Play."
             caption="Physics and scripts run live."
-            captionAt={44}
+            captionAt={40}
             reveal="blur"
             captionReveal="words"
           />
         </TransitionSeries.Sequence>
-        <TransitionSeries.Sequence name="Editor · Commands" durationInFrames={163} premountFor={fps}>
+        <TransitionSeries.Sequence name="Editor · Commands" durationInFrames={165} premountFor={fps}>
           <EditorShot
             clip="command"
             meta={commandClip}
@@ -82,7 +81,7 @@ export const ProductVideo: React.FC = () => {
             captionReveal="words"
           />
         </TransitionSeries.Sequence>
-        <TransitionSeries.Sequence name="Editor · AI Parse" durationInFrames={244} premountFor={fps}>
+        <TransitionSeries.Sequence name="Editor · AI Parse" durationInFrames={240} premountFor={fps}>
           <EditorShot
             clip="script"
             meta={scriptClip}
@@ -98,7 +97,7 @@ export const ProductVideo: React.FC = () => {
             captionReveal="decode"
           />
         </TransitionSeries.Sequence>
-        <TransitionSeries.Sequence name="Export" durationInFrames={130} premountFor={fps}>
+        <TransitionSeries.Sequence name="Export" durationInFrames={135} premountFor={fps}>
           <EditorScene
             headline="ship it | anywhere."
             capturing="Exporting scene..."
