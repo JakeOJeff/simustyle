@@ -4,7 +4,7 @@ import { loadEnv } from "vite";
 import { build as esbuild } from "esbuild";
 import { resolve } from "node:path";
 import { forwardChat, MAX_CHAT_REQUEST_BYTES } from "./src/ai/chatProxy";
-import { clientIdFromAddress, creditLimits, CreditLedger, memoryCreditStorage } from "./src/ai/credits";
+import { creditClientIds, creditCookie, creditLimits, CreditLedger, memoryCreditStorage } from "./src/ai/credits";
 
 export default defineConfig(({ mode }) => {
   // Do not use Vite's VITE_ prefix: these values must stay on the server.
@@ -33,8 +33,13 @@ export default defineConfig(({ mode }) => {
 function aiProxy(env: Record<string, string>) {
   // Same daily credits as the hosted Worker, kept in memory until the dev server restarts.
   const ledger = new CreditLedger(memoryCreditStorage(), creditLimits(env));
-  const clientId = (request: unknown) =>
-    clientIdFromAddress((request as { socket?: { remoteAddress?: string } }).socket?.remoteAddress ?? "local");
+  // Charged under both the address and a cookie, like the Worker, so a refresh never refills credits.
+  const clientIds = (request: unknown, response: { setHeader(name: string, value: string): unknown }) => {
+    const incoming = request as { socket?: { remoteAddress?: string }; headers?: { cookie?: string } };
+    const cookie = creditCookie(incoming.headers?.cookie, false);
+    if (cookie.setCookie) response.setHeader("Set-Cookie", cookie.setCookie);
+    return creditClientIds(incoming.socket?.remoteAddress ?? "local", cookie.id);
+  };
   return {
     name: "simustyle-ai-server-proxy",
     configureServer(server: import("vite").ViteDevServer) {
@@ -45,7 +50,7 @@ function aiProxy(env: Record<string, string>) {
           response.end(JSON.stringify({ enabled: false }));
           return;
         }
-        response.end(JSON.stringify({ enabled: true, credits: await ledger.status(await clientId(request)) }));
+        response.end(JSON.stringify({ enabled: true, credits: await ledger.status(await clientIds(request, response)) }));
       });
       server.middlewares.use("/api/ai/chat", async (request, response) => {
         const incoming = request as unknown as {
@@ -94,7 +99,7 @@ function aiProxy(env: Record<string, string>) {
           bytes.set(chunk, offset);
           offset += chunk.byteLength;
         }
-        const id = await clientId(request);
+        const id = await clientIds(request, response);
         const result = await forwardChat(bytes, env, { spend: () => ledger.spend(id), refund: () => ledger.refund(id) });
         send(result.status, result.body);
       });

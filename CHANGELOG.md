@@ -4,6 +4,13 @@ Record meaningful project changes during the event, newest first.
 
 ## Event build log
 
+### 2026-10-12T22:35:00+05:30 — AI credits no longer refill on page refresh
+
+- Changed: Credits were keyed only by the visitor's exact IP, so anything that changed the address between page loads (IPv4 vs IPv6, rotating IPv6 privacy addresses, `::1` vs `127.0.0.1` on the dev server) gave a fresh 30 credits. Each call is now charged under two ids: the address (IPv6 collapsed to its /64, IPv4-mapped and loopback forms unified) and a new HttpOnly `simustyle_cid` cookie (one year). The most-used id sets the balance, so a new address or cleared cookies alone does not refill credits. Files: `src/ai/credits.ts`, `worker/index.ts`, `vite.config.ts`, `tests/ai/credits.test.ts`.
+- Why: Reported that refreshing the page reset the credit limit.
+- Validation: New tests cover multi-id charging, address normalization and the cookie; `vitest` (49 tests), `tsc --noEmit` and `wrangler deploy --dry-run` pass. Not yet checked against the live site.
+- Limitations: Someone who changes network and clears cookies at the same time still gets a new allowance; the site-wide daily cap still bounds total spend.
+
 ### 2026-10-12T04:00:00+05:30 — Build the Windows app on every GitHub release
 
 - Changed: The `Release Windows app` workflow now runs when a GitHub release is published, not on tag pushes. It checks out the release tag, sets the app version from the tag (`v0.3.0` → `0.3.0`), builds the NSIS installer, and attaches it to that release. It also keeps the installer as a build artifact. Running it by hand builds the artifact without changing any release. Files: `.github/workflows/release-windows.yml`, `README.md`.

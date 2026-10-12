@@ -3,7 +3,7 @@
  * the built `dist/` folder; only /api/* and /download/* reach this code (see `run_worker_first` in wrangler.jsonc).
  */
 import { forwardChat, type ChatCredits, type ChatProxyEnv } from "../src/ai/chatProxy";
-import { clientIdFromAddress, creditLimits, CreditLedger, type CreditLimitEnv, type CreditStatus, type CreditStorage, type SpendResult } from "../src/ai/credits";
+import { creditClientIds, creditCookie, creditLimits, CreditLedger, type CreditLimitEnv, type CreditStatus, type CreditStorage, type SpendResult } from "../src/ai/credits";
 
 interface DurableObjectStub { fetch(request: Request): Promise<Response> }
 interface DurableObjectNamespace {
@@ -32,29 +32,33 @@ export default {
 async function aiChat(request: Request, env: Env): Promise<Response> {
   if (request.method !== "POST") return json(405, { error: "Use POST /api/ai/chat." }, { Allow: "POST" });
   const bytes = new Uint8Array(await request.arrayBuffer());
-  const result = await forwardChat(bytes, env, await ledgerFor(request, env));
-  return json(result.status, result.body);
+  const ledger = await ledgerFor(request, env);
+  const result = await forwardChat(bytes, env, ledger);
+  return json(result.status, result.body, ledger.headers);
 }
 
 /** Lets the editor show the visitor's balance before they send anything. */
 async function aiCredits(request: Request, env: Env): Promise<Response> {
   if (request.method !== "GET") return json(405, { error: "Use GET /api/ai/credits." }, { Allow: "GET" });
   if (!env.AI_API_KEY || !env.AI_MODEL) return json(200, { enabled: false });
-  const credits = await (await ledgerFor(request, env)).status();
-  return json(200, { enabled: true, credits });
+  const ledger = await ledgerFor(request, env);
+  return json(200, { enabled: true, credits: await ledger.status() }, ledger.headers);
 }
 
-async function ledgerFor(request: Request, env: Env): Promise<ChatCredits & { status(): Promise<CreditStatus> }> {
-  const clientId = await clientIdFromAddress(request.headers.get("CF-Connecting-IP") ?? "unknown");
+/** The visitor is charged under both their address and a cookie, so neither a refresh nor a new IP refills credits. */
+async function ledgerFor(request: Request, env: Env): Promise<ChatCredits & { status(): Promise<CreditStatus>; headers: Record<string, string> }> {
+  const cookie = creditCookie(request.headers.get("Cookie"), new URL(request.url).protocol === "https:");
+  const clientIds = await creditClientIds(request.headers.get("CF-Connecting-IP") ?? "unknown", cookie.id);
   const stub = env.AI_CREDITS.get(env.AI_CREDITS.idFromName("ledger"));
   const call = async <T>(action: string): Promise<T> => {
-    const response = await stub.fetch(new Request(`https://ledger/${action}`, { method: "POST", body: JSON.stringify({ clientId }) }));
+    const response = await stub.fetch(new Request(`https://ledger/${action}`, { method: "POST", body: JSON.stringify({ clientIds }) }));
     return await response.json() as T;
   };
   return {
     spend: () => call<SpendResult>("spend"),
     refund: () => call<CreditStatus>("refund"),
-    status: () => call<CreditStatus>("status")
+    status: () => call<CreditStatus>("status"),
+    headers: cookie.setCookie ? { "Set-Cookie": cookie.setCookie } : {}
   };
 }
 
@@ -70,11 +74,11 @@ export class AiCreditLedger {
   }
 
   async fetch(request: Request): Promise<Response> {
-    const { clientId } = await request.json() as { clientId: string };
+    const { clientIds } = await request.json() as { clientIds: string[] };
     const action = new URL(request.url).pathname.slice(1);
-    if (action === "spend") return Response.json(await this.ledger.spend(clientId));
-    if (action === "refund") return Response.json(await this.ledger.refund(clientId));
-    return Response.json(await this.ledger.status(clientId));
+    if (action === "spend") return Response.json(await this.ledger.spend(clientIds));
+    if (action === "refund") return Response.json(await this.ledger.refund(clientIds));
+    return Response.json(await this.ledger.status(clientIds));
   }
 }
 

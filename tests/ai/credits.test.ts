@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { forwardChat } from "../../src/ai/chatProxy";
-import { clientIdFromAddress, creditLimits, CreditLedger, memoryCreditStorage } from "../../src/ai/credits";
+import { clientIdFromAddress, CREDIT_COOKIE, creditCookie, creditLimits, CreditLedger, memoryCreditStorage } from "../../src/ai/credits";
 
 afterEach(() => vi.unstubAllGlobals());
 
@@ -46,6 +46,34 @@ describe("daily AI credits", () => {
   it("reads limits from the environment with safe defaults", () => {
     expect(creditLimits({ AI_DAILY_CREDITS: "10", AI_GLOBAL_DAILY_CREDITS: "500" })).toEqual({ perUser: 10, global: 500 });
     expect(creditLimits({ AI_DAILY_CREDITS: "nope", AI_GLOBAL_DAILY_CREDITS: "-4" })).toEqual({ perUser: 30, global: 3000 });
+  });
+
+  it("charges every id so a new address or a cleared cookie does not refill credits", async () => {
+    const ledger = new CreditLedger(memoryCreditStorage(), { perUser: 2, global: 100 });
+    await ledger.spend(["ip1", "cookie1"], noon);
+    await ledger.spend(["ip1", "cookie1"], noon);
+    expect((await ledger.spend(["ip2", "cookie1"], noon)).ok).toBe(false);
+    expect((await ledger.spend(["ip1", "cookie2"], noon)).ok).toBe(false);
+    expect((await ledger.status(["ip2", "cookie1"], noon)).remaining).toBe(0);
+    expect((await ledger.spend(["ip2", "cookie2"], noon)).ok).toBe(true);
+  });
+
+  it("treats addresses that change between page loads as one visitor", async () => {
+    const same = async (a: string, b: string) => expect(await clientIdFromAddress(a)).toBe(await clientIdFromAddress(b));
+    await same("::1", "127.0.0.1");
+    await same("::ffff:203.0.113.7", "203.0.113.7");
+    await same("2001:db8:1:2:aaaa:bbbb:cccc:dddd", "2001:0db8:0001:0002::1");
+    expect(await clientIdFromAddress("2001:db8:1:2::1")).not.toBe(await clientIdFromAddress("2001:db8:1:3::1"));
+  });
+
+  it("keeps a valid credit cookie and issues one otherwise", () => {
+    const id = "0123456789abcdef0123456789abcdef";
+    expect(creditCookie(`a=b; ${CREDIT_COOKIE}=${id}`, true)).toEqual({ id });
+    const fresh = creditCookie(`${CREDIT_COOKIE}=forged`, true);
+    expect(fresh.id).toMatch(/^[0-9a-f]{32}$/);
+    expect(fresh.setCookie).toContain(`${CREDIT_COOKIE}=${fresh.id}`);
+    expect(fresh.setCookie).toContain("HttpOnly");
+    expect(fresh.setCookie).toContain("Secure");
   });
 
   it("hashes addresses instead of storing them", async () => {
