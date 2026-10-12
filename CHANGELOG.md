@@ -4,6 +4,13 @@ Record meaningful project changes during the event, newest first.
 
 ## Event build log
 
+### 2026-10-12T23:05:00+05:30 — Product video made with Remotion
+
+- Changed: Added the `my-video/` Remotion project with a 33-second 1920×1080 product video (`SimuStyleProduct`) in seven scenes: logo intro, "You describe it. We make it real.", AI Parse turning loose wording into valid code, the scene assistant typing a mini-golf prompt, an editor tour that highlights the hierarchy, physics, timeline and export, plain-English scripting with a live coin counter, and a closing call to action with the site URL. It uses the landing page's colors, DM Sans/DM Mono, the new logo and `editor.png`. Each scene is also registered as its own composition with editable text props. The empty `Composition.tsx` placeholder was removed. Files: `my-video/src/**`, `my-video/public/logo.png`, `my-video/public/editor.png`.
+- Why: Requested a SaaS-style product video showing features from the landing page and editor.
+- Validation: `npm run lint` (eslint + tsc) passes; still frames from every scene were checked; `npx remotion render SimuStyleProduct` produced `my-video/out/simustyle-product.mp4` (7.5 MB, git-ignored).
+- Limitations: No music or voiceover. The editor scene uses the existing static screenshot, not a screen recording.
+
 ### 2026-10-12T22:35:00+05:30 — AI credits no longer refill on page refresh
 
 - Changed: Credits were keyed only by the visitor's exact IP, so anything that changed the address between page loads (IPv4 vs IPv6, rotating IPv6 privacy addresses, `::1` vs `127.0.0.1` on the dev server) gave a fresh 30 credits. Each call is now charged under two ids: the address (IPv6 collapsed to its /64, IPv4-mapped and loopback forms unified) and a new HttpOnly `simustyle_cid` cookie (one year). The most-used id sets the balance, so a new address or cleared cookies alone does not refill credits. Files: `src/ai/credits.ts`, `worker/index.ts`, `vite.config.ts`, `tests/ai/credits.test.ts`.
