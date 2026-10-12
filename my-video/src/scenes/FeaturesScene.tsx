@@ -61,7 +61,7 @@ function splitMark(sub: string): [string, string, string] {
   return [before, rest.slice(0, rest.length - tail.length), tail];
 }
 
-// Three beats, three different moves: characters blur in under a marker sweep, words spring
+// Three cards, a bar of the music each, three different moves: characters blur in under a marker sweep, words spring
 // up and blow away, and the last line tracks in while its answer decodes out of noise.
 const FeaturesInner: React.FC<FeaturesProps> = ({ one, oneSub, two, twoSub, three, threeSub }) => {
   const frame = useCurrentFrame();
@@ -70,13 +70,13 @@ const FeaturesInner: React.FC<FeaturesProps> = ({ one, oneSub, two, twoSub, thre
 
   return (
     <AbsoluteFill style={{ backgroundColor: editor.page, fontFamily: dmSans }}>
-      <Sequence name="Sandbox" durationInFrames={48} premountFor={fps}>
+      <Sequence name="Sandbox" durationInFrames={63} premountFor={fps}>
         {/* Leaves by sinking back into the page. */}
         <Card
           style={{
-            opacity: interpolate(frame, [38, 48], [1, 0], { ...clamp, easing: EASE_IN }),
-            filter: `blur(${interpolate(frame, [38, 48], [0, 16], { ...clamp, easing: EASE_IN })}px)`,
-            translate: interpolate(frame, [38, 48], ["0px 0px", "0px 40px"], { ...clamp, easing: EASE_IN }),
+            opacity: interpolate(frame, [53, 63], [1, 0], { ...clamp, easing: EASE_IN }),
+            filter: `blur(${interpolate(frame, [53, 63], [0, 16], { ...clamp, easing: EASE_IN })}px)`,
+            translate: interpolate(frame, [53, 63], ["0px 0px", "0px 40px"], { ...clamp, easing: EASE_IN }),
           }}
         >
           <SoftBlurIn text={one} fontSize={TITLE} fontWeight={600} color={editor.text} />
@@ -100,13 +100,13 @@ const FeaturesInner: React.FC<FeaturesProps> = ({ one, oneSub, two, twoSub, thre
         </Card>
       </Sequence>
 
-      <Sequence name="Agents" from={45} durationInFrames={48} premountFor={fps}>
+      <Sequence name="Agents" from={60} durationInFrames={63} premountFor={fps}>
         {/* Rises off the top as its subline blows away. */}
         <Card
           style={{
-            opacity: interpolate(frame, [85, 93], [1, 0], { ...clamp, easing: EASE_IN }),
-            translate: interpolate(frame, [81, 93], ["0px 0px", "0px -70px"], { ...clamp, easing: EASE_IN }),
-            filter: `blur(${interpolate(frame, [83, 93], [0, 12], { ...clamp, easing: EASE_IN })}px)`,
+            opacity: interpolate(frame, [115, 123], [1, 0], { ...clamp, easing: EASE_IN }),
+            translate: interpolate(frame, [111, 123], ["0px 0px", "0px -70px"], { ...clamp, easing: EASE_IN }),
+            filter: `blur(${interpolate(frame, [113, 123], [0, 12], { ...clamp, easing: EASE_IN })}px)`,
           }}
         >
           <SpringScaleIn
@@ -123,11 +123,11 @@ const FeaturesInner: React.FC<FeaturesProps> = ({ one, oneSub, two, twoSub, thre
         </Card>
       </Sequence>
 
-      <Sequence name="Script" from={90} durationInFrames={45} premountFor={fps}>
+      <Sequence name="Script" from={120} durationInFrames={60} premountFor={fps}>
         <Card
           style={{
             gap: 26,
-            opacity: interpolate(frame, [129, 135], [1, 0], clamp),
+            opacity: interpolate(frame, [174, 180], [1, 0], clamp),
           }}
         >
           <TrackingIn
@@ -150,7 +150,7 @@ const FeaturesInner: React.FC<FeaturesProps> = ({ one, oneSub, two, twoSub, thre
               revealDuration={22}
               charset="{}[]()<>;:=+-*/#$_"
               style={{
-                opacity: interpolate(frame, [102, 108], [0, 1], clamp),
+                opacity: interpolate(frame, [132, 138], [0, 1], clamp),
               }}
             />
           </Sequence>

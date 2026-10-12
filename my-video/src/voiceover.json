@@ -1,0 +1,125 @@
+{
+  "lead": 6,
+  "lines": [
+    {
+      "scene": "Hook",
+      "file": "voiceover/hook-f7ae6cf5269f.mp3",
+      "hash": "f7ae6cf5269f",
+      "from": 66,
+      "trim": 0,
+      "frames": 111,
+      "tempo": 1.036,
+      "text": "You can picture it. Building it in 3D? That's the hard part."
+    },
+    {
+      "scene": "Introducing",
+      "file": "voiceover/introducing-9583accace82.mp3",
+      "hash": "9583accace82",
+      "from": 186,
+      "trim": 0,
+      "frames": 48,
+      "tempo": 1,
+      "text": "So, meet SimuStyle."
+    },
+    {
+      "scene": "What it is",
+      "file": "voiceover/what-it-is-1-2652ad48697c.mp3",
+      "hash": "2652ad48697c",
+      "from": 276,
+      "trim": 0,
+      "frames": 50,
+      "tempo": 1,
+      "text": "A 3D sandbox, with physics."
+    },
+    {
+      "scene": "What it is",
+      "file": "voiceover/what-it-is-2-2c2431934de3.mp3",
+      "hash": "2c2431934de3",
+      "from": 336,
+      "trim": 0,
+      "frames": 46,
+      "tempo": 1,
+      "text": "AI agents that build with you."
+    },
+    {
+      "scene": "What it is",
+      "file": "voiceover/what-it-is-3-0670ed3407ad.mp3",
+      "hash": "0670ed3407ad",
+      "from": 396,
+      "trim": 0,
+      "frames": 46,
+      "tempo": 1,
+      "text": "And scripts AI can fix."
+    },
+    {
+      "scene": "Assistant",
+      "file": "voiceover/assistant-01ab65aff86d.mp3",
+      "hash": "01ab65aff86d",
+      "from": 456,
+      "trim": 0,
+      "frames": 21,
+      "tempo": 1,
+      "text": "Just describe it."
+    },
+    {
+      "scene": "Agent at work",
+      "file": "voiceover/agent-at-work-b637c0d8c759.mp3",
+      "hash": "b637c0d8c759",
+      "from": 576,
+      "trim": 0,
+      "frames": 116,
+      "tempo": 1,
+      "text": "The agent calls functions, create, update, delete, right on your scene."
+    },
+    {
+      "scene": "Editor · Play",
+      "file": "voiceover/editor-play-715112536d9e.mp3",
+      "hash": "715112536d9e",
+      "from": 726,
+      "trim": 0,
+      "frames": 50,
+      "tempo": 1,
+      "text": "Hit play. It's live."
+    },
+    {
+      "scene": "Editor · Commands",
+      "file": "voiceover/editor-commands-df497504f7cb.mp3",
+      "hash": "df497504f7cb",
+      "from": 906,
+      "trim": 0,
+      "frames": 35,
+      "tempo": 1,
+      "text": "Tweak it in plain English."
+    },
+    {
+      "scene": "Editor · AI Parse",
+      "file": "voiceover/editor-ai-parse-c4683ff1b200.mp3",
+      "hash": "c4683ff1b200",
+      "from": 1071,
+      "trim": 0,
+      "frames": 85,
+      "tempo": 1,
+      "text": "Write it messy. AI Parse tidies it up."
+    },
+    {
+      "scene": "Export",
+      "file": "voiceover/export-1a383617ebf9.mp3",
+      "hash": "1a383617ebf9",
+      "from": 1311,
+      "trim": 0,
+      "frames": 37,
+      "tempo": 1,
+      "text": "Then ship it, anywhere."
+    },
+    {
+      "scene": "End card",
+      "file": "voiceover/end-card-b7d9361a33e8.mp3",
+      "hash": "b7d9361a33e8",
+      "from": 1491,
+      "trim": 0,
+      "frames": 36,
+      "tempo": 1,
+      "text": "Your idea, made real."
+    }
+  ]
+}

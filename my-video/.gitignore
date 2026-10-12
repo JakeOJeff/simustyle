@@ -9,3 +9,4 @@ out
 # Raw frames from capture/capture.mjs; the encoded clips live in public/clips.
 capture/out
 audio/music.wav
+audio/probe.wav

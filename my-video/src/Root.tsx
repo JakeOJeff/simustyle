@@ -31,7 +31,7 @@ export const RemotionRoot: React.FC = () => {
         <Composition
           id="Hook"
           component={HookScene}
-          durationInFrames={90}
+          durationInFrames={120}
           fps={30}
           width={1920}
           height={1080}
@@ -61,7 +61,7 @@ export const RemotionRoot: React.FC = () => {
         <Composition
           id="Build"
           component={BuildScene}
-          durationInFrames={120}
+          durationInFrames={150}
           fps={30}
           width={1920}
           height={1080}
@@ -149,7 +149,7 @@ export const RemotionRoot: React.FC = () => {
         <Composition
           id="Features"
           component={FeaturesScene}
-          durationInFrames={135}
+          durationInFrames={180}
           fps={30}
           width={1920}
           height={1080}
@@ -189,7 +189,7 @@ export const RemotionRoot: React.FC = () => {
       <Composition
         id="SimuStyleProduct"
         component={ProductVideo}
-        durationInFrames={1470}
+        durationInFrames={1575}
         fps={29.92}
         width={1920}
         height={1080}

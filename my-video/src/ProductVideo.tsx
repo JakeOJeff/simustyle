@@ -1,6 +1,6 @@
 import { Audio } from "@remotion/media";
 import { TransitionSeries } from "@remotion/transitions";
-import { staticFile, useVideoConfig } from "remotion";
+import { interpolate, staticFile, useVideoConfig } from "remotion";
 import commandClip from "./clips/command.json";
 import playClip from "./clips/play.json";
 import scriptClip from "./clips/script.json";
@@ -14,26 +14,62 @@ import { FeaturesScene } from "./scenes/FeaturesScene";
 import { HookScene } from "./scenes/HookScene";
 import { IntroTitleScene } from "./scenes/IntroTitleScene";
 import { OutroScene } from "./scenes/OutroScene";
+import voiceover from "./voiceover.json";
 
 // snapcn motion beats, skinned as SimuStyle UI, cut against real editor footage (capture/capture.mjs),
-// over an original music bed composed to the cut (audio/compose.mjs).
+// over an original music bed composed to the cut (audio/compose.mjs) and an ElevenLabs voiceover
+// (audio/voiceover.mjs, which writes voiceover.json).
+
+const MUSIC = 0.5;
+const MUSIC_UNDER_VOICE = 0.2;
+const DUCK_FRAMES = 6;
+
+/** Music volume at a frame: pulled down under every voiceover line, with short ramps either side. */
+function musicVolume(frame: number): number {
+  let duck = 0;
+  for (const line of voiceover.lines) {
+    duck = Math.max(
+      duck,
+      interpolate(
+        frame,
+        [line.from - DUCK_FRAMES, line.from, line.from + line.frames, line.from + line.frames + DUCK_FRAMES * 2],
+        [0, 1, 1, 0],
+        { extrapolateLeft: "clamp", extrapolateRight: "clamp" },
+      ),
+    );
+  }
+  return MUSIC + (MUSIC_UNDER_VOICE - MUSIC) * duck;
+}
+
 export const ProductVideo: React.FC = () => {
   const { fps } = useVideoConfig();
 
   return (
     <>
-      <Audio name="Music" src={staticFile("music.mp3")} volume={0.7} premountFor={fps} />
+      <Audio name="Music" src={staticFile("music.mp3")} volume={musicVolume} premountFor={fps} />
+      {/* Generated lines, placed by audio/voiceover.mjs; edit the script there, not here. */}
+      {voiceover.lines.map((line) => (
+        <Audio
+          key={line.file}
+          name={`VO · ${line.text}`}
+          src={staticFile(line.file)}
+          from={line.from}
+          trimBefore={line.trim}
+          volume={1}
+          premountFor={fps}
+        />
+      ))}
       <TransitionSeries>
         <TransitionSeries.Sequence name="Cold open" durationInFrames={60} premountFor={fps}>
           <ColdOpenScene build="Build it." play="Play it." fix="Fix it." />
         </TransitionSeries.Sequence>
-        <TransitionSeries.Sequence name="Hook" durationInFrames={90} premountFor={fps}>
+        <TransitionSeries.Sequence name="Hook" durationInFrames={120} premountFor={fps}>
           <HookScene headline="Script in" words="C++, JavaScript, C#, GDScript, Lua, Python, Rust, English." />
         </TransitionSeries.Sequence>
         <TransitionSeries.Sequence name="Introducing" durationInFrames={90} premountFor={fps}>
           <IntroTitleScene lead="Introducing" subject="SimuStyle" />
         </TransitionSeries.Sequence>
-        <TransitionSeries.Sequence name="What it is" durationInFrames={135} premountFor={fps}>
+        <TransitionSeries.Sequence name="What it is" durationInFrames={180} premountFor={fps}>
           <FeaturesScene
             one="A 3D sandbox"
             oneSub="with real physics."
@@ -46,7 +82,7 @@ export const ProductVideo: React.FC = () => {
         <TransitionSeries.Sequence name="Assistant" durationInFrames={120} premountFor={fps}>
           <AssistantScene text="Build a small mini-golf hole I can play, with a windmill that spins forever" />
         </TransitionSeries.Sequence>
-        <TransitionSeries.Sequence name="Agent at work" durationInFrames={120} premountFor={fps}>
+        <TransitionSeries.Sequence name="Agent at work" durationInFrames={150} premountFor={fps}>
           <BuildScene
             query="Build a small mini-golf hole I can play, with a windmill that spins forever"
             result="Built a playable mini-golf hole · Undo this change"
