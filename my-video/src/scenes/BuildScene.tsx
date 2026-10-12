@@ -1,5 +1,5 @@
 import { Interactive, type InteractivitySchema } from "remotion";
-import { AgentSteps } from "@/components/snap-cn/agent-steps";
+import { AgentSteps } from "../components/snap-cn/agent-steps";
 import { brand } from "../brand";
 
 type BuildProps = {

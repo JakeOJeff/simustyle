@@ -1,5 +1,5 @@
 import { Interactive, type InteractivitySchema } from "remotion";
-import { PunchLines } from "@/components/snap-cn/punch-lines";
+import { PunchLines } from "../components/snap-cn/punch-lines";
 import { accent, brand } from "../brand";
 
 type FeaturesProps = {

@@ -26,7 +26,7 @@ import {
   resolveFont,
   type SnapCnTheme,
   useSnapCnTheme,
-} from "@/lib/snap-cn-ui";
+} from "../../lib/snap-cn-ui";
 
 /**
  * A screenshot being taken: "Capturing selection… 79%" counts up in a toast

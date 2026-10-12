@@ -1,5 +1,5 @@
 import { Interactive, type InteractivitySchema } from "remotion";
-import { PromptZoom } from "@/components/snap-cn/prompt-zoom";
+import { PromptZoom } from "../components/snap-cn/prompt-zoom";
 import { brand } from "../brand";
 
 type PromptProps = {

@@ -1,5 +1,5 @@
 import { Interactive, type InteractivitySchema } from "remotion";
-import { TerminalSimulator } from "@/components/snap-cn/terminal-simulator";
+import { TerminalSimulator } from "../components/snap-cn/terminal-simulator";
 import { brand } from "../brand";
 
 type ParseProps = {

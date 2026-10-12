@@ -1,5 +1,5 @@
 import { Interactive, type InteractivitySchema } from "remotion";
-import { WordWheel } from "@/components/snap-cn/word-wheel";
+import { WordWheel } from "../components/snap-cn/word-wheel";
 import { brand } from "../brand";
 
 type HookProps = {

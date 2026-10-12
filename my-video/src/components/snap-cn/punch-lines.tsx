@@ -16,7 +16,7 @@ import {
   resolveFont,
   type SnapCnTheme,
   useSnapCnTheme,
-} from "@/lib/snap-cn-ui";
+} from "../../lib/snap-cn-ui";
 
 /**
  * A run of full-frame title cards that cut hard between beats.

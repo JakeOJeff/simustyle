@@ -1,5 +1,5 @@
 import { Interactive, type InteractivitySchema } from "remotion";
-import { WordmarkCut } from "@/components/snap-cn/wordmark-cut";
+import { WordmarkCut } from "../components/snap-cn/wordmark-cut";
 import { brand } from "../brand";
 
 type OutroProps = {

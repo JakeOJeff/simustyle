@@ -1,5 +1,5 @@
 import { Interactive, staticFile, type InteractivitySchema } from "remotion";
-import { CaptureReveal } from "@/components/snap-cn/capture-reveal";
+import { CaptureReveal } from "../components/snap-cn/capture-reveal";
 import { brand } from "../brand";
 
 type EditorProps = {

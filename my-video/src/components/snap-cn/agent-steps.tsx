@@ -14,7 +14,7 @@ import {
   resolveFont,
   type SnapCnTheme,
   useSnapCnTheme,
-} from "@/lib/snap-cn-ui";
+} from "../../lib/snap-cn-ui";
 
 // Loaded through @remotion/google-fonts, never a CSS variable — a Remotion
 // bundle has none of the app's CSS, so a `var(--font-…)` gets you the right face

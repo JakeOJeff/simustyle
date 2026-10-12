@@ -7,7 +7,7 @@ import {
   resolveFont,
   type SnapCnTheme,
   useSnapCnTheme,
-} from "@/lib/snap-cn-ui";
+} from "../../lib/snap-cn-ui";
 
 /**
  * A column of words that spins like a reel and stops on one of them.

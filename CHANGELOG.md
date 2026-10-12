@@ -4,6 +4,13 @@ Record meaningful project changes during the event, newest first.
 
 ## Event build log
 
+### 2026-10-12T23:35:00+05:30 — Product video loads in Studio from any folder
+
+- Changed: The video's `@/…` imports (scenes, `brand.ts`, and the snapcn components) are now relative paths. Files: `my-video/src/**`.
+- Why: Remotion Studio failed with "Cannot find module '@/components/snap-cn/agent-steps'". The bundler alias resolves `@` against the folder Studio was launched from, so it broke whenever that wasn't `my-video/`. Resolving against `__dirname` doesn't help either, because Remotion compiles the config somewhere else.
+- Validation: Reproduced the error by rendering from the repository root. After the change, stills render from both the root and `my-video/`, and `npm run lint` passes.
+- Limitations: Components added later with `npx shadcn add @snapcn/…` will use `@/` imports again. Those still work when Studio is started from `my-video/`, or can be converted the same way.
+
 ### 2026-10-12T23:20:00+05:30 — Product video rebuilt with snapcn components
 
 - Changed: Replaced the first cut (logo, gradient glow, hand-built cards) with a minimal 29.5-second video on a flat near-black page in SimuStyle purple. It cuts between eight scenes built on snapcn Remotion components: a Word Wheel hook ("Make games in" spins through C++, JavaScript, Lua… and stops on "English."), Prompt Zoom typing a mini-golf prompt, Agent Steps narrating the build, Terminal Simulator for AI Parse, Capture Reveal with the editor screenshot ("ship it anywhere."), Punch Lines for features, then a Wordmark Cut and a plain end card with the URL. No logo. Set up the project for snapcn: `components.json`, the `@/` alias in `tsconfig.json` and `remotion.config.ts`, Tailwind v4, and `src/index.css`. The components' source is in `my-video/src/components/snap-cn/` and `my-video/src/lib/`. Files: `my-video/src/**`, `my-video/components.json`, `my-video/remotion.config.ts`, `my-video/tsconfig.json`, `my-video/package.json`.

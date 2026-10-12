@@ -8,13 +8,13 @@ import {
   useCurrentFrame,
   useVideoConfig,
 } from "remotion";
-import { inputStyleContext } from "@/components/snap-cn/input";
+import { inputStyleContext } from "./input";
 import {
   mixOklch,
   resolveFont,
   type SnapCnTheme,
   useSnapCnTheme,
-} from "@/lib/snap-cn-ui";
+} from "../../lib/snap-cn-ui";
 
 // Loaded through @remotion/google-fonts, never a CSS variable — a Remotion
 // bundle has none of the app's CSS, so a `var(--font-…)` gets you the right face

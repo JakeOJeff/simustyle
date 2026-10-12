@@ -15,7 +15,7 @@ import {
   type SnapCnTheme,
   useSnapCnTheme,
   withAlpha,
-} from "@/lib/snap-cn-ui";
+} from "../../lib/snap-cn-ui";
 
 export type TerminalLineType = "command" | "log" | "success" | "error";
 

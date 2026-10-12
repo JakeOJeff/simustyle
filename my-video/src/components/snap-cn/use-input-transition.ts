@@ -5,7 +5,7 @@ import {
   type InputStyle,
   inputStyle,
   inputStyleContext,
-} from "@/components/snap-cn/input";
+} from "./input";
 import {
   easings,
   mixOklch,
@@ -13,7 +13,7 @@ import {
   type Step,
   useSnapCnTheme,
   useStateTransition,
-} from "@/lib/snap-cn-ui";
+} from "../../lib/snap-cn-ui";
 
 export const DEFAULT_DURATION = 8;
 

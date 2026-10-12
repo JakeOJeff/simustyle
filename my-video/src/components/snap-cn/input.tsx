@@ -1,14 +1,14 @@
 "use client";
 
 import { cva } from "class-variance-authority";
-import { Caret } from "@/components/snap-cn/caret";
+import { Caret } from "./caret";
 import {
   mixOklch,
   revealedText,
   type SnapCnTheme,
   useSnapCnTheme,
-} from "@/lib/snap-cn-ui";
-import { cn } from "@/lib/utils";
+} from "../../lib/snap-cn-ui";
+import { cn } from "../../lib/utils";
 
 export type InputState =
   | "idle"

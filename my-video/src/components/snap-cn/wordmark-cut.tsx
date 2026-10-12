@@ -12,7 +12,7 @@ import {
   resolveFont,
   type SnapCnTheme,
   useSnapCnTheme,
-} from "@/lib/snap-cn-ui";
+} from "../../lib/snap-cn-ui";
 
 /**
  * A wordmark twice the width of the frame, cooling from a lit gradient to ink,

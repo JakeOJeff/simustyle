@@ -1,4 +1,4 @@
-import type { SnapCnTheme } from "@/lib/snap-cn-ui";
+import type { SnapCnTheme } from "./lib/snap-cn-ui";
 
 // SimuStyle's purple on a flat near-black page. Passed to every snapcn scene with mode="dark".
 export const brand: Partial<SnapCnTheme> = {

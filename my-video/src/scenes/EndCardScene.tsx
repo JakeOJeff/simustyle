@@ -7,7 +7,7 @@ import {
   useVideoConfig,
   type InteractivitySchema,
 } from "remotion";
-import { FONTS } from "@/lib/snap-cn-ui";
+import { FONTS } from "../lib/snap-cn-ui";
 import { accent } from "../brand";
 
 type EndCardProps = {
