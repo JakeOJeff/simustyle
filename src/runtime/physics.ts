@@ -3,6 +3,7 @@ import { applyOps } from "../scene/applyOps";
 import type { Entity, Scene, Vec3 } from "../scene/types";
 import { AnimatorRuntime } from "./animator";
 import { ScriptRuntime, scriptOps } from "./scripts";
+import { CameraRig } from "./camera";
 
 export type PlayState = "stopped" | "playing" | "paused";
 
@@ -287,6 +288,7 @@ export class SimulationController {
   private snapshot: Scene | null = null;
   private scripts: ScriptRuntime | null = null;
   private readonly animator = new AnimatorRuntime();
+  private readonly cameras = new CameraRig();
   private readonly animationWarnings = new Set<string>();
   private readonly scriptMessages: string[] = [];
   private startedScene: Scene | null = null;
@@ -295,10 +297,11 @@ export class SimulationController {
     if (this.state !== "stopped") return [];
     this.snapshot = structuredClone(scene);
     this.animator.reset();
+    this.cameras.reset();
     this.animationWarnings.clear();
     try {
       this.scripts = new ScriptRuntime(scene, 1, (id, method, args) => this.runtime?.applyScriptAction(id, method, args) ?? false);
-      const initial = this.scripts.start();
+      const initial = this.cameras.advanceScene(this.scripts.start(), 0);
       const initialOps = scriptOps(scene, initial);
       if (initialOps.length) {
         const result = applyOps(scene, initialOps);
@@ -363,7 +366,7 @@ export class SimulationController {
       this.animationWarnings.add(warning);
       this.scriptMessages.push(warning);
     }
-    return animated.scene;
+    return this.cameras.advanceScene(animated.scene, Math.max(0, Math.min(0.25, elapsedSeconds)));
   }
 
   /** Execute a one-shot Console script against the live Play scene. */
@@ -383,6 +386,7 @@ export class SimulationController {
     this.snapshot = null;
     this.animationWarnings.clear();
     this.state = "stopped";
+    this.cameras.reset();
     return snapshot ? structuredClone(snapshot) : null;
   }
 

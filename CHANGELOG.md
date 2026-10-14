@@ -4,6 +4,14 @@ Record meaningful project changes during the event, newest first.
 
 ## Event build log
 
+### 2026-10-14 — Camera system
+
+- New editor scenes include an active Camera. Play, camera preview, HTML, video, and GLB now use scene camera transforms and lens parameters.
+- Added perspective/orthographic projection, clip planes, zoom, orthographic size, follow and look targets, world follow offsets, damping, and fly movement settings. Tracking updates live transforms after physics and animation; Pause freezes movement and Stop restores the snapshot.
+- Added `camera.*` script calls for creation, switching, lens settings, movement, aiming, following, and child attachment/detachment. Camera switching is one operation batch; deleted targets clear their references with undo support. Script updates now preserve parent changes and fields reset to defaults.
+- Added camera regression coverage for lens settings, parent rigs, tracking, damping, attachments, deletion/undo, exports, and Play/Step/Stop. Camera usage is documented in Docs and the user guide.
+- Validation: `npm run check` passes TypeScript, Svelte diagnostics (0 errors/warnings), all 164 tests across 29 files, and the production build. Browser interaction was not manually exercised.
+
 ### 2026-10-13T01:00:00+05:30 — Product video: voiceover, story, and the agent shown as function calls
 
 - Changed: Added an ElevenLabs voiceover in a young, upbeat female voice (Jessica, `eleven_multilingual_v2`), written as a short story. "You can picture it. Building it in 3D? That's the hard part." leads to "So, meet SimuStyle." and then through the product: "The agent calls functions, create, update, delete, right on your scene", "Hit play. It's live.", and on to "Your idea, made real." The video no longer calls itself game-building software. `audio/voiceover.mjs` generates one line per scene (one per card in Features), each with its neighbouring lines as context so the takes read as one performance. It caches the raw takes in `audio/takes/`, trims their silence, stretches a line by at most 1.15× if it overruns its slot, refuses lines that still don't fit, and writes content-hashed files to `public/voiceover/` plus `src/voiceover.json`. `ProductVideo` places each line 6 frames after its cut and ducks the music under it (0.5 → 0.2). The "Agent at work" scene was rebuilt to show what the agent really does (`src/ai/agent.ts`): the request, then one `CREATE` call per entity of the mini-golf scene with its shape and tags (physics, script, trigger, light), each ticking as the editor applies it, then "16 changes applied" and the undo line. It replaces the generic progress steps. Features cards are now 60 frames (one bar) each. The hook is 120 frames and the agent scene 150. Video is 52.6 s; the music was recomposed for the new cuts. Files: `my-video/src/**`, `my-video/audio/**`, `my-video/public/voiceover/*`, `my-video/public/music.mp3`, `my-video/.gitignore`.

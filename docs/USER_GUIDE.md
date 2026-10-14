@@ -22,6 +22,53 @@ The top bar contains scene file actions, edit and view menus, transform tools, A
 - Snapped windows reserve their space so the Scene viewport and script editor fit between them. The current window layout is saved on this device.
 - The Scene viewport is the 3D work area. Drag with the left mouse button to orbit, use the wheel to zoom, and drag with the middle button to pan. The Perspective menu in the top-left corner switches between Perspective, Top, Bottom, Front, Back, Right, and Left views, and the Shaded menu beside it toggles wireframe display. In the top-right corner, click an axis on the gizmo to look down it; the buttons below it frame the selection and reset the camera. The tool rail on the left switches Select, Move, Rotate, and Scale, and the shelf along the bottom adds the last-used shape or light in one click (the arrow beside each picks another, plus empty groups and script objects), adds a camera, imports a scene file, or opens the AI panel with **Generate**. Selecting or transforming an object does not orbit the camera.
 
+## Cameras
+
+New scenes include an active **Camera**. Select it in Scene to edit Transform and Camera parameters. It looks along local **-Z**. **Scene camera** in the viewport previews the active lens; Play uses it automatically. Turning on **Is active** on another camera switches cameras. When importing an older scene with inactive cameras, the first camera is used; scenes without cameras use the editor's fallback view.
+
+Perspective uses **Fov** (degrees); orthographic uses **Ortho size** (visible vertical height before zoom). **Zoom** works on both. **Near** must be less than **Far**. Camera Transform, Fov, Zoom, Ortho size, and Follow offset support Timeline keyframes.
+
+**Follow target** follows an object with a **Follow offset** along world axes. **Follow damping** of 0 snaps; positive values smooth movement, with larger values catching up faster. **Look at target** continually aims at an object. Targets cannot create a dependency cycle through parents or other cameras. Deleting a target clears its camera references and undo restores them.
+
+Set **Controls** to `fly`, press Play, and click the viewport. Use **WASD** to move, **Q/E** for down/up, **Shift** for faster movement, and **left-drag** to look. Move speed is meters per second; Look speed is degrees per pointer pixel. Following overrides movement, and a look target overrides manual rotation. Pause freezes these controls; Stop restores the scene snapshot.
+
+Parent a light, mesh, or group under a camera to carry it. Child transforms are local to the camera. Use a negative Z offset to place an object in front of its lens. Keep camera rigs and carried objects without dynamic physics bodies.
+
+The `camera.*` API works in scene scripts, object scripts, and the Console:
+
+```text
+setting lens = 65 from 10 to 120
+when game starts
+  camera.set("fov", lens)
+  camera.follow(find("Player"), 0, 3, 6, 5)
+  camera.attach(find("Lamp"), 0.5, -0.3, -1)
+
+when space is pressed
+  camera.use(find("Overview"))
+```
+
+Create the named Player, Lamp, and Overview objects before using this example.
+
+| Call | Effect |
+| --- | --- |
+| `camera()` | Get the active camera handle. |
+| `camera.create("Overview", 0, 10, 10)` | Create and return a camera; the first becomes active. |
+| `camera.use(find("Overview"))` | Switch the active camera. |
+| `camera.get("fov")`, `camera.set("fov", 65)` | Read or change a parameter, with schema validation. |
+| `camera.set("projection", "orthographic")` | Change lens type. |
+| `camera.set("controls", "fly")` | Enable movement while playing. |
+| `camera.position(0, 4, 10)` | Set world position and clear following. |
+| `camera.move(0, 0, -1)` | Move along local axes; negative Z is forward. |
+| `camera.rotate(0, 15, 0)` | Add pitch, yaw, roll in degrees; clear look targeting. |
+| `camera.aim(0, 1, 0)` | Aim once at a world point; clear look targeting. |
+| `camera.lookAt(find("Player"))` | Track an object's position. |
+| `camera.follow(find("Player"), 0, 3, 6, 5)` | Follow and aim; damping is optional, default 0. |
+| `camera.unfollow()` | Clear follow and look targets, retaining the live Transform. |
+| `camera.attach(find("Lamp"), 0, 0, -1)` | Parent an object at a camera-local position. |
+| `camera.detach(find("Lamp"))` | Release a direct child into the scene, retaining its world pose. |
+
+Calls act on the active camera. You can also put a script on a camera and use `self.Camera.fov = 65` or ordinary sentences such as `move camera up 2 over 1 second`. Lens changes, following, scripts, and attachments work in standalone HTML and video exports. GLB captures the current camera lens and pose.
+
 ## Build and edit a scene
 
 ### Add and select objects

@@ -65,7 +65,7 @@
     Collider: { title: "Collider", hint: "Makes it solid and touchable during Play, and can react when touched." },
     Joint: { title: "Joint", hint: "Connects this physics body to another object." },
     Light: { title: "Light", hint: "Lights up the scene." },
-    Camera: { title: "Camera", hint: "A viewpoint for the scene." },
+    Camera: { title: "Camera", hint: "Used in Play and Scene camera preview. Forward is local -Z. Parent objects here to carry them. Follow offset uses world axes; damping 0 snaps, larger values catch up faster. Fly: click view, WASD, Q/E, drag to look." },
     Script: { title: "Script", hint: "Plain-sentence instructions this object follows during Play." },
     Animator: { title: "Animation", hint: "Keyframes made on the Timeline." }
   };
@@ -370,7 +370,7 @@
     {:else if schema.type === "enum"}
       <select id="field-{name}" class="field-select" value={String(value)} onchange={(event) => onchange(event.currentTarget.value)}>{#each schema.options as option}<option value={option}>{option}</option>{/each}</select>
     {:else if schema.type === "entityRef"}
-      <select id="field-{name}" class="field-select" value={value === null ? "__world__" : String(value)} onchange={(event) => onchange(event.currentTarget.value === "__world__" ? null : event.currentTarget.value)}><option value="__world__">World</option>{#each scene.entities as option}<option value={option.id}>{option.name}</option>{/each}</select>
+      <select id="field-{name}" class="field-select" value={value === null ? "__world__" : String(value)} onchange={(event) => onchange(event.currentTarget.value === "__world__" ? null : event.currentTarget.value)}><option value="__world__">{name === "followTarget" || name === "lookAtTarget" ? "None" : "World"}</option>{#each scene.entities.filter((option) => !(name === "followTarget" || name === "lookAtTarget") || option.id !== entity?.id) as option}<option value={option.id}>{option.name}</option>{/each}</select>
     {:else}
       {#if schema.multiline}<textarea id="field-{name}" value={String(value)} oninput={(event) => onchange(event.currentTarget.value)}></textarea>{:else}<input id="field-{name}" class="text-input" type="text" value={String(value)} oninput={(event) => onchange(event.currentTarget.value)} />{/if}
     {/if}

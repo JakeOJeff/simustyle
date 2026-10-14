@@ -73,9 +73,10 @@ function inverseForUpdate(entity: Entity, changes: Record<string, Record<string,
       const restore: Record<string, unknown> = {};
       for (const fieldName of Object.keys(patch)) {
         const schema = componentSchemas[componentName];
+        const field = schema.fields[fieldName];
         restore[fieldName] = fieldName in current
           ? structuredClone(current[fieldName])
-          : structuredClone(schema.fields[fieldName]?.default ?? []);
+          : structuredClone(field ? field.default : fieldName === "parameters" ? {} : []);
       }
       inverse[componentName] = restore;
     }
@@ -176,6 +177,20 @@ export function applyOps(scene: Scene, inputOps: readonly unknown[]): ApplyOpsRe
   }
 
   if (errors.length) return { scene, inverseOps: [], errors };
+  // Deleting a followed object clears camera references in the same undo batch.
+  const deletedIds = new Set(scene.entities.filter((entity) => !candidate.entities.some((other) => other.id === entity.id)).map((entity) => entity.id));
+  for (const entity of candidate.entities) {
+    if (!entity.components.Camera) continue;
+    const clear: Record<string, unknown> = {};
+    for (const field of ["followTarget", "lookAtTarget"]) {
+      if (deletedIds.has(entity.components.Camera[field] as string)) clear[field] = null;
+    }
+    if (Object.keys(clear).length) {
+      // Restore deleted entities before restoring their references during undo.
+      inverses.push(inverseForUpdate(entity, { Camera: clear }));
+      updateEntity(entity, { Camera: clear });
+    }
+  }
   errors.push(...validateScene(candidate));
   if (errors.length) return { scene, inverseOps: [], errors };
 

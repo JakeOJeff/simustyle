@@ -38,14 +38,15 @@
   import { groupOps, localPosition, reparentOps, ungroupOps, uniqueId } from "./scene/hierarchy";
   import { keyName } from "./lang/vocabulary";
   import { deserializeScene, serializeScene } from "./scene/serialize";
-  import { createEmptyScene, type Entity, type Scene, type SceneOp, type Vec3 } from "./scene/types";
+  import { type Entity, type Scene, type SceneOp, type Vec3 } from "./scene/types";
+  import { createDefaultScene, activateCameraOps } from "./runtime/camera";
   import type { PlayState, SimulationController } from "./runtime/physics";
 
   type EditorPanel = "hierarchy" | "inspector" | "console" | "ai" | "timeline" | "docs" | "sceneLoader";
   type PanelDock = "left" | "right" | "top" | "bottom" | "floating";
   type PanelLayout = { dock: PanelDock; x: number; y: number; width: number; height: number; dockSize?: number };
 
-  let scene: Scene = $state.raw(createEmptyScene());
+  let scene: Scene = $state.raw(createDefaultScene());
   let selectedId: string | null = $state(null);
   let selectedIds: string[] = $state([]);
   let mode: ToolMode = $state("translate");
@@ -740,6 +741,12 @@
     const rootId = idMap.get(root.id)!;
     const operations: SceneOp[] = sourceTree.map((source, index) => {
       const components = structuredClone(source.components);
+      for (const [name, fields] of Object.entries(components)) {
+        for (const [fieldName, value] of Object.entries(fields)) {
+          if (componentSchemas[name]?.fields[fieldName]?.type === "entityRef" && typeof value === "string" && idMap.has(value)) fields[fieldName] = idMap.get(value)!;
+        }
+      }
+      if (components.Camera) components.Camera.isActive = false;
       if (index === 0) {
         const transform = components.Transform ?? (components.Transform = {});
         const current = Array.isArray(transform.position) && transform.position.length === 3 ? transform.position.map(Number) : [0, 0, 0];
@@ -995,6 +1002,10 @@
   function updateComponent(component: string, fields: Record<string, unknown>, phase?: "start" | "preview" | "end") {
     if (!selectedId) return;
     const id = selectedId;
+    if (component === "Camera" && fields.isActive === true) {
+      apply([...activateCameraOps(scene, id), { op: "update", id, components: { Camera: fields } }]);
+      return;
+    }
     const operation: SceneOp = { op: "update", id, components: { [component]: fields } };
     if (phase === "start") {
       activeGesture = { id, initial: structuredClone(scene), operation };
@@ -1221,7 +1232,7 @@ when clicked
     scriptDrafts = {};
     stopSimulation();
     activeGesture = null;
-    scene = createEmptyScene();
+    scene = createDefaultScene();
     selectEntity(null);
     undoStack = [];
     redoStack = [];
@@ -1574,7 +1585,7 @@ when clicked
         </div>
       {/if}
       <div class="stage" bind:this={stageHost} style={stageContentStyle()} use:observeStageSize>
-        <Viewport scene={viewportScene} {selectedId} {selectedIds} {mode} {frameToken} {focusToken} {gridVisible} {space} {snap} canDrag={playState === "stopped"} onSelect={viewportSelect} onSelectMany={selectEntities} onTransform={updateTransform} onModeChange={(nextMode) => setMode(nextMode, "key")} onContextMenu={(id, x, y, position) => openEntityMenu(id, x, y, position, id ? "object" : "viewport")}>
+        <Viewport scene={viewportScene} {selectedId} {selectedIds} {mode} {frameToken} {focusToken} {gridVisible} {space} {snap} playState={playState} onCameraInput={(ops) => { const result = applyOps(scene, ops); if (!result.errors.length) scene = result.scene; }} canDrag={playState === "stopped"} onSelect={viewportSelect} onSelectMany={selectEntities} onTransform={updateTransform} onModeChange={(nextMode) => setMode(nextMode, "key")} onContextMenu={(id, x, y, position) => openEntityMenu(id, x, y, position, id ? "object" : "viewport")}>
           {#snippet overlay()}
             <div class="tool-rail" role="toolbar" aria-label="Transform tools" aria-orientation="vertical">
               {#each railTools as item (item.mode)}

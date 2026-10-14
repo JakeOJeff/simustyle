@@ -6,12 +6,26 @@ SimuStyle is a 3D scene editor for building, scripting, animating, and simulatin
 
 - Build scenes with a 3D viewport, hierarchy, and inspector.
 - Add physics, collisions, lights, cameras, and parented objects.
+- Use a default scene camera with perspective/orthographic lenses, follow and aim targets, fly controls, attachments, keyframes, and a `camera.*` scripting API.
 - Write behaviors in a plain-English scripting language.
 - Preview scenes with physics and animation, then undo or redo edits.
 - Orbit with left-drag, pan with middle-drag, and right-click to add objects at the pointer or under a parent.
 - Export scenes as GLB, standalone HTML, or WebM.
 - Optionally use an AI assistant to create and edit scenes.
 - Learn features through optional, self-paced interactive tutorial chapters in Docs; progress is saved on this device.
+
+## Scripting
+
+Select an object and open Script. Scripts expose `setting` values in Inspector and run during Play. This example makes the default camera movable and gives it an adjustable lens:
+
+```
+setting lens = 65 from 10 to 120
+when game starts
+  camera.set("fov", lens)
+  camera.set("controls", "fly")
+```
+
+Click the Play view, then use WASD, Q/E, Shift, and left-drag. See the [camera guide](docs/USER_GUIDE.md#cameras) for following, switching, animation, and attachments.
 
 ## Run locally
 

@@ -5,7 +5,7 @@
   const topics = [
     ["getting-started", "Getting started"], ["workspace", "Workspace"], ["scene-editing", "Scene editing"],
     ["hierarchy-inspector", "Scene panel & Inspector"], ["scripts", "Scripts & Console"],
-    ["ai-assistant", "AI assistant"], ["animation-play", "Animation & Play"],
+    ["cameras", "Cameras"], ["ai-assistant", "AI assistant"], ["animation-play", "Animation & Play"],
     ["save-export", "Save & export"], ["shortcuts", "Keyboard shortcuts"], ["troubleshooting", "Troubleshooting"]
   ];
 </script>
@@ -81,6 +81,23 @@ when space is pressed
         <li><b>Logic:</b> <code>set score to 0</code>, <code>change score by 1</code>, <code>wait 1 second</code>, <code>repeat 3 times</code>, <code>if score is at least 3</code>, <code>broadcast "win"</code>.</li>
       </ul>
       <p>Commands can target <code>me</code>, <code>it</code>, a named object, <code>my children</code>, <code>my parent</code>, or a description such as <code>the nearest red ball</code>. Use <code>--</code> to start a comment. Runtime and compile errors appear in Console or inline beside the script.</p>
+    </section>
+
+    <section id="docs-cameras">
+      <h2>Cameras</h2>
+      <p>New scenes include an active Camera. Select it to edit its position, rotation and lens in Inspector. The camera looks along its local negative Z axis. <b>Scene camera</b> previews the active camera; Play uses it automatically. Stop restores your edits and the editor view. Set <b>Is active</b> on another camera to switch.</p>
+      <p>Choose perspective or orthographic projection. Fov controls the perspective lens; Ortho size is the visible vertical height before zoom. Near and Far clip distances must satisfy Near &lt; Far. Zoom works for both lenses. Use Timeline keyframes to animate Transform, Fov, Zoom, Ortho size or Follow offset.</p>
+      <p>Follow target follows an object using a world offset. Damping 0 snaps; positive damping smooths movement, with larger values catching up faster. Look at target keeps the camera aimed at an object. Set Controls to <b>fly</b>, press Play, then click the view: WASD moves, Q/E moves down/up, Shift moves faster, and left-drag looks around. Follow and Look at targets override their respective manual controls.</p>
+      <p>Put a light, shape or group inside the camera in the Scene panel to carry it. Child positions are camera-local: a negative Z offset puts something in front of the lens. Keep carried objects without dynamic physics.</p>
+      <pre>{`setting lens = 65 from 10 to 120
+when game starts
+  camera.set("fov", lens)
+  camera.follow(find("Player"), 0, 3, 6, 5)
+  camera.attach(find("Lamp"), 0.5, -0.3, -1)
+
+when space is pressed
+  camera.use(find("Overview"))`}</pre>
+      <p>From any script or Console: <code>camera()</code> returns the current camera, <code>camera.create("Overview", 0, 10, 10)</code> creates one, <code>camera.position(0, 4, 10)</code> sets world position, <code>camera.move(0, 0, -1)</code> moves forward locally, <code>camera.rotate(0, 15, 0)</code> turns, and <code>camera.aim(0, 1, 0)</code> aims at a world point. <code>camera.get("fov")</code> reads a parameter. <code>camera.unfollow()</code> clears tracking and <code>camera.detach(find("Lamp"))</code> releases a child. Ordinary sentences such as <code>move camera up 2 over 1 second</code> also work. HTML and video exports use the same camera behavior.</p>
     </section>
 
     <section id="docs-ai-assistant">

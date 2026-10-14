@@ -53,7 +53,8 @@ function guessType(expression: ScriptExpression): ValueType {
     case "property": return expression.property === "color" || expression.property === "colour" ? "color" : expression.property === "name" ? "string" : "number";
     case "call": {
       const name = expression.callee.kind === "identifier" ? expression.callee.name : "";
-      return ["spawn", "find"].includes(name) ? "entity" : ["print", "destroy"].includes(name) ? "unknown" : "number";
+      const path = flatten(expression.callee)?.join(".") ?? name;
+      return ["spawn", "find", "camera", "camera.create"].includes(path) ? "entity" : path === "camera.get" ? "unknown" : ["print", "destroy"].includes(name) ? "unknown" : "number";
     }
     default: return "unknown";
   }
@@ -166,6 +167,24 @@ export function typecheckScript(program: ScriptProgram): ScriptDiagnostic[] {
         const path = flatten(expression.callee);
         const name = path?.join(".") ?? "";
         const args = expression.args.map((argument) => expressionType(argument, variables, eventNames));
+        const cameraSignatures: Record<string, ValueType[]> = {
+          camera: [], "camera.create": ["string", "number", "number", "number"], "camera.use": ["entity"],
+          "camera.get": ["string"], "camera.set": ["string", "unknown"],
+          "camera.move": ["number", "number", "number"], "camera.position": ["number", "number", "number"],
+          "camera.rotate": ["number", "number", "number"], "camera.aim": ["number", "number", "number"],
+          "camera.follow": ["entity", "number", "number", "number", "number"], "camera.unfollow": [],
+          "camera.lookAt": ["entity"], "camera.attach": ["entity", "number", "number", "number"], "camera.detach": ["entity"]
+        };
+        const cameraSignature = cameraSignatures[name];
+        if (cameraSignature) {
+          const min = name === "camera.follow" ? 4 : cameraSignature.length;
+          if (args.length < min || args.length > cameraSignature.length) report(expression, `${name} expects ${min === cameraSignature.length ? min : "4 or 5"} arguments.`);
+          args.forEach((type, index) => {
+            const expected = cameraSignature[index];
+            if (expected && expected !== "unknown" && type !== "unknown" && type !== expected && !(expected === "entity" && type === "string")) report(expression.args[index]!, `${name} argument ${index + 1} must be ${expected === "entity" ? "an object or its name" : expected}.`);
+          });
+          return ["camera", "camera.create"].includes(name) ? "entity" : name === "camera.get" ? "unknown" : "null";
+        }
         if (name === "self.rigidbody.applyImpulse" || name === "self.rigidbody.setVelocity") {
           if (args.length !== 3 || args.some((type) => type !== "number" && type !== "unknown")) report(expression, `${name} expects three numbers.`);
           return "null";

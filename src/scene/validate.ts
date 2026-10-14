@@ -2,6 +2,7 @@ import { componentSchemas } from "../registry";
 import type { FieldSchema } from "../registry/types";
 import { isBezierPoints, isInterpolation } from "../runtime/easing";
 import { DEFAULT_SCENE_SETTINGS, type Entity, type Scene, type SceneSettings } from "./types";
+import { cameraSchema } from "../registry/components/camera";
 
 const settingSchemas: Record<keyof SceneSettings, FieldSchema> = {
   gravity: { type: "vec3", default: DEFAULT_SCENE_SETTINGS.gravity },
@@ -205,6 +206,36 @@ export function validateScene(scene: unknown): string[] {
     entity.components.RigidBody !== undefined
   ).length;
   if (dynamicBodyCount > 500) errors.push(`scene: ${dynamicBodyCount} dynamic rigid bodies exceeds the limit of 500`);
+
+  for (const entity of entities) {
+    const camera = entity.components.Camera;
+    if (!camera) continue;
+    const near = camera.near ?? cameraSchema.fields.near.default;
+    const far = camera.far ?? cameraSchema.fields.far.default;
+    if (typeof near === "number" && typeof far === "number" && near >= far) errors.push(`entity '${entity.id}': Camera near must be less than far`);
+    for (const field of ["followTarget", "lookAtTarget"]) {
+      const target = camera[field];
+      if (typeof target === "string" && !ids.has(target)) errors.push(`entity '${entity.id}': Camera ${field} '${target}' does not exist`);
+    }
+  }
+
+  // Camera pose dependencies include parents, following and aiming. A descendant
+  // target or mutually following rigs would require solving an ambiguous cycle.
+  const completed = new Set<string>();
+  const visiting = new Set<string>();
+  const byId = new Map(entities.map((entity) => [entity.id, entity]));
+  const checkCameraDependencies = (id: string): void => {
+    if (completed.has(id)) return;
+    if (visiting.has(id)) { errors.push(`entity '${id}': camera targets and parents contain a cycle`); return; }
+    const entity = byId.get(id);
+    if (!entity) return;
+    visiting.add(id);
+    for (const dependency of [entity.parent, entity.components.Camera?.followTarget, entity.components.Camera?.lookAtTarget]) {
+      if (typeof dependency === "string") checkCameraDependencies(dependency);
+    }
+    visiting.delete(id); completed.add(id);
+  };
+  for (const entity of entities.filter((candidate) => candidate.components.Camera)) checkCameraDependencies(entity.id);
 
   for (const entity of entities) {
     const seen = new Set<string>([entity.id]);
