@@ -3,6 +3,7 @@ import { GLTFExporter } from "three/addons/exporters/GLTFExporter.js";
 import type { Entity, Scene, Vec3 } from "../scene/types";
 import { CameraRig, createSceneCamera } from "../runtime/camera";
 import { SurfaceTextureStore } from "../materials/textures";
+import { applySurfaceMapping } from "../materials/mapping";
 
 /** Builds the scene's renderable objects using the same primitive and material rules as the viewport. */
 export function createThreeScene(scene: Scene, surfaceTextures?: SurfaceTextureStore): THREE.Scene {
@@ -58,6 +59,10 @@ export function createThreeScene(scene: Scene, surfaceTextures?: SurfaceTextureS
   }
   new CameraRig().update(scene, objects, 1, 0);
   output.updateMatrixWorld(true);
+  for (const entity of scene.entities) {
+    const object = objects.get(entity.id);
+    if (object instanceof THREE.Mesh) applySurfaceMapping(object, component(entity, "Mesh"), component(entity, "Material"));
+  }
   return output;
 }
 

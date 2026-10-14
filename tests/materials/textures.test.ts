@@ -27,7 +27,7 @@ function mockLoader() {
 function texturedScene() {
   const scene = createEmptyScene();
   scene.entities.push({ id: "floor", name: "Floor", parent: null, components: {
-    Transform: {}, Mesh: { shape: "plane" }, Material: { texture: "wood_floor", textureRepeatX: 4, textureRepeatY: 2 }
+    Transform: {}, Mesh: { shape: "plane" }, Material: { texture: "wood_floor", textureMapping: "custom", textureRepeatX: 4, textureRepeatY: 2 }
   } });
   return scene;
 }
@@ -49,8 +49,8 @@ describe("lightweight surface textures", () => {
     const a = new THREE.MeshStandardMaterial(), b = new THREE.MeshStandardMaterial(), c = new THREE.MeshStandardMaterial();
     store.sync(a, {});
     expect(mock.load).not.toHaveBeenCalled();
-    store.sync(a, { texture: "wood", textureRepeatX: 4, textureRepeatY: 2 });
-    store.sync(b, { texture: "wood", textureRepeatX: 4, textureRepeatY: 2 });
+    store.sync(a, { texture: "wood", textureMapping: "custom", textureRepeatX: 4, textureRepeatY: 2 });
+    store.sync(b, { texture: "wood", textureMapping: "custom", textureRepeatX: 4, textureRepeatY: 2 });
     store.sync(c, { texture: "wood", textureRepeatX: 1 });
     expect(mock.load).toHaveBeenCalledTimes(3);
     expect(a.map).toBe(b.map);
@@ -73,10 +73,10 @@ describe("lightweight surface textures", () => {
     const a = new THREE.MeshStandardMaterial(), b = new THREE.MeshStandardMaterial();
     store.sync(a, { texture: "bricks" });
     mock.finish(); await store.ready();
-    store.sync(a, { texture: "bricks", textureRepeatX: 8 });
+    store.sync(a, { texture: "bricks", textureMapping: "custom", textureRepeatX: 8 });
     expect(mock.load).toHaveBeenCalledTimes(3);
     expect(a.map?.repeat.x).toBe(8);
-    store.sync(b, { texture: "bricks", textureRepeatX: 8 });
+    store.sync(b, { texture: "bricks", textureMapping: "custom", textureRepeatX: 8 });
     const dispose = vi.spyOn(a.map!, "dispose");
     const sourceDispose = vi.spyOn(mock.pending[0]!.texture, "dispose");
     store.release(a);
@@ -105,15 +105,48 @@ describe("lightweight surface textures", () => {
   });
 });
 
+describe("mapping modes and normal strength", () => {
+  it("changes normal strength per material without reloading its maps", () => {
+    const mock = mockLoader();
+    const store = new SurfaceTextureStore(undefined, mock.loader);
+    const a = new THREE.MeshStandardMaterial(), b = new THREE.MeshStandardMaterial();
+    store.sync(a, { texture: "bricks", normalStrength: 2 });
+    store.sync(b, { texture: "bricks" });
+    expect(a.normalMap).toBe(b.normalMap);
+    expect(a.normalScale.toArray()).toEqual([2, 2]);
+    expect(b.normalScale.toArray()).toEqual([1, 1]);
+    store.sync(a, { texture: "bricks", normalStrength: 0 });
+    expect(a.normalScale.toArray()).toEqual([0, 0]);
+    expect(a.normalMap).not.toBeNull();
+    expect(mock.load).toHaveBeenCalledTimes(3);
+    store.dispose();
+  });
+
+  it("uses a single tile in stretch/auto and restores saved counts in custom", () => {
+    const mock = mockLoader();
+    const store = new SurfaceTextureStore(undefined, mock.loader);
+    const material = new THREE.MeshStandardMaterial();
+    const fields = { texture: "wood", textureRepeatX: 6, textureRepeatY: 3 };
+    store.sync(material, fields);
+    expect(material.map?.repeat.toArray()).toEqual([1, 1]);
+    store.sync(material, { ...fields, textureMapping: "custom" });
+    expect(material.map?.repeat.toArray()).toEqual([6, 3]);
+    store.sync(material, { ...fields, textureMapping: "stretch" });
+    expect(material.map?.repeat.toArray()).toEqual([1, 1]);
+    expect(mock.load).toHaveBeenCalledTimes(3);
+    store.dispose();
+  });
+});
+
 describe("textures across scenes, agents and exports", () => {
   it("round-trips texture ids and tiling, accepts older scenes and validates undoable updates", () => {
     const scene = texturedScene();
     expect(deserializeScene(serializeScene(scene)).entities[0]!.components.Material).toEqual(scene.entities[0]!.components.Material);
-    const applied = applyOps(scene, [{ op: "update", id: "floor", components: { Material: { texture: "grass", textureRepeatX: 6 } } }]);
+    const applied = applyOps(scene, [{ op: "update", id: "floor", components: { Material: { texture: "grass", textureMapping: "auto", normalStrength: 2, textureRepeatX: 6 } } }]);
     expect(applied.errors).toEqual([]);
     const undo = applyOps(applied.scene, applied.inverseOps);
     expect(undo.errors).toEqual([]); expect(undo.scene).toEqual(scene);
-    for (const fields of [{ texture: "missing" }, { textureRepeatX: 0 }, { textureRepeatY: 101 }]) {
+    for (const fields of [{ texture: "missing" }, { textureMapping: "unknown" }, { normalStrength: -1 }, { normalStrength: 4 }, { textureRepeatX: 0 }, { textureRepeatY: 101 }]) {
       expect(applyOps(scene, [{ op: "update", id: "floor", components: { Material: fields } }]).errors.length).toBeGreaterThan(0);
     }
     scene.entities[0]!.components.Material = { color: "#ffffff" };
@@ -128,7 +161,7 @@ describe("textures across scenes, agents and exports", () => {
     expect(prompt).toContain('"textureRepeatX":4');
     // Keep surface details beside the shape even when other components are large.
     scene.entities[0]!.components.Script = { source: "# " + "large script ".repeat(1000) };
-    expect(sceneText(scene)).toContain("texture=wood_floor tiling=4x2");
+    expect(sceneText(scene)).toContain("texture=wood_floor mapping=custom tiling=4x2 normal=1");
     const schema = JSON.stringify(buildResponseJsonSchema());
     for (const entry of SURFACE_TEXTURES) expect(schema).toContain(`"${entry.id}"`);
     const messages = buildParseMessages({ source: "", owner: null, entities: [{ id: "floor", name: "Floor", texture: "wood_floor" }], unclear: [] });

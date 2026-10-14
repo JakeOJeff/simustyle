@@ -8,6 +8,7 @@
   import { CameraRig, activeCamera } from "../runtime/camera";
   import { CameraInput } from "../runtime/cameraInput";
   import { SurfaceTextureStore } from "../materials/textures";
+  import { applySurfaceMapping } from "../materials/mapping";
   import { emitTutorial } from "./tutorial/tutorialState.svelte";
   import type { Entity, Scene, SceneOp, Vec3 } from "../scene/types";
 
@@ -618,6 +619,11 @@
         syncMarker(entity, object);
         const intendedParent = (entity.parent ? entityObjects.get(entity.parent) : undefined) ?? world;
         if (object.parent !== intendedParent) intendedParent.add(object);
+      }
+
+      for (const entity of scene.entities) {
+        const object = entityObjects.get(entity.id);
+        if (object instanceof THREE.Mesh) applySurfaceMapping(object, entity.components.Mesh ?? {}, entity.components.Material ?? {});
       }
 
       for (const [id, helper] of selectionHelpers) {

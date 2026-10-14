@@ -9,6 +9,7 @@ import { keyName } from "../lang/vocabulary";
 import { CameraRig, activeCamera } from "../runtime/camera";
 import { CameraInput } from "../runtime/cameraInput";
 import { SurfaceTextureStore } from "../materials/textures";
+import { applySurfaceMapping } from "../materials/mapping";
 import type { TextureAssets } from "../materials/catalog";
 
 type PlayController = { state: "playing" | "paused" | "stopped"; play(scene: Scene): Promise<string[]>; advance(scene: Scene, elapsed: number): Scene; stop(): Scene | null; setScriptParameter(entityId: string, name: string, value: unknown): boolean; pressKey(key: string): void; releaseKey(key: string): void; readonly initialScene: Scene | null };
@@ -158,6 +159,11 @@ export async function startStandalone(sceneInput: Scene, textureAssets: TextureA
       }
     }
     world.background = new THREE.Color(scene.settings.background);
+    // Parent containers can appear after children; map only after all transforms update.
+    for (const entity of scene.entities) {
+      const mesh = meshes.get(entity.id);
+      if (mesh) applySurfaceMapping(mesh, record(entity, "Mesh"), record(entity, "Material"));
+    }
   }
 
   syncScene();

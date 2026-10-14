@@ -8,8 +8,10 @@ export const materialSchema: ComponentSchema = {
   fields: {
     color: { type: "color", default: "#ffffff" },
     texture: { type: "enum", options: ["none", ...SURFACE_TEXTURES.map((texture) => texture.id)], default: "none" },
+    textureMapping: { type: "enum", options: ["auto", "stretch", "custom"], default: "auto" },
     textureRepeatX: { type: "float", min: 0.1, max: 100, default: 1, step: 0.1 },
     textureRepeatY: { type: "float", min: 0.1, max: 100, default: 1, step: 0.1 },
+    normalStrength: { type: "float", min: 0, max: 3, default: 1, step: 0.05 },
     metalness: { type: "float", min: 0, max: 1, default: 0 },
     roughness: { type: "float", min: 0, max: 1, default: 0.6 },
     emissive: { type: "color", default: "#000000" },

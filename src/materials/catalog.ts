@@ -52,6 +52,6 @@ export function sceneTexturePaths(scene: Scene): string[] {
   return [...new Set([...ids].flatMap((id) => Object.values(texturePaths(id))))];
 }
 
-export const TEXTURE_AGENT_SPEC = `## Surface textures
-Material.texture: none (plain), ${SURFACE_TEXTURES.map((texture) => texture.id).join(", ")}; no URLs.
-textureRepeatX/Y: UV tiling, not meters. One material covers all faces. Color tints; #ffffff keeps image colors. Maps load on demand; roughness=1 preserves map, metalness=1 for bare metal. Preserve unrelated textures. Script examples: self.Material.texture = "wood"; self.Material.textureRepeatX = 4.`;
+export const TEXTURE_AGENT_SPEC = `## Textures
+Material.texture: none, ${SURFACE_TEXTURES.map((texture) => texture.id).join(", ")}.
+textureMapping: auto (default, one tile/meter including parent scale), stretch (one tile), custom (textureRepeatX/Y). normalStrength: 0=flat, 1=default, up to 3; paper/metal flat. White keeps image colors. roughness=1; bare metal metalness=1. Lazy maps.`;

@@ -105,9 +105,18 @@ With nothing selected (or **View → Scene settings…**), Inspector shows **Sce
 
 Select a mesh object, open **Look** in Inspector, and choose **Texture**: Bricks,
 Grass, Ground, Metal, Paper, Paving stones, Rock, Wood, or Wood floor. Choose
-**None** to return to a plain surface. **Texture repeat X/Y** set how many times the
-pattern repeats across the shape's UVs; increase them for large floors or walls.
-Repetition stretches with the object and is not measured in meters.
+**None** to return to a plain surface. **Mapping** has three modes:
+
+- **Auto repeat** (default): repeats at roughly one tile per meter. Resizing an
+  object or its parent group keeps the pattern size. Box faces and cylinder caps
+  use their own dimensions; curved surfaces use approximate circumference/arc length.
+- **Stretch**: fits one image across each surface.
+- **Custom**: exposes **Texture repeat X/Y** for your own repeat counts in UV space.
+
+Normal maps add lighting detail automatically. **Normal map strength** controls
+the effect: 0 flattens it, 1 uses the original map, and up to 3 strengthens it.
+Paper and metal have flat source normal maps, so the control is hidden for those.
+Color, normal, roughness and metalness maps always use the same mapping.
 
 Color tints the image: white (`#ffffff`) keeps its original colors. Set roughness
 to 1 to preserve the supplied roughness map, and metalness to 1 for bare metal.
@@ -117,7 +126,9 @@ HTML, and video exports. HTML embeds each used image once and remains offline.
 
 Ask the Assistant to "give this wall a brick texture" or "make the floor wood with
 tiling 4 by 4." Scene and script agents receive texture context. Scripts can use
-`self.Material.texture = "wood"` and `self.Material.textureRepeatX = 4`.
+`self.Material.texture = "wood"`, `self.Material.normalStrength = 2`, and
+`self.Material.textureMapping = "auto"`. For manual repeats, set
+`self.Material.textureMapping = "custom"` before `self.Material.textureRepeatX = 4`.
 
 The nine sets use compact 512px WebP maps and load only when selected. Unused
 displacement, AO, DirectX normals, previews and source files are excluded from the

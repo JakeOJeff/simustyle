@@ -21,3 +21,8 @@ when their last material stops using them. Offline HTML embeds only maps used by
 the scene; scenes with scripts that set the texture property include the library
 so dynamic texture changes also work offline. GLB embeds textures after loading
 completes.
+
+Auto repeat uses surface dimensions and ancestor scale to bake roughly one tile
+per meter into mesh UVs. Stretch restores the original UVs; Custom restores them
+and applies manual repeat counts. All maps share this mapping, and normal strength
+changes a material uniform without loading new images. Unchanged UVs are cached.

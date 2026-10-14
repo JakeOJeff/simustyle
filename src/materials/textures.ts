@@ -16,8 +16,11 @@ export class SurfaceTextureStore {
 
   sync(material: THREE.MeshStandardMaterial, fields: Record<string, unknown>): void {
     const texture = surfaceTexture(fields.texture);
+    const strength = typeof fields.normalStrength === "number" ? Math.max(0, Math.min(3, fields.normalStrength)) : 1;
+    material.normalScale.set(strength, strength);
     const repeat = (value: unknown) => typeof value === "number" && Number.isFinite(value) ? Math.max(0.1, Math.min(100, value)) : 1;
-    const x = repeat(fields.textureRepeatX), y = repeat(fields.textureRepeatY);
+    const custom = fields.textureMapping === "custom";
+    const x = custom ? repeat(fields.textureRepeatX) : 1, y = custom ? repeat(fields.textureRepeatY) : 1;
     const key = texture ? `${texture.id}:${x}:${y}` : undefined;
     if (this.materials.get(material) === key) return;
     if (!texture || !key) { this.release(material); return; }
