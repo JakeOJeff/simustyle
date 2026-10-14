@@ -55,7 +55,7 @@ function shapeOf(entity: Entity): string {
     const material = entity.components.Material;
     const texture = surfaceTexture(material?.texture);
     const normal = normalTexture(material ?? {});
-    return `${String(mesh.shape ?? "box")}${texture || normal ? ` texture=${texture?.id ?? "none"} mapping=${material?.textureMapping ?? "auto"}${material?.textureMapping === "custom" ? ` tiling=${material?.textureRepeatX ?? 1}x${material?.textureRepeatY ?? 1}` : ""} normal=${material?.normalStrength ?? 1} normalMap=${normal?.id ?? "none"}` : ""}`;
+    return `${String(mesh.shape ?? "box")}${texture || normal ? ` texture=${texture?.id ?? "none"} mapping=${material?.textureMapping ?? "auto"}${material?.textureMapping === "custom" ? ` tiling=${material?.textureRepeatX ?? 1}x${material?.textureRepeatY ?? 1}` : ""} normal=${material?.normalStrength ?? 1} normalMap=${normal?.id ?? "none"} depth=${material?.reliefDepth ?? 0.035} shadow=${material?.occlusionStrength ?? 1}` : ""}`;
   }
   if (entity.components.Light) return `${String(entity.components.Light.type ?? "point")} light`;
   if (entity.components.Camera) return "camera";

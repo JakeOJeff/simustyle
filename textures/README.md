@@ -6,8 +6,9 @@ https://docs.ambientcg.com/license/
 
 The app ships 512 × 512 WebP color, OpenGL normal and roughness maps, plus the
 metalness map for Metal049A. Flat normal maps for paper and metal are omitted.
-Displacement, ambient occlusion, DirectX normals, previews and Blender/USD/material
-source files are unused and excluded. No image processing dependency is added to
+Height and ambient occlusion share a Detail map (R=occlusion, G/B=height) for
+the seven detailed surfaces. DirectX normals, previews and Blender/USD/material
+source files are excluded. No image processing dependency is added to
 the app. Source ZIPs stay local and are ignored by Git.
 
 To regenerate with Sharp as an optional local tool: extract only Color,
@@ -29,3 +30,11 @@ Auto repeat uses surface dimensions and ancestor scale to bake roughly one tile
 per meter into mesh UVs. Stretch restores the original UVs; Custom restores them
 and applies manual repeat counts. All maps share this mapping, and normal strength
 changes a material uniform without loading new images. Unchanged UVs are cached.
+
+Detail maps are 512px WebP at quality 90. Resize source Displacement and
+AmbientOcclusion PNGs to grayscale and pack channels as above; use white occlusion
+where a source has none. The 16-step parallax shader converts depth in meters to
+the face's UV space, shifts all material maps consistently, and uses explicit
+texture gradients to avoid mip shimmer. Default depth is 0.035 m. Setting depth
+and crevice shadow to zero skips loading the packed map. The full library is about
+1.36 MB; no runtime image-processing dependency or extra mesh subdivisions are used.

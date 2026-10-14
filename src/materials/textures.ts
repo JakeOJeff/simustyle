@@ -1,10 +1,11 @@
 import * as THREE from "three";
 import { materialTexturePaths, textureUrl, type TextureAssets, type TextureMap } from "./catalog";
+import { syncSurfaceRelief } from "./relief";
 
 type Source = { texture: THREE.Texture; ready: Promise<void>; variants: number };
 type Variant = { path: string; texture: THREE.Texture; references: number };
 type Binding = { key: string; maps: Partial<Record<TextureMap, string>> };
-const slots = { Color: "map", NormalGL: "normalMap", Roughness: "roughnessMap", Metalness: "metalnessMap" } as const;
+const slots = { Color: "map", NormalGL: "normalMap", Roughness: "roughnessMap", Metalness: "metalnessMap", Detail: "aoMap" } as const;
 
 /** Share individual image sources, so an independent normal needs only its own map. */
 export class SurfaceTextureStore {
@@ -15,6 +16,7 @@ export class SurfaceTextureStore {
   constructor(private assets?: TextureAssets, private loader = new THREE.TextureLoader()) {}
 
   sync(material: THREE.MeshStandardMaterial, fields: Record<string, unknown>): void {
+    syncSurfaceRelief(material, fields);
     const strength = typeof fields.normalStrength === "number" && Number.isFinite(fields.normalStrength) ? Math.max(0, Math.min(10, fields.normalStrength)) : 1;
     material.normalScale.set(strength, strength);
     material.normalMapType = THREE.TangentSpaceNormalMap;

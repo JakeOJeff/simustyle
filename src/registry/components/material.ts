@@ -13,6 +13,8 @@ export const materialSchema: ComponentSchema = {
     textureRepeatY: { type: "float", min: 0.1, max: 100, default: 1, step: 0.1 },
     normalTexture: { type: "enum", options: ["auto", "none", ...SURFACE_TEXTURES.filter((texture) => texture.normal).map((texture) => texture.id)], default: "auto" },
     normalStrength: { type: "float", min: 0, max: 10, default: 1, step: 0.05 },
+    reliefDepth: { type: "float", min: 0, max: 0.1, default: 0.035, step: 0.001 },
+    occlusionStrength: { type: "float", min: 0, max: 2, default: 1, step: 0.05 },
     metalness: { type: "float", min: 0, max: 1, default: 0 },
     roughness: { type: "float", min: 0, max: 1, default: 0.6 },
     emissive: { type: "color", default: "#000000" },

@@ -13,7 +13,7 @@ export const SURFACE_TEXTURES = [
 ] as const;
 
 export type SurfaceTextureId = typeof SURFACE_TEXTURES[number]["id"];
-export type TextureMap = "Color" | "NormalGL" | "Roughness" | "Metalness";
+export type TextureMap = "Color" | "NormalGL" | "Roughness" | "Metalness" | "Detail";
 export type TextureAssets = Record<string, string>;
 
 export function surfaceTexture(value: unknown) {
@@ -26,6 +26,7 @@ export function texturePaths(value: unknown): Partial<Record<TextureMap, string>
   const path = (map: TextureMap) => `textures/${texture.asset}_${map}.webp`;
   return { Color: path("Color"), Roughness: path("Roughness"),
     ...(texture.normal ? { NormalGL: path("NormalGL") } : {}),
+    ...(texture.normal ? { Detail: path("Detail") } : {}),
     ...("metalness" in texture ? { Metalness: path("Metalness") } : {}) };
 }
 
@@ -40,9 +41,12 @@ export function normalTexture(fields: Record<string, unknown>) {
 
 /** Normal detail can be selected independently, including on a plain colored mesh. */
 export function materialTexturePaths(fields: Record<string, unknown>): Partial<Record<TextureMap, string>> {
-  const { NormalGL: _normal, ...surface } = texturePaths(fields.texture);
+  const { NormalGL: _normal, Detail: _detail, ...surface } = texturePaths(fields.texture);
   const normal = normalTexture(fields);
-  return { ...surface, ...(normal ? { NormalGL: texturePaths(normal.id).NormalGL } : {}) };
+  const detail = normal ?? surfaceTexture(fields.texture);
+  const detailPath = texturePaths(detail?.id).Detail;
+  const useDetail = fields.reliefDepth !== 0 || fields.occlusionStrength !== 0;
+  return { ...surface, ...(normal ? { NormalGL: texturePaths(normal.id).NormalGL } : {}), ...(useDetail && detailPath ? { Detail: detailPath } : {}) };
 }
 
 /** Include animation choices; scripts can select any library texture dynamically. */
@@ -55,10 +59,12 @@ export function sceneTexturePaths(scene: Scene): string[] {
     const source = entity.components.Script?.source;
     if (typeof source === "string" && /\.material\.(?:texture|normalTexture)\b/i.test(source)) {
       SURFACE_TEXTURES.forEach((texture) => Object.values(texturePaths(texture.id)).forEach((path) => paths.add(path)));
+    } else if (typeof source === "string" && /\.material\.(?:reliefDepth|occlusionStrength)\b/i.test(source)) {
+      add({ ...fields, reliefDepth: 0.035, occlusionStrength: 1 });
     }
     const tracks = entity.components.Animator?.tracks;
     if (Array.isArray(tracks)) for (const track of tracks) {
-      if (track.component === "Material" && (track.field === "texture" || track.field === "normalTexture") && Array.isArray(track.keys)) {
+      if (track.component === "Material" && ["texture", "normalTexture", "reliefDepth", "occlusionStrength"].includes(track.field) && Array.isArray(track.keys)) {
         track.keys.forEach((key: { value?: unknown }) => add({ ...fields, [track.field]: key.value }));
       }
     }
@@ -67,7 +73,7 @@ export function sceneTexturePaths(scene: Scene): string[] {
 }
 
 export const TEXTURE_AGENT_RULES = `## Textures
-textureMapping: auto=1 tile/m, stretch=1 tile, custom=textureRepeatX/Y. normalTexture: auto=color, none=off, or a normal id; independent of color. normalStrength: 0..10 (default 1). White untints; roughness=1; metalness=1 for bare metal.`;
+Auto mapping=1 tile/m; stretch=1; custom=UV repeats. normalTexture auto=color, none=off. reliefDepth=parallax meters; occlusionStrength=crevice shadows. White untints.`;
 
 export const TEXTURE_AGENT_SPEC = `${TEXTURE_AGENT_RULES}
 Texture ids: none, ${SURFACE_TEXTURES.map((texture) => texture.id).join(", ")}. Paper/metal have no normal map.`;

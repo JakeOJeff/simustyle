@@ -33,11 +33,11 @@ function texturedScene() {
 }
 
 describe("lightweight surface textures", () => {
-  it("ships every catalog map under one MiB and includes no unused maps", () => {
+  it("ships every catalog map under two MiB and includes no unused maps", () => {
     const paths = SURFACE_TEXTURES.flatMap((entry) => Object.values(texturePaths(entry.id)));
     expect(SURFACE_TEXTURES).toHaveLength(9);
     expect(paths.every((path) => existsSync(`public/${path}`))).toBe(true);
-    expect(paths.reduce((bytes, path) => bytes + statSync(`public/${path}`).size, 0)).toBeLessThan(1024 * 1024);
+    expect(paths.reduce((bytes, path) => bytes + statSync(`public/${path}`).size, 0)).toBeLessThan(2 * 1024 * 1024);
     expect(texturePaths("paper").NormalGL).toBeUndefined();
     expect(texturePaths("metal").Metalness).toBeDefined();
     expect(texturePaths("invented")).toEqual({});
@@ -52,7 +52,7 @@ describe("lightweight surface textures", () => {
     store.sync(a, { texture: "wood", textureMapping: "custom", textureRepeatX: 4, textureRepeatY: 2 });
     store.sync(b, { texture: "wood", textureMapping: "custom", textureRepeatX: 4, textureRepeatY: 2 });
     store.sync(c, { texture: "wood", textureRepeatX: 1 });
-    expect(mock.load).toHaveBeenCalledTimes(3);
+    expect(mock.load).toHaveBeenCalledTimes(4);
     expect(a.map).toBe(b.map);
     expect(c.map).not.toBe(a.map);
     expect(c.map?.source).toBe(a.map?.source);
@@ -74,7 +74,7 @@ describe("lightweight surface textures", () => {
     store.sync(a, { texture: "bricks" });
     mock.finish(); await store.ready();
     store.sync(a, { texture: "bricks", textureMapping: "custom", textureRepeatX: 8 });
-    expect(mock.load).toHaveBeenCalledTimes(3);
+    expect(mock.load).toHaveBeenCalledTimes(4);
     expect(a.map?.repeat.x).toBe(8);
     store.sync(b, { texture: "bricks", textureMapping: "custom", textureRepeatX: 8 });
     const dispose = vi.spyOn(a.map!, "dispose");
@@ -106,11 +106,37 @@ describe("lightweight surface textures", () => {
 });
 
 describe("mapping modes and normal strength", () => {
+  it("embeds a packed map needed by later relief scripts or animation, without the entire library", () => {
+    const scene = texturedScene();
+    scene.entities[0]!.components.Material = { texture: "paving_stones", reliefDepth: 0, occlusionStrength: 0 };
+    expect(sceneTexturePaths(scene)).toHaveLength(3);
+    scene.entities[0]!.components.Script = { source: 'when game starts\n  self.Material.reliefDepth = 0.05' };
+    expect(sceneTexturePaths(scene)).toHaveLength(4);
+    expect(sceneTexturePaths(scene)).toContain("textures/PavingStones138_Detail.webp");
+    delete scene.entities[0]!.components.Script;
+    scene.entities[0]!.components.Animator = { tracks: [{ component: "Material", field: "reliefDepth", keys: [{ time: 0, value: 0 }, { time: 1, value: 0.07 }] }] };
+    expect(sceneTexturePaths(scene)).toHaveLength(4);
+  });
+  it("shares packed height/occlusion and skips its fetch when both effects are disabled", () => {
+    const mock = mockLoader();
+    const store = new SurfaceTextureStore(undefined, mock.loader);
+    const a = new THREE.MeshStandardMaterial(), b = new THREE.MeshStandardMaterial();
+    store.sync(a, { texture: "paving_stones" });
+    store.sync(b, { texture: "paving_stones" });
+    expect(mock.load).toHaveBeenCalledTimes(4);
+    expect(a.aoMap).toBe(b.aoMap);
+    expect(a.aoMap?.colorSpace).toBe(THREE.NoColorSpace);
+    expect(a.aoMapIntensity).toBe(1);
+    store.sync(a, { texture: "paving_stones", reliefDepth: 0, occlusionStrength: 0 });
+    expect(a.aoMap).toBeNull(); expect(b.aoMap).not.toBeNull();
+    expect(mock.load).toHaveBeenCalledTimes(4);
+    store.dispose();
+  });
   it("supports a normal-only material and embeds only its normal map", () => {
     const mock = mockLoader();
     const store = new SurfaceTextureStore(undefined, mock.loader);
     const material = new THREE.MeshStandardMaterial();
-    const fields = { normalTexture: "bricks", normalStrength: 8, textureMapping: "custom", textureRepeatX: 4 };
+    const fields = { normalTexture: "bricks", normalStrength: 8, reliefDepth: 0, occlusionStrength: 0, textureMapping: "custom", textureRepeatX: 4 };
     store.sync(material, fields);
     expect(mock.load).toHaveBeenCalledTimes(1);
     expect(mock.load.mock.calls[0]![0]).toContain("Bricks104_NormalGL.webp");
@@ -132,7 +158,7 @@ describe("mapping modes and normal strength", () => {
     const store = new SurfaceTextureStore(undefined, mock.loader);
     const material = new THREE.MeshStandardMaterial();
     store.sync(material, { texture: "wood", normalTexture: "rock" });
-    expect(mock.load).toHaveBeenCalledTimes(3);
+    expect(mock.load).toHaveBeenCalledTimes(4);
     expect(mock.load.mock.calls.map(([path]) => path)).toEqual(expect.arrayContaining([
       expect.stringContaining("Wood092_Color"), expect.stringContaining("Wood092_Roughness"), expect.stringContaining("Rock064_NormalGL")
     ]));
@@ -141,7 +167,7 @@ describe("mapping modes and normal strength", () => {
     store.sync(material, { texture: "wood", normalTexture: "none" });
     expect(material.map).toBe(color); expect(material.roughnessMap).toBe(roughness);
     expect(material.normalMap).toBeNull(); expect(dispose).toHaveBeenCalledTimes(1);
-    expect(mock.load).toHaveBeenCalledTimes(3);
+    expect(mock.load).toHaveBeenCalledTimes(5);
     expect(materialTexturePaths({ texture: "wood", normalTexture: "none" }).NormalGL).toBeUndefined();
     store.dispose();
   });
@@ -176,7 +202,7 @@ describe("mapping modes and normal strength", () => {
     store.sync(a, { texture: "bricks", normalStrength: 0 });
     expect(a.normalScale.toArray()).toEqual([0, 0]);
     expect(a.normalMap).not.toBeNull();
-    expect(mock.load).toHaveBeenCalledTimes(3);
+    expect(mock.load).toHaveBeenCalledTimes(4);
     store.dispose();
   });
 
@@ -191,7 +217,7 @@ describe("mapping modes and normal strength", () => {
     expect(material.map?.repeat.toArray()).toEqual([6, 3]);
     store.sync(material, { ...fields, textureMapping: "stretch" });
     expect(material.map?.repeat.toArray()).toEqual([1, 1]);
-    expect(mock.load).toHaveBeenCalledTimes(3);
+    expect(mock.load).toHaveBeenCalledTimes(4);
     store.dispose();
   });
 });
@@ -200,11 +226,11 @@ describe("textures across scenes, agents and exports", () => {
   it("round-trips texture ids and tiling, accepts older scenes and validates undoable updates", () => {
     const scene = texturedScene();
     expect(deserializeScene(serializeScene(scene)).entities[0]!.components.Material).toEqual(scene.entities[0]!.components.Material);
-    const applied = applyOps(scene, [{ op: "update", id: "floor", components: { Material: { texture: "grass", textureMapping: "auto", normalStrength: 2, textureRepeatX: 6 } } }]);
+    const applied = applyOps(scene, [{ op: "update", id: "floor", components: { Material: { texture: "grass", textureMapping: "auto", normalStrength: 2, reliefDepth: 0.07, occlusionStrength: 1.5, textureRepeatX: 6 } } }]);
     expect(applied.errors).toEqual([]);
     const undo = applyOps(applied.scene, applied.inverseOps);
     expect(undo.errors).toEqual([]); expect(undo.scene).toEqual(scene);
-    for (const fields of [{ texture: "missing" }, { textureMapping: "unknown" }, { normalTexture: "paper" }, { normalTexture: "missing" }, { normalStrength: -1 }, { normalStrength: 11 }, { textureRepeatX: 0 }, { textureRepeatY: 101 }]) {
+    for (const fields of [{ texture: "missing" }, { textureMapping: "unknown" }, { normalTexture: "paper" }, { normalTexture: "missing" }, { normalStrength: -1 }, { normalStrength: 11 }, { reliefDepth: 0.101 }, { occlusionStrength: 2.1 }, { textureRepeatX: 0 }, { textureRepeatY: 101 }]) {
       expect(applyOps(scene, [{ op: "update", id: "floor", components: { Material: fields } }]).errors.length).toBeGreaterThan(0);
     }
     scene.entities[0]!.components.Material = { color: "#ffffff" };
@@ -237,7 +263,7 @@ describe("textures across scenes, agents and exports", () => {
     expect(runtime.scene.entities[0]!.components.Material?.textureRepeatX).toBe(3);
     expect(runtime.scene.entities[0]!.components.Material?.normalTexture).toBe("bricks");
     expect(runtime.scene.entities[0]!.components.Material?.normalStrength).toBe(8);
-    expect(sceneTexturePaths(scene)).toHaveLength(26);
+    expect(sceneTexturePaths(scene)).toHaveLength(33);
   });
 
   it("uses the shared texture rules in GLB and safely embeds maps in offline HTML", async () => {

@@ -74,6 +74,10 @@ export async function exportSceneGlb(scene: Scene): Promise<Blob> {
     await surfaceTextures.ready();
     // glTF stores the lens itself, so bake Three's extra zoom multiplier into it.
     exportScene.traverse((object) => {
+      // glTF occlusion strength is bounded to 0..1; the editor allows stronger crevice shading.
+      if (object instanceof THREE.Mesh) for (const material of Array.isArray(object.material) ? object.material : [object.material]) {
+        if (material instanceof THREE.MeshStandardMaterial) material.aoMapIntensity = Math.min(1, material.aoMapIntensity);
+      }
       if (object instanceof THREE.PerspectiveCamera) { object.fov = object.getEffectiveFOV(); object.zoom = 1; object.updateProjectionMatrix(); }
       else if (object instanceof THREE.OrthographicCamera) {
         object.left /= object.zoom; object.right /= object.zoom; object.top /= object.zoom; object.bottom /= object.zoom;

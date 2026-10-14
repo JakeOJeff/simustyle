@@ -125,6 +125,17 @@ uses no normal for those; a separate normal can still be applied to them.
 map, and up to 10 makes subtle grain more visible. Color, normal, roughness and
 metalness maps share the selected Stretch/Auto repeat/Custom mapping.
 
+**Relief depth (m)** makes joints and grain look recessed as the camera moves,
+especially at shallow angles. Height-based parallax is enabled by default at
+0.035 m; increase toward 0.05–0.07 m for more pronounced stone relief, or set 0
+to disable it. **Crevice shadow** darkens the supplied occlusion map's cracks.
+Both effects use one small packed texture and add no mesh vertices. Turning
+both controls to 0 skips that texture entirely.
+
+Relief works in the editor, Play, offline HTML, and video. GLB preserves normal
+and ambient-occlusion maps; its standard materials do not carry the custom
+view-dependent parallax shader. Collision shapes stay unchanged.
+
 Color tints the image: white (`#ffffff`) keeps its original colors. Set roughness
 to 1 to preserve the supplied roughness map, and metalness to 1 for bare metal.
 One material covers the entire object; use separate parts for different surfaces.
@@ -138,9 +149,9 @@ tiling 4 by 4." Scene and script agents receive texture context. Scripts can use
 `self.Material.textureMapping = "auto"`. For manual repeats, set
 `self.Material.textureMapping = "custom"` before `self.Material.textureRepeatX = 4`.
 
-The nine sets use compact 512px WebP maps and load only when selected. Unused
-displacement, AO, DirectX normals, previews and source files are excluded from the
-app; the original 2K archives remain local in `textures/`.
+The nine sets use compact 512px WebP maps and load only when selected. Height and
+AO are packed together for relief. Unused DirectX normals, previews and source
+files are excluded from the app; original 2K archives remain local in `textures/`.
 
 ### Collisions
 
@@ -206,7 +217,7 @@ Choose **Export** in the top bar:
 | Delete | Delete selection and its descendants |
 | F2 | Rename selected object |
 | Ctrl+G / Ctrl+Shift+G | Group selection / ungroup selection |
-| Q / W / E / R | Select / Move / Rotate / Scale tool |
+| Q / W / E / R | Select / Move / Scale / Rotate tool |
 | F | Frame selected object |
 | Drag an object in viewport | Move it across surfaces |
 | Ctrl+drag in viewport | Box-select intersecting objects |

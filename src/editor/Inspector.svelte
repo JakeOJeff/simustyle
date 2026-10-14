@@ -76,6 +76,8 @@
     if (name === "textureMapping") return "Mapping";
     if (name === "normalTexture") return "Normal map";
     if (name === "normalStrength") return "Normal map strength";
+    if (name === "reliefDepth") return "Relief depth (m)";
+    if (name === "occlusionStrength") return "Crevice shadow";
     const spaced = name.replace(/([a-z])([A-Z])/g, "$1 $2");
     return spaced[0]!.toUpperCase() + spaced.slice(1).toLowerCase();
   }
@@ -265,7 +267,8 @@
                 {#if !(component === "Script" && fieldName === "source") && !(component === "RigidBody" && fieldName === "anchored") && !(component === "Material" && (
                   ((fieldName === "textureRepeatX" || fieldName === "textureRepeatY") && ((!surfaceTexture(fields.texture) && !normalTexture(fields)) || fields.textureMapping !== "custom")) ||
                   (fieldName === "textureMapping" && !surfaceTexture(fields.texture) && !normalTexture(fields)) ||
-                  (fieldName === "normalStrength" && !normalTexture(fields))
+                  (fieldName === "normalStrength" && !normalTexture(fields)) ||
+                  ((fieldName === "reliefDepth" || fieldName === "occlusionStrength") && !(normalTexture(fields) ?? surfaceTexture(fields.texture))?.normal)
                 ))}
                 <div class="inspector-animatable-field">
                   {@render fieldControl(fieldName, field, fields[fieldName] ?? field.default, scene, (value, phase) => update(component, fieldName, value, phase))}
