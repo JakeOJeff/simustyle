@@ -632,6 +632,7 @@ export class ScriptRuntime {
   }
 
   releaseKey(key: string): void { this.keysHeld.delete(key); }
+  releaseAllKeys(): void { this.keysHeld.clear(); }
 
   /** An object was clicked in the viewport during Play. */
   click(id: string): void { this.pendingEvents.push({ kind: "click", id }); }

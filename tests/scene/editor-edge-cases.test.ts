@@ -3,6 +3,8 @@ import { applyOps } from "../../src/scene/applyOps";
 import { copyEntityTree, pasteEntityOps } from "../../src/scene/clipboard";
 import { SceneHistory } from "../../src/scene/history";
 import { deleteEntityOps } from "../../src/scene/delete";
+import { removeComponentOps } from "../../src/scene/components";
+import { evaluateAnimations } from "../../src/runtime/animator";
 import { groupOps, reparentOps, ungroupOps, worldMatrix } from "../../src/scene/hierarchy";
 import { deserializeScene, serializeScene } from "../../src/scene/serialize";
 import { createEmptyScene, type Scene, type SceneOp } from "../../src/scene/types";
@@ -17,6 +19,16 @@ const object = (id: string, parent: string | null = null): SceneOp => ({ op: "cr
 const position = (scene: Scene, id: string) => worldMatrix(scene, id).elements.slice(12, 15).map((n) => Math.round(n * 1e5) / 1e5);
 
 describe("editor scene edge cases", () => {
+  it("removes animation tracks with their component so preview cannot recreate the component", () => {
+    const scene = sceneWith([object("box"), { op: "update", id: "box", components: {
+      Material: {}, Animator: { tracks: [{ component: "Material", field: "color", keys: [{ time: 0, value: "#ff0000" }] }] }
+    } }]);
+    const history = new SceneHistory(scene);
+    expect(history.apply(removeComponentOps(scene, "box", "Material"))).toEqual([]);
+    expect(evaluateAnimations(history.scene, 1).scene.entities[0].components.Material).toBeUndefined();
+    expect(history.undo()).toEqual([]);
+    expect(history.scene).toEqual(scene);
+  });
   it("deletes overlapping parent/child selections once and restores them with one undo", () => {
     const scene = sceneWith([object("parent"), object("child", "parent"), object("other"), object("keep")]);
     const history = new SceneHistory(scene);

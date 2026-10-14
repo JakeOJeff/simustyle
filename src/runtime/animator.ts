@@ -66,6 +66,7 @@ export function evaluateTrack(track: AnimationTrack, timeSeconds: number): Anima
     const first = keys[index]!;
     const second = keys[index + 1]!;
     if (timeSeconds > second.time) continue;
+    if (timeSeconds === second.time) return second.value;
     const span = second.time - first.time;
     if (span <= 0) return second.value;
     if (first.interpolation === "step") return first.value;

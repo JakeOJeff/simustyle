@@ -331,7 +331,7 @@ export class SimulationController {
   }
 
   pause(): void {
-    if (this.state === "playing") this.state = "paused";
+    if (this.state === "playing") { this.state = "paused"; this.releaseAllKeys(); }
   }
 
   resume(): void {
@@ -406,6 +406,7 @@ export class SimulationController {
   /** Keyboard and click input for "when space is pressed", "key left is pressed", and "when clicked". */
   pressKey(key: string): void { if (this.state === "playing") this.scripts?.pressKey(key); }
   releaseKey(key: string): void { this.scripts?.releaseKey(key); }
+  releaseAllKeys(): void { this.scripts?.releaseAllKeys(); }
   click(id: string): void { if (this.state === "playing") this.scripts?.click(id); }
   setScriptParameter(entityId: string, name: string, value: unknown): boolean {
     return this.scripts?.setParameter(entityId, name, value) ?? false;

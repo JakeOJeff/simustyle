@@ -36,9 +36,10 @@
     /** Viewport grid snap, shown in the scene settings. */
     snap?: boolean;
     onSnap?: (enabled: boolean) => void;
+    readOnly?: boolean;
   }
 
-  let { scene, entity, onUpdate, onRemove, onAdd, onKeyframe, onOpenScript, onRename, onReparent, onSettings, onPhysics, onCollision, playhead = 0, onOpenTimeline, onAnimate, snap = false, onSnap }: Props = $props();
+  let { scene, entity, onUpdate, onRemove, onAdd, onKeyframe, onOpenScript, onRename, onReparent, onSettings, onPhysics, onCollision, playhead = 0, onOpenTimeline, onAnimate, snap = false, onSnap, readOnly = false }: Props = $props();
 
   /** "keyed": a key sits at the playhead; "animated": the field has a track; otherwise not animated. */
   function keyState(component: string, field: string): "keyed" | "animated" | "none" {
@@ -166,9 +167,21 @@
   }
 
   function keyframeable(field: FieldSchema): boolean { return field.type === "float" || field.type === "vec3" || field.type === "color"; }
+
+  function commitNumber(input: HTMLInputElement, current: number, schema: FieldSchema, commit: (value: number) => void) {
+    const raw = input.value.trim();
+    const value = Number(raw);
+    input.value = String(current);
+    if (!raw || !Number.isFinite(value)) return;
+    if ((schema.type === "float" || schema.type === "int" || schema.type === "vec3") &&
+        (schema.min !== undefined && value < schema.min || schema.max !== undefined && value > schema.max)) return;
+    if (schema.type === "int" && !Number.isInteger(value)) return;
+    commit(value);
+  }
 </script>
 
 <aside class="inspector panel" data-tutorial-target="inspector">
+  <fieldset disabled={readOnly} style="display:contents">
 
   {#if entity}
     {@const EntityIcon = entityIcon(entity)}
@@ -187,7 +200,7 @@
     </label>
     <label class="name-field">
       <span>INSIDE</span>
-      <select class="field-select" value={entity.parent ?? "__top__"} onchange={(event) => onReparent(event.currentTarget.value === "__top__" ? null : event.currentTarget.value)}>
+      <select class="field-select" value={entity.parent ?? "__top__"} onchange={(event) => { const parent = event.currentTarget.value === "__top__" ? null : event.currentTarget.value; event.currentTarget.value = entity.parent ?? "__top__"; onReparent(parent); }}>
         <option value="__top__">Nothing (top level)</option>
         {#each parentOptions(entity) as option (option.id)}<option value={option.id}>{option.name}</option>{/each}
       </select>
@@ -319,7 +332,7 @@
         </div>
         <div class="setting-row" title={settingHints.gravity}>
           <span class="setting-label">Gravity</span>
-          <div class="vector-input">{#each [0, 1, 2] as axis}<label class="axis-{axis}"><span>{["X", "Y", "Z"][axis]}</span><input aria-label="Gravity {["x", "y", "z"][axis]}" type="number" step="any" value={settings.gravity[axis]} onchange={(event) => { const next = [...settings.gravity] as Vec3; next[axis] = Number(event.currentTarget.value); onSettings({ gravity: next }); }} /></label>{/each}</div>
+          <div class="vector-input">{#each [0, 1, 2] as axis}<label class="axis-{axis}"><span>{["X", "Y", "Z"][axis]}</span><input aria-label="Gravity {["x", "y", "z"][axis]}" type="number" step="any" value={settings.gravity[axis]} onchange={(event) => commitNumber(event.currentTarget, settings.gravity[axis]!, settingSchemas.gravity, (value) => { const next = [...settings.gravity] as Vec3; next[axis] = value; onSettings({ gravity: next }); })} /></label>{/each}</div>
         </div>
         <div class="setting-row">
           <span class="setting-label">Preset</span>
@@ -366,21 +379,22 @@
       {/if}
     </div>
   {/if}
+  </fieldset>
 </aside>
 
 {#snippet fieldControl(name: string, schema: FieldSchema, value: unknown, scene: Scene, onchange: (value: unknown, phase?: "start" | "preview" | "end") => void)}
   <div class="field-row">
     <label class="field-label" for="field-{name}">{label(name)}</label>
     {#if schema.type === "float"}
-      <div class="range-input"><input id="field-{name}" type="range" style:--fill={rangeFill(Number(value), schema.min, schema.max)} min={schema.min} max={schema.max} step={schema.step ?? (schema.max - schema.min) / 100} value={Number(value)} onpointerdown={() => onchange(Number(value), "start")} oninput={(event) => onchange(Number(event.currentTarget.value), "preview")} onpointerup={(event) => onchange(Number(event.currentTarget.value), "end")} onpointercancel={() => onchange(Number(value), "end")} /><input class="numeric" type="number" min={schema.min} max={schema.max} step={schema.step ?? "any"} value={Number(value)} onchange={(event) => onchange(Number(event.currentTarget.value))} /></div>
+      <div class="range-input"><input id="field-{name}" type="range" style:--fill={rangeFill(Number(value), schema.min, schema.max)} min={schema.min} max={schema.max} step={schema.step ?? (schema.max - schema.min) / 100} value={Number(value)} onpointerdown={(event) => { event.currentTarget.setPointerCapture(event.pointerId); onchange(Number(value), "start"); }} oninput={(event) => onchange(Number(event.currentTarget.value), "preview")} onpointerup={(event) => onchange(Number(event.currentTarget.value), "end")} onpointercancel={(event) => onchange(Number(event.currentTarget.value), "end")} onlostpointercapture={(event) => onchange(Number(event.currentTarget.value), "end")} /><input class="numeric" type="number" min={schema.min} max={schema.max} step={schema.step ?? "any"} value={Number(value)} onchange={(event) => commitNumber(event.currentTarget, Number(value), schema, onchange)} /></div>
     {:else if schema.type === "int"}
-      <input id="field-{name}" class="numeric full" type="number" min={schema.min} max={schema.max} step="1" value={Number(value)} onchange={(event) => onchange(Number(event.currentTarget.value))} />
+      <input id="field-{name}" class="numeric full" type="number" min={schema.min} max={schema.max} step="1" value={Number(value)} onchange={(event) => commitNumber(event.currentTarget, Number(value), schema, onchange)} />
     {:else if schema.type === "bool"}
       <button id="field-{name}" class:checked={Boolean(value)} class="toggle" role="switch" aria-label={name} aria-checked={Boolean(value)} onclick={() => onchange(!Boolean(value))}><i></i></button>
     {:else if schema.type === "color"}
       <div class="color-input"><input id="field-{name}" type="color" value={String(value)} oninput={(event) => onchange(event.currentTarget.value)} /><code>{String(value)}</code></div>
     {:else if schema.type === "vec3"}
-      <div class="vector-input">{#each [0, 1, 2] as axis}<label class="axis-{axis}"><span>{["X", "Y", "Z"][axis]}</span><input aria-label="{name} {["x", "y", "z"][axis]}" type="number" step="any" value={Number((value as number[])[axis])} onchange={(event) => { const next = [...(value as number[])]; next[axis] = Number(event.currentTarget.value); onchange(next); }} /></label>{/each}</div>
+      <div class="vector-input">{#each [0, 1, 2] as axis}<label class="axis-{axis}"><span>{["X", "Y", "Z"][axis]}</span><input aria-label="{name} {["x", "y", "z"][axis]}" type="number" step="any" value={Number((value as number[])[axis])} onchange={(event) => commitNumber(event.currentTarget, Number((value as number[])[axis]), schema, (part) => { const next = [...(value as number[])]; next[axis] = part; onchange(next); })} /></label>{/each}</div>
     {:else if schema.type === "enum"}
       <select id="field-{name}" class="field-select" value={String(value)} onchange={(event) => onchange(event.currentTarget.value)}>{#each schema.options as option}<option value={option}>{name === "texture" ? surfaceTexture(option)?.label ?? "None" : name === "textureMapping" ? { auto: "Auto repeat", stretch: "Stretch", custom: "Custom" }[option as "auto" | "stretch" | "custom"] : option}</option>{/each}</select>
     {:else if schema.type === "entityRef"}

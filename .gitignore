@@ -15,6 +15,7 @@ node_modules/
 dist/
 build/
 coverage/
+.browser-audit/
 .venv/
 venv/
 __pycache__/

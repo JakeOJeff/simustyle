@@ -21,9 +21,10 @@
     /** Loop and duration live on the Animator component. */
     onAnimatorChange: (fields: { loop?: boolean; duration?: number }) => void;
     onApplyPreset: (presetId: string) => void;
+    readOnly?: boolean;
   }
 
-  let { scene, selectedId, playhead, onPlayheadChange, onTrackChange, onAnimatorChange, onApplyPreset }: Props = $props();
+  let { scene, selectedId, playhead, onPlayheadChange, onTrackChange, onAnimatorChange, onApplyPreset, readOnly = false }: Props = $props();
 
   type KeyRef = { track: string; index: number };
   type Choice = { id: string; component: string; field: string };
@@ -216,6 +217,7 @@
   // --- Playback -----------------------------------------------------------------
 
   function togglePreview() {
+    if (readOnly) return;
     if (previewPlaying) { previewPlaying = false; cancelAnimationFrame(animationFrame); return; }
     if (currentTime >= duration) onPlayheadChange(0);
     previousFrame = 0;
@@ -257,7 +259,7 @@
   }
 
   function beginKeyDrag(event: PointerEvent, trackIndex: number, keyIndex: number) {
-    if (event.button !== 0) return;
+    if (event.button !== 0 || readOnly) return;
     event.stopPropagation();
     (event.currentTarget as HTMLElement).setPointerCapture(event.pointerId);
     draggingKey = { trackIndex, keyIndex, time: tracks[trackIndex]?.keys[keyIndex]?.time ?? 0, moved: false };
@@ -389,6 +391,10 @@
   // Forget a selected key when the object changes or the key disappears (undo, deletion).
   $effect(() => {
     selectedId;
+    readOnly;
+    previewPlaying = false;
+    cancelAnimationFrame(animationFrame);
+    draggingKey = null;
     selectedKey = null;
     easingPopover = null;
     presetAnchor = null;
@@ -401,6 +407,7 @@
 </script>
 
 <section class="timeline" aria-label="Animation timeline">
+  <fieldset disabled={readOnly} style="display:contents">
   {#if !entity}
   <header class="idle-bar">
     <button class="icon" disabled aria-label="Play preview" title="Select an object to preview its animation"><Play size={12} fill="currentColor" /></button>
@@ -549,6 +556,7 @@
       <p>Select an object, then press <kbd>K</kbd> to add a keyframe.</p>
     </div>
   {/if}
+  </fieldset>
 </section>
 
 {#if easingPopover && easingTarget}
