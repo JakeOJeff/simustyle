@@ -45,7 +45,7 @@
     busy = true; error = "";
     try {
       const { createStandaloneHtml } = await import("../export/html");
-      download(new Blob([createStandaloneHtml(scene)], { type: "text/html;charset=utf-8" }), "simustyle-scene.html");
+      download(new Blob([await createStandaloneHtml(scene)], { type: "text/html;charset=utf-8" }), "simustyle-scene.html");
       open = false;
     } catch (cause) { error = cause instanceof Error ? cause.message : String(cause); }
     finally { busy = false; }

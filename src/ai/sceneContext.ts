@@ -3,6 +3,7 @@
 // spatial facts the model would otherwise have to guess (sizes, floor contact,
 // free places to put new objects) at a fraction of the old token cost.
 import { componentSchemas } from "../registry";
+import { surfaceTexture } from "../materials/catalog";
 import type { ComponentSchema, FieldSchema } from "../registry/types";
 import { halfExtents, positionOf } from "../runtime/commands";
 import { omitDefaultFields } from "../scene/serialize";
@@ -50,7 +51,11 @@ export function componentSchemaText(schemas: Record<string, ComponentSchema> = c
 
 function shapeOf(entity: Entity): string {
   const mesh = entity.components.Mesh;
-  if (mesh) return String(mesh.shape ?? "box");
+  if (mesh) {
+    const material = entity.components.Material;
+    const texture = surfaceTexture(material?.texture);
+    return `${String(mesh.shape ?? "box")}${texture ? ` texture=${texture.id} tiling=${material?.textureRepeatX ?? 1}x${material?.textureRepeatY ?? 1}` : ""}`;
+  }
   if (entity.components.Light) return `${String(entity.components.Light.type ?? "point")} light`;
   if (entity.components.Camera) return "camera";
   if (entity.components.Script) return "script";

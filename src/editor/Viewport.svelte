@@ -7,6 +7,7 @@
   import { easeProgress } from "../runtime/easing";
   import { CameraRig, activeCamera } from "../runtime/camera";
   import { CameraInput } from "../runtime/cameraInput";
+  import { SurfaceTextureStore } from "../materials/textures";
   import { emitTutorial } from "./tutorial/tutorialState.svelte";
   import type { Entity, Scene, SceneOp, Vec3 } from "../scene/types";
 
@@ -141,6 +142,7 @@
     if (mode !== "select") gizmo.setMode(mode);
     world.add(gizmo.getHelper());
     const entityObjects = new Map<string, THREE.Object3D>();
+    const surfaceTextures = new SurfaceTextureStore();
     const lightObjects = new Map<string, THREE.Light>();
     const markerObjects = new Map<string, THREE.Mesh>();
     const selectionHelpers = new Map<string, THREE.BoxHelper>();
@@ -482,8 +484,10 @@
       if (object instanceof THREE.Mesh) {
         object.geometry.dispose();
         const material = object.material;
-        if (Array.isArray(material)) material.forEach((item) => item.dispose());
-        else material.dispose();
+        for (const item of Array.isArray(material) ? material : [material]) {
+          if (item instanceof THREE.MeshStandardMaterial) surfaceTextures.release(item);
+          item.dispose();
+        }
       }
     }
 
@@ -604,6 +608,7 @@
         material.opacity = typeof materialData.opacity === "number" ? materialData.opacity : 1;
         material.transparent = material.opacity < 1;
         material.wireframe = shading === "wireframe";
+        surfaceTextures.sync(material, materialData);
       }
 
       // Parent once every object exists, so children listed before their parent still attach.
@@ -751,6 +756,7 @@
       }
       for (const helper of selectionHelpers.values()) helper.geometry.dispose();
       renderer.dispose();
+      surfaceTextures.dispose();
       renderer.domElement.remove();
     };
   });

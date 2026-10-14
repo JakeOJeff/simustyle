@@ -101,6 +101,28 @@ Inspector edits the selected entity. Rename it in the Name field; edit Position,
 
 With nothing selected (or **View → Scene settings…**), Inspector shows **Scene settings**: Physics (Collisions, Gravity with Earth/Moon/Zero presets, and Physics step), Environment (Sky color and Ambient light), and Grid (viewport Snap). These edits are undoable and take effect the next time you press Play.
 
+### Surface textures
+
+Select a mesh object, open **Look** in Inspector, and choose **Texture**: Bricks,
+Grass, Ground, Metal, Paper, Paving stones, Rock, Wood, or Wood floor. Choose
+**None** to return to a plain surface. **Texture repeat X/Y** set how many times the
+pattern repeats across the shape's UVs; increase them for large floors or walls.
+Repetition stretches with the object and is not measured in meters.
+
+Color tints the image: white (`#ffffff`) keeps its original colors. Set roughness
+to 1 to preserve the supplied roughness map, and metalness to 1 for bare metal.
+One material covers the entire object; use separate parts for different surfaces.
+Texture and tiling edits support undo/redo, saving, duplication, Play, GLB, offline
+HTML, and video exports. HTML embeds each used image once and remains offline.
+
+Ask the Assistant to "give this wall a brick texture" or "make the floor wood with
+tiling 4 by 4." Scene and script agents receive texture context. Scripts can use
+`self.Material.texture = "wood"` and `self.Material.textureRepeatX = 4`.
+
+The nine sets use compact 512px WebP maps and load only when selected. Unused
+displacement, AO, DirectX normals, previews and source files are excluded from the
+app; the original 2K archives remain local in `textures/`.
+
 ### Collisions
 
 During Play, objects with Physics (RigidBody) or a **Collider** bump into each other. The stacked-boxes button in the top bar turns collisions on or off for the whole scene; when off, objects pass through each other but still land on the floor, and touch events stop. Each selected object has **Physics** and **Collision** switches at the top of Inspector: Physics makes it fall and bounce; Collision makes it solid and touchable (with or without Physics) and stores the choice in its Collider. Turn off **Enabled** to let one object pass through others, or turn on **Trigger** to detect touches without blocking. Choose a **Reaction** (flash, shake, change color, jump, disappear, destroy other) to react without a script, or write `when I touch a ball` in a script.

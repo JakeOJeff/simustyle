@@ -1,12 +1,13 @@
 import { serializeScene } from "../scene/serialize";
 import type { Scene } from "../scene/types";
+import type { TextureAssets } from "../materials/catalog";
 
 function inlineScript(value: string): string {
   return value.replaceAll("<", "\\u003c").replaceAll("\u2028", "\\u2028").replaceAll("\u2029", "\\u2029");
 }
 
 /** Turns bundled renderer/runtime code and scene JSON into one offline HTML document. */
-export function renderStandaloneHtml(scene: Scene, standaloneRuntime: string): string {
+export function renderStandaloneHtml(scene: Scene, standaloneRuntime: string, textureAssets: TextureAssets = {}): string {
   const sceneJson = inlineScript(serializeScene(scene));
   const runtimeCode = standaloneRuntime.replaceAll("</script", "<\\/script");
   return `<!doctype html>
@@ -16,7 +17,8 @@ export function renderStandaloneHtml(scene: Scene, standaloneRuntime: string): s
 </style></head><body><div id="scene"></div><header id="toolbar"><span id="brand">SIMUSTYLE</span><button id="play">Play</button><button id="stop" disabled>Stop</button><span id="status">Loading scene…</span></header><div id="controls"></div>
 <script type="module">
 const scene=JSON.parse(${JSON.stringify(sceneJson)});
+const textureAssets=${inlineScript(JSON.stringify(textureAssets))};
 ${runtimeCode}
-startStandalone(scene).catch(error=>{document.querySelector('#status').textContent=error instanceof Error?error.message:String(error)});
+startStandalone(scene,textureAssets).catch(error=>{document.querySelector('#status').textContent=error instanceof Error?error.message:String(error)});
 </script></body></html>`;
 }

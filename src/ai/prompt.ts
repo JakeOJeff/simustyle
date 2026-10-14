@@ -1,6 +1,7 @@
 import { componentSchemas } from "../registry";
 import type { ComponentSchema, FieldSchema } from "../registry/types";
 import type { Scene } from "../scene/types";
+import { TEXTURE_AGENT_SPEC } from "../materials/catalog";
 import { componentSchemaText, sceneText } from "./sceneContext";
 
 /** The script syntax and runtime API available to the scene agent. */
@@ -42,6 +43,8 @@ World: Y-up, right-handed; meters, seconds, kilograms, degrees. Ground y=0; grav
 ## Component schemas
 Format: field type range =default. Omit fields that stay at their default.
 ${componentSchemaText()}
+
+${TEXTURE_AGENT_SPEC}
 
 ## Script language
 ${SCRIPT_AGENT_SPEC}

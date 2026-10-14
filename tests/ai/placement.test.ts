@@ -35,7 +35,7 @@ describe("scene context", () => {
     const scene = sceneWith(ops);
     const perObject = (buildSystemPrompt(scene).length - buildSystemPrompt(createEmptyScene()).length) / 20;
     expect(perObject).toBeLessThan(120);
-    expect(buildSystemPrompt(createEmptyScene()).length).toBeLessThan(9000);
+    expect(buildSystemPrompt(createEmptyScene()).length).toBeLessThan(10000);
   });
 });
 

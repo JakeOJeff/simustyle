@@ -5,6 +5,7 @@ SimuStyle is a 3D scene editor for building, scripting, animating, and simulatin
 ## Features
 
 - Build scenes with a 3D viewport, hierarchy, and inspector.
+- Apply nine built-in surface textures with adjustable tiling; maps load on demand and work in scene saves and exports.
 - Add physics, collisions, lights, cameras, and parented objects.
 - Use a default scene camera with perspective/orthographic lenses, follow and aim targets, fly controls, attachments, keyframes, and a `camera.*` scripting API.
 - Write behaviors in a plain-English scripting language.

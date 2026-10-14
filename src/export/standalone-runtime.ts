@@ -1,12 +1,15 @@
 import * as THREE from "three";
 import { OrbitControls } from "three/addons/controls/OrbitControls.js";
 import type { Scene, Entity, Vec3 } from "../scene/types";
+import { DEFAULT_SCENE_SETTINGS } from "../scene/types";
 import { AnimatorRuntime } from "../runtime/animator";
 import { ScriptRuntime, scriptOps } from "../runtime/scripts";
 import { applyOps } from "../scene/applyOps";
 import { keyName } from "../lang/vocabulary";
 import { CameraRig, activeCamera } from "../runtime/camera";
 import { CameraInput } from "../runtime/cameraInput";
+import { SurfaceTextureStore } from "../materials/textures";
+import type { TextureAssets } from "../materials/catalog";
 
 type PlayController = { state: "playing" | "paused" | "stopped"; play(scene: Scene): Promise<string[]>; advance(scene: Scene, elapsed: number): Scene; stop(): Scene | null; setScriptParameter(entityId: string, name: string, value: unknown): boolean; pressKey(key: string): void; releaseKey(key: string): void; readonly initialScene: Scene | null };
 
@@ -44,19 +47,12 @@ function meshFor(entity: Entity): THREE.Mesh | null {
   }));
 }
 
-function downloadText(filename: string, text: string, type: string): void {
-  const url = URL.createObjectURL(new Blob([text], { type }));
-  const anchor = document.createElement("a");
-  anchor.href = url;
-  anchor.download = filename;
-  anchor.click();
-  setTimeout(() => URL.revokeObjectURL(url), 10_000);
-}
-
 /** Entry called by the inlined HTML bundle. It uses the editor's ScriptRuntime,
  * AnimatorRuntime, and SimulationController modules directly. */
-export async function startStandalone(sceneInput: Scene): Promise<void> {
-  let scene = structuredClone(sceneInput);
+export async function startStandalone(sceneInput: Scene, textureAssets: TextureAssets = {}): Promise<void> {
+  // HTML stores the compact save format, which omits default scene settings.
+  let scene = { ...structuredClone(sceneInput), settings: { ...structuredClone(DEFAULT_SCENE_SETTINGS), ...sceneInput.settings } };
+  const surfaceTextures = new SurfaceTextureStore(textureAssets);
   const hostElement = document.querySelector<HTMLElement>("#scene");
   const statusElement = document.querySelector<HTMLElement>("#status");
   const playButtonElement = document.querySelector<HTMLButtonElement>("#play");
@@ -116,7 +112,8 @@ export async function startStandalone(sceneInput: Scene): Promise<void> {
       if (ids.has(id)) continue;
       group.removeFromParent();
       meshes.get(id)?.geometry.dispose();
-      (meshes.get(id)?.material as THREE.Material | undefined)?.dispose();
+      const material = meshes.get(id)?.material as THREE.MeshStandardMaterial | undefined;
+      if (material) { surfaceTextures.release(material); material.dispose(); }
       groups.delete(id); meshes.delete(id);
       lights.get(id)?.removeFromParent(); lights.delete(id);
     }
@@ -147,7 +144,7 @@ export async function startStandalone(sceneInput: Scene): Promise<void> {
         material.emissiveIntensity = typeof materialData.emissiveIntensity === "number" ? materialData.emissiveIntensity : 0;
         material.opacity = typeof materialData.opacity === "number" ? materialData.opacity : 1;
         material.transparent = material.opacity < 1;
-        material.needsUpdate = true;
+        surfaceTextures.sync(material, materialData);
       }
       if (!lights.has(entity.id)) {
         const light = makeLight(entity);
@@ -164,6 +161,7 @@ export async function startStandalone(sceneInput: Scene): Promise<void> {
   }
 
   syncScene();
+  await surfaceTextures.ready();
   let controller: PlayController | null = null;
   let scripts: ScriptRuntime | null = null;
   const animator = new AnimatorRuntime();
@@ -208,6 +206,7 @@ export async function startStandalone(sceneInput: Scene): Promise<void> {
 
   async function start(): Promise<void> {
     if (playing) return;
+    status.textContent = query.get("controls") === "1" ? "Playing · controls enabled" : "Playing";
     snapshot = structuredClone(scene);
     cameraRig.reset(); cameraInput.reset();
     playing = true; elapsed = 0; lastTime = performance.now(); animator.reset();
@@ -226,7 +225,6 @@ export async function startStandalone(sceneInput: Scene): Promise<void> {
     }
     playButton.disabled = true;
     stopButton.disabled = false;
-    status.textContent = status.textContent || "Playing";
     frame = requestAnimationFrame(tick);
   }
 
@@ -276,7 +274,7 @@ export async function startStandalone(sceneInput: Scene): Promise<void> {
   addEventListener("blur", () => {
     for (const key of ["w", "a", "s", "d", "q", "e", "space", "left", "right", "up", "down"]) { controller?.releaseKey(key); scripts?.releaseKey(key); }
   });
-  addEventListener("pagehide", () => { cameraInput.dispose(); orbit.dispose(); renderer.dispose(); }, { once: true });
+  addEventListener("pagehide", () => { surfaceTextures.dispose(); cameraInput.dispose(); orbit.dispose(); renderer.dispose(); }, { once: true });
   function resize(): void {
     const width = host.clientWidth || innerWidth;
     const height = host.clientHeight || innerHeight;
@@ -288,8 +286,5 @@ export async function startStandalone(sceneInput: Scene): Promise<void> {
   addEventListener("resize", resize);
   resize();
   renderScene();
-  status.textContent = query.get("controls") === "1" ? "Playing · controls enabled" : "Playing";
   void start().catch((error: unknown) => { status.textContent = error instanceof Error ? error.message : String(error); });
 }
-
-export { downloadText };

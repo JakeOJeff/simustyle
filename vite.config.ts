@@ -107,7 +107,7 @@ function aiProxy(env: Record<string, string>) {
   };
 }
 
-function standaloneRuntime() {
+function standaloneRuntime(): import("vite").Plugin {
   const publicId = "virtual:simustyle-standalone-runtime";
   const resolvedId = `\0${publicId}`;
   return {
@@ -119,7 +119,11 @@ function standaloneRuntime() {
         entryPoints: [resolve(process.cwd(), "src/export/standalone-runtime.ts")],
         bundle: true,
         write: false,
-        format: "esm",
+        format: "iife",
+        globalName: "SimuStyleRuntime",
+        footer: { js: "const startStandalone = SimuStyleRuntime.startStandalone;" },
+        define: { "import.meta.env.BASE_URL": JSON.stringify("/") },
+        metafile: true,
         platform: "browser",
         target: "es2022",
         minify: true,
@@ -127,6 +131,7 @@ function standaloneRuntime() {
       });
       const bundle = result.outputFiles[0]?.text;
       if (!bundle) throw new Error("Could not bundle the standalone scene runtime.");
+      for (const input of Object.keys(result.metafile!.inputs)) this.addWatchFile(resolve(process.cwd(), input));
       return `export default ${JSON.stringify(bundle)};`;
     }
   };

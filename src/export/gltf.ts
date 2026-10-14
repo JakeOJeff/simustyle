@@ -2,9 +2,10 @@ import * as THREE from "three";
 import { GLTFExporter } from "three/addons/exporters/GLTFExporter.js";
 import type { Entity, Scene, Vec3 } from "../scene/types";
 import { CameraRig, createSceneCamera } from "../runtime/camera";
+import { SurfaceTextureStore } from "../materials/textures";
 
 /** Builds the scene's renderable objects using the same primitive and material rules as the viewport. */
-export function createThreeScene(scene: Scene): THREE.Scene {
+export function createThreeScene(scene: Scene, surfaceTextures?: SurfaceTextureStore): THREE.Scene {
   const output = new THREE.Scene();
   output.name = "SimuStyle Scene";
   output.background = new THREE.Color(scene.settings.background);
@@ -27,6 +28,7 @@ export function createThreeScene(scene: Scene): THREE.Scene {
         opacity: numberField(materialData, "opacity", 1)
       });
       material.transparent = material.opacity < 1;
+      surfaceTextures?.sync(material, materialData);
       object = new THREE.Mesh(geometry, material);
     } else if (entity.components.Light) {
       object = lightFor(lightData);
@@ -61,8 +63,10 @@ export function createThreeScene(scene: Scene): THREE.Scene {
 
 /** Exports the current scene as a binary glTF Blob suitable for a .glb download. */
 export async function exportSceneGlb(scene: Scene): Promise<Blob> {
-  const exportScene = createThreeScene(scene);
+  const surfaceTextures = new SurfaceTextureStore();
+  const exportScene = createThreeScene(scene, surfaceTextures);
   try {
+    await surfaceTextures.ready();
     // glTF stores the lens itself, so bake Three's extra zoom multiplier into it.
     exportScene.traverse((object) => {
       if (object instanceof THREE.PerspectiveCamera) { object.fov = object.getEffectiveFOV(); object.zoom = 1; object.updateProjectionMatrix(); }
@@ -88,6 +92,7 @@ export async function exportSceneGlb(scene: Scene): Promise<Blob> {
     });
     geometries.forEach((geometry) => geometry.dispose());
     materials.forEach((material) => material.dispose());
+    surfaceTextures.dispose();
   }
 }
 
