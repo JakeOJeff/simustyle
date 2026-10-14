@@ -4,7 +4,7 @@
   import { settingSchemas } from "../scene/validate";
   import { parseScript } from "../lang/parser";
   import { typecheckScript } from "../lang/checker";
-  import { surfaceTexture, texturePaths, textureUrl } from "../materials/catalog";
+  import { surfaceTexture, normalTexture, texturePaths, textureUrl } from "../materials/catalog";
   import type { ScriptHandler } from "../lang/ast";
   import { Atom, Camera, ChevronDown, ChevronRight, Clapperboard, Cuboid, Diamond, FileCode, Globe, Lightbulb, Link, Move3d, Palette, Plus, Shapes, Sparkles, X } from "@lucide/svelte";
 
@@ -74,6 +74,7 @@
 
   function label(name: string): string {
     if (name === "textureMapping") return "Mapping";
+    if (name === "normalTexture") return "Normal map";
     if (name === "normalStrength") return "Normal map strength";
     const spaced = name.replace(/([a-z])([A-Z])/g, "$1 $2");
     return spaced[0]!.toUpperCase() + spaced.slice(1).toLowerCase();
@@ -209,6 +210,11 @@
       <label title="Falls, bounces, and can be pushed during Play. Settings appear in the Physics section below."><span>Physics</span>
         <button class:checked={Boolean(entity.components.RigidBody)} class="toggle" data-tutorial-target="inspector-physics" role="switch" aria-label="Physics" aria-checked={Boolean(entity.components.RigidBody)} onclick={() => onPhysics(!entity.components.RigidBody)}><i></i></button>
       </label>
+      {#if entity.components.RigidBody}
+        <label title="Keeps this object fixed against gravity, pushes, and collisions. Turn off to use its selected body type again."><span>Anchor</span>
+          <button class:checked={entity.components.RigidBody.anchored === true} class="toggle" data-tutorial-target="inspector-anchor" role="switch" aria-label="Anchor" aria-checked={entity.components.RigidBody.anchored === true} onclick={() => update("RigidBody", "anchored", entity.components.RigidBody.anchored !== true)}><i></i></button>
+        </label>
+      {/if}
       <label title={scene.settings.collisions ? "Solid and touchable during Play: bumps into things and fires 'when I touch'." : "Collisions are off for the whole scene (toolbar). This object's setting applies when they are back on."}><span>Collision{scene.settings.collisions ? "" : " (scene off)"}</span>
         <button class:checked={collides(entity)} class="toggle" data-tutorial-target="inspector-collision" role="switch" aria-label="Collision" aria-checked={collides(entity)} onclick={() => onCollision(!collides(entity))}><i></i></button>
       </label>
@@ -232,8 +238,17 @@
               {#if component === "Material" && surfaceTexture(fields.texture)}
                 <div class="surface-preview">
                   <img src={textureUrl(texturePaths(fields.texture).Color!)} alt="{surfaceTexture(fields.texture)?.label} texture" width="48" height="48" />
-                  <span>White keeps the texture colors. {surfaceTexture(fields.texture)?.normal ? "Normal mapping adds surface detail; adjust its strength below." : "This texture has a flat normal map."}</span>
+                  <span>White keeps the texture colors.</span>
                 </div>
+              {/if}
+              {#if component === "Material" && normalTexture(fields)}
+                {@const normal = normalTexture(fields)!}
+                <div class="surface-preview normal-preview">
+                  <img src={textureUrl(texturePaths(normal.id).NormalGL!)} alt="{normal.label} normal map" width="48" height="48" />
+                  <span><strong>{normal.label} normal map</strong><br />Adds surface lighting detail. Raise strength for fine grain.</span>
+                </div>
+              {/if}
+              {#if component === "Material" && (surfaceTexture(fields.texture) || normalTexture(fields))}
                 <p class="mapping-hint">{fields.textureMapping === "stretch" ? "Fits one image across each surface." : fields.textureMapping === "custom" ? "Set your own repeat counts below." : "Repeats automatically at one tile per meter, including group size. Resizing keeps the pattern size."}</p>
               {/if}
               {#if component === "Script"}
@@ -247,10 +262,10 @@
                 <button class="open-script" onclick={onOpenScript}>Edit script</button>
               {/if}
               {#each Object.entries(schema.fields) as [fieldName, field] (fieldName)}
-                {#if !(component === "Script" && fieldName === "source") && !(component === "Material" && (
-                  ((fieldName === "textureRepeatX" || fieldName === "textureRepeatY") && (!surfaceTexture(fields.texture) || fields.textureMapping !== "custom")) ||
-                  (fieldName === "textureMapping" && !surfaceTexture(fields.texture)) ||
-                  (fieldName === "normalStrength" && !surfaceTexture(fields.texture)?.normal)
+                {#if !(component === "Script" && fieldName === "source") && !(component === "RigidBody" && fieldName === "anchored") && !(component === "Material" && (
+                  ((fieldName === "textureRepeatX" || fieldName === "textureRepeatY") && ((!surfaceTexture(fields.texture) && !normalTexture(fields)) || fields.textureMapping !== "custom")) ||
+                  (fieldName === "textureMapping" && !surfaceTexture(fields.texture) && !normalTexture(fields)) ||
+                  (fieldName === "normalStrength" && !normalTexture(fields))
                 ))}
                 <div class="inspector-animatable-field">
                   {@render fieldControl(fieldName, field, fields[fieldName] ?? field.default, scene, (value, phase) => update(component, fieldName, value, phase))}
@@ -396,7 +411,7 @@
     {:else if schema.type === "vec3"}
       <div class="vector-input">{#each [0, 1, 2] as axis}<label class="axis-{axis}"><span>{["X", "Y", "Z"][axis]}</span><input aria-label="{name} {["x", "y", "z"][axis]}" type="number" step="any" value={Number((value as number[])[axis])} onchange={(event) => commitNumber(event.currentTarget, Number((value as number[])[axis]), schema, (part) => { const next = [...(value as number[])]; next[axis] = part; onchange(next); })} /></label>{/each}</div>
     {:else if schema.type === "enum"}
-      <select id="field-{name}" class="field-select" value={String(value)} onchange={(event) => onchange(event.currentTarget.value)}>{#each schema.options as option}<option value={option}>{name === "texture" ? surfaceTexture(option)?.label ?? "None" : name === "textureMapping" ? { auto: "Auto repeat", stretch: "Stretch", custom: "Custom" }[option as "auto" | "stretch" | "custom"] : option}</option>{/each}</select>
+      <select id="field-{name}" class="field-select" value={String(value)} onchange={(event) => onchange(event.currentTarget.value)}>{#each schema.options as option}<option value={option}>{name === "texture" ? surfaceTexture(option)?.label ?? "None" : name === "normalTexture" ? option === "auto" ? "Auto (match texture)" : option === "none" ? "Off" : surfaceTexture(option)?.label ?? option : name === "textureMapping" ? { auto: "Auto repeat", stretch: "Stretch", custom: "Custom" }[option as "auto" | "stretch" | "custom"] : option}</option>{/each}</select>
     {:else if schema.type === "entityRef"}
       <select id="field-{name}" class="field-select" value={value === null ? "__world__" : String(value)} onchange={(event) => onchange(event.currentTarget.value === "__world__" ? null : event.currentTarget.value)}><option value="__world__">{name === "followTarget" || name === "lookAtTarget" ? "None" : "World"}</option>{#each scene.entities.filter((option) => !(name === "followTarget" || name === "lookAtTarget") || option.id !== entity?.id) as option}<option value={option.id}>{option.name}</option>{/each}</select>
     {:else}

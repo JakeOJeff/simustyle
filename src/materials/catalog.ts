@@ -33,25 +33,41 @@ export function textureUrl(path: string): string {
   return `${import.meta.env.BASE_URL ?? "/"}${path}`;
 }
 
+export function normalTexture(fields: Record<string, unknown>) {
+  const texture = surfaceTexture(!fields.normalTexture || fields.normalTexture === "auto" ? fields.texture : fields.normalTexture);
+  return texture?.normal ? texture : undefined;
+}
+
+/** Normal detail can be selected independently, including on a plain colored mesh. */
+export function materialTexturePaths(fields: Record<string, unknown>): Partial<Record<TextureMap, string>> {
+  const { NormalGL: _normal, ...surface } = texturePaths(fields.texture);
+  const normal = normalTexture(fields);
+  return { ...surface, ...(normal ? { NormalGL: texturePaths(normal.id).NormalGL } : {}) };
+}
+
 /** Include animation choices; scripts can select any library texture dynamically. */
 export function sceneTexturePaths(scene: Scene): string[] {
-  const ids = new Set<unknown>();
+  const paths = new Set<string>();
+  const add = (fields: Record<string, unknown>) => Object.values(materialTexturePaths(fields)).forEach((path) => paths.add(path));
   for (const entity of scene.entities) {
-    ids.add(entity.components.Material?.texture);
+    const fields = entity.components.Material ?? {};
+    add(fields);
     const source = entity.components.Script?.source;
-    if (typeof source === "string" && /\.material\.texture\b/i.test(source)) {
-      SURFACE_TEXTURES.forEach((texture) => ids.add(texture.id));
+    if (typeof source === "string" && /\.material\.(?:texture|normalTexture)\b/i.test(source)) {
+      SURFACE_TEXTURES.forEach((texture) => Object.values(texturePaths(texture.id)).forEach((path) => paths.add(path)));
     }
     const tracks = entity.components.Animator?.tracks;
     if (Array.isArray(tracks)) for (const track of tracks) {
-      if (track.component === "Material" && track.field === "texture" && Array.isArray(track.keys)) {
-        track.keys.forEach((key: { value?: unknown }) => ids.add(key.value));
+      if (track.component === "Material" && (track.field === "texture" || track.field === "normalTexture") && Array.isArray(track.keys)) {
+        track.keys.forEach((key: { value?: unknown }) => add({ ...fields, [track.field]: key.value }));
       }
     }
   }
-  return [...new Set([...ids].flatMap((id) => Object.values(texturePaths(id))))];
+  return [...paths];
 }
 
-export const TEXTURE_AGENT_SPEC = `## Textures
-Material.texture: none, ${SURFACE_TEXTURES.map((texture) => texture.id).join(", ")}.
-textureMapping: auto (default, one tile/meter including parent scale), stretch (one tile), custom (textureRepeatX/Y). normalStrength: 0=flat, 1=default, up to 3; paper/metal flat. White keeps image colors. roughness=1; bare metal metalness=1. Lazy maps.`;
+export const TEXTURE_AGENT_RULES = `## Textures
+textureMapping: auto=1 tile/m, stretch=1 tile, custom=textureRepeatX/Y. normalTexture: auto=color, none=off, or a normal id; independent of color. normalStrength: 0..10 (default 1). White untints; roughness=1; metalness=1 for bare metal.`;
+
+export const TEXTURE_AGENT_SPEC = `${TEXTURE_AGENT_RULES}
+Texture ids: none, ${SURFACE_TEXTURES.map((texture) => texture.id).join(", ")}. Paper/metal have no normal map.`;

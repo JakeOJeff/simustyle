@@ -1,5 +1,5 @@
 import type * as THREE from "three";
-import { surfaceTexture } from "./catalog";
+import { surfaceTexture, normalTexture } from "./catalog";
 
 type UVState = { original: Float32Array; key: string };
 const uvStates = new WeakMap<THREE.BufferGeometry, UVState>();
@@ -12,7 +12,7 @@ export function applySurfaceMapping(mesh: THREE.Mesh, shape: Record<string, unkn
   const uv = geometry.getAttribute("uv");
   if (!uv) return;
   let state = uvStates.get(geometry);
-  if (!surfaceTexture(material.texture) || (material.textureMapping ?? "auto") !== "auto") {
+  if ((!surfaceTexture(material.texture) && !normalTexture(material)) || (material.textureMapping ?? "auto") !== "auto") {
     if (state && state.key !== "original") {
       for (let i = 0; i < uv.count; i++) uv.setXY(i, state.original[i * 2]!, state.original[i * 2 + 1]!);
       uv.needsUpdate = true;

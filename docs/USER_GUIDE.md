@@ -113,10 +113,17 @@ Grass, Ground, Metal, Paper, Paving stones, Rock, Wood, or Wood floor. Choose
 - **Stretch**: fits one image across each surface.
 - **Custom**: exposes **Texture repeat X/Y** for your own repeat counts in UV space.
 
-Normal maps add lighting detail automatically. **Normal map strength** controls
-the effect: 0 flattens it, 1 uses the original map, and up to 3 strengthens it.
-Paper and metal have flat source normal maps, so the control is hidden for those.
-Color, normal, roughness and metalness maps always use the same mapping.
+**Normal map** selects the surface's lighting detail independently of color.
+**Auto (match texture)** uses the selected color texture's normal, **Off** disables
+normal mapping, or choose Bricks, Grass, Ground, Paving stones, Rock, Wood, or Wood
+floor directly. This also works with **Texture → None**, so a plain painted object
+can have brick edges, wood grain, or rock detail. The blue/purple preview shows the
+actual selected normal map. Paper and metal have flat source normals, so Auto
+uses no normal for those; a separate normal can still be applied to them.
+
+**Normal map strength** controls the effect: 0 flattens it, 1 uses the original
+map, and up to 10 makes subtle grain more visible. Color, normal, roughness and
+metalness maps share the selected Stretch/Auto repeat/Custom mapping.
 
 Color tints the image: white (`#ffffff`) keeps its original colors. Set roughness
 to 1 to preserve the supplied roughness map, and metalness to 1 for bare metal.
@@ -126,7 +133,8 @@ HTML, and video exports. HTML embeds each used image once and remains offline.
 
 Ask the Assistant to "give this wall a brick texture" or "make the floor wood with
 tiling 4 by 4." Scene and script agents receive texture context. Scripts can use
-`self.Material.texture = "wood"`, `self.Material.normalStrength = 2`, and
+`self.Material.texture = "wood"`, `self.Material.normalTexture = "rock"`,
+`self.Material.normalStrength = 2`, and
 `self.Material.textureMapping = "auto"`. For manual repeats, set
 `self.Material.textureMapping = "custom"` before `self.Material.textureRepeatX = 4`.
 

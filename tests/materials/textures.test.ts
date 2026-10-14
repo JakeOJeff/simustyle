@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 import * as THREE from "three";
 import { SurfaceTextureStore } from "../../src/materials/textures";
-import { SURFACE_TEXTURES, texturePaths, sceneTexturePaths, TEXTURE_AGENT_SPEC } from "../../src/materials/catalog";
+import { SURFACE_TEXTURES, texturePaths, materialTexturePaths, sceneTexturePaths, TEXTURE_AGENT_SPEC, TEXTURE_AGENT_RULES } from "../../src/materials/catalog";
 import { createEmptyScene } from "../../src/scene/types";
 import { applyOps } from "../../src/scene/applyOps";
 import { deserializeScene, serializeScene } from "../../src/scene/serialize";
@@ -106,6 +106,64 @@ describe("lightweight surface textures", () => {
 });
 
 describe("mapping modes and normal strength", () => {
+  it("supports a normal-only material and embeds only its normal map", () => {
+    const mock = mockLoader();
+    const store = new SurfaceTextureStore(undefined, mock.loader);
+    const material = new THREE.MeshStandardMaterial();
+    const fields = { normalTexture: "bricks", normalStrength: 8, textureMapping: "custom", textureRepeatX: 4 };
+    store.sync(material, fields);
+    expect(mock.load).toHaveBeenCalledTimes(1);
+    expect(mock.load.mock.calls[0]![0]).toContain("Bricks104_NormalGL.webp");
+    expect(material.map).toBeNull(); expect(material.roughnessMap).toBeNull();
+    expect(material.normalMap).not.toBeNull();
+    expect(material.normalMapType).toBe(THREE.TangentSpaceNormalMap);
+    expect(material.normalMap?.colorSpace).toBe(THREE.NoColorSpace);
+    expect(material.normalMap?.repeat.toArray()).toEqual([4, 1]);
+    expect(material.normalScale.toArray()).toEqual([8, 8]);
+    const scene = createEmptyScene();
+    scene.entities.push({ id: "surface", name: "Surface", parent: null, components: { Transform: {}, Mesh: {}, Material: fields } });
+    expect(sceneTexturePaths(scene)).toEqual(["textures/Bricks104_NormalGL.webp"]);
+    expect(sceneText(scene)).toContain("normalMap=bricks");
+    store.dispose();
+  });
+
+  it("selects a different normal and switches it off without reloading the color maps", () => {
+    const mock = mockLoader();
+    const store = new SurfaceTextureStore(undefined, mock.loader);
+    const material = new THREE.MeshStandardMaterial();
+    store.sync(material, { texture: "wood", normalTexture: "rock" });
+    expect(mock.load).toHaveBeenCalledTimes(3);
+    expect(mock.load.mock.calls.map(([path]) => path)).toEqual(expect.arrayContaining([
+      expect.stringContaining("Wood092_Color"), expect.stringContaining("Wood092_Roughness"), expect.stringContaining("Rock064_NormalGL")
+    ]));
+    const color = material.map, roughness = material.roughnessMap;
+    const dispose = vi.spyOn(material.normalMap!, "dispose");
+    store.sync(material, { texture: "wood", normalTexture: "none" });
+    expect(material.map).toBe(color); expect(material.roughnessMap).toBe(roughness);
+    expect(material.normalMap).toBeNull(); expect(dispose).toHaveBeenCalledTimes(1);
+    expect(mock.load).toHaveBeenCalledTimes(3);
+    expect(materialTexturePaths({ texture: "wood", normalTexture: "none" }).NormalGL).toBeUndefined();
+    store.dispose();
+  });
+
+  it("uploads a loaded normal independently when another map fails", async () => {
+    const mock = mockLoader();
+    const store = new SurfaceTextureStore(undefined, mock.loader);
+    const material = new THREE.MeshStandardMaterial();
+    store.sync(material, { texture: "bricks" });
+    const index = mock.load.mock.calls.findIndex(([path]) => path.includes("NormalGL"));
+    const version = material.normalMap!.version;
+    const waiting = expect(store.ready()).rejects.toThrow("Could not load");
+    mock.pending[0]!.failed();
+    const normal = mock.pending[index]!;
+    normal.texture.image = { width: 512, height: 512 };
+    normal.loaded();
+    expect(material.normalMap!.version).toBeGreaterThan(version);
+    expect(material.normalMap?.image).toMatchObject({ width: 512 });
+    await waiting;
+    store.dispose();
+  });
+
   it("changes normal strength per material without reloading its maps", () => {
     const mock = mockLoader();
     const store = new SurfaceTextureStore(undefined, mock.loader);
@@ -146,7 +204,7 @@ describe("textures across scenes, agents and exports", () => {
     expect(applied.errors).toEqual([]);
     const undo = applyOps(applied.scene, applied.inverseOps);
     expect(undo.errors).toEqual([]); expect(undo.scene).toEqual(scene);
-    for (const fields of [{ texture: "missing" }, { textureMapping: "unknown" }, { normalStrength: -1 }, { normalStrength: 4 }, { textureRepeatX: 0 }, { textureRepeatY: 101 }]) {
+    for (const fields of [{ texture: "missing" }, { textureMapping: "unknown" }, { normalTexture: "paper" }, { normalTexture: "missing" }, { normalStrength: -1 }, { normalStrength: 11 }, { textureRepeatX: 0 }, { textureRepeatY: 101 }]) {
       expect(applyOps(scene, [{ op: "update", id: "floor", components: { Material: fields } }]).errors.length).toBeGreaterThan(0);
     }
     scene.entities[0]!.components.Material = { color: "#ffffff" };
@@ -156,7 +214,7 @@ describe("textures across scenes, agents and exports", () => {
   it("gives scene and script agents the catalog, UV/tint rules and existing texture state", () => {
     const scene = texturedScene();
     const prompt = buildSystemPrompt(scene);
-    expect(prompt).toContain(TEXTURE_AGENT_SPEC);
+    expect(prompt).toContain(TEXTURE_AGENT_RULES);
     expect(prompt).toContain('"texture":"wood_floor"');
     expect(prompt).toContain('"textureRepeatX":4');
     // Keep surface details beside the shape even when other components are large.
@@ -171,12 +229,14 @@ describe("textures across scenes, agents and exports", () => {
 
   it("runs texture and tiling assignments through the existing validated script API", () => {
     const scene = texturedScene();
-    scene.entities[0]!.components.Script = { source: 'when game starts\n  self.Material.texture = "rock"\n  self.Material.textureRepeatX = 3' };
+    scene.entities[0]!.components.Script = { source: 'when game starts\n  self.Material.texture = "rock"\n  self.Material.normalTexture = "bricks"\n  self.Material.normalStrength = 8\n  self.Material.textureRepeatX = 3' };
     const runtime = new ScriptRuntime(scene);
     runtime.start();
     expect(runtime.takeIssues()).toEqual([]);
     expect(runtime.scene.entities[0]!.components.Material?.texture).toBe("rock");
     expect(runtime.scene.entities[0]!.components.Material?.textureRepeatX).toBe(3);
+    expect(runtime.scene.entities[0]!.components.Material?.normalTexture).toBe("bricks");
+    expect(runtime.scene.entities[0]!.components.Material?.normalStrength).toBe(8);
     expect(sceneTexturePaths(scene)).toHaveLength(26);
   });
 

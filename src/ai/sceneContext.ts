@@ -3,7 +3,7 @@
 // spatial facts the model would otherwise have to guess (sizes, floor contact,
 // free places to put new objects) at a fraction of the old token cost.
 import { componentSchemas } from "../registry";
-import { surfaceTexture } from "../materials/catalog";
+import { surfaceTexture, normalTexture } from "../materials/catalog";
 import type { ComponentSchema, FieldSchema } from "../registry/types";
 import { halfExtents, positionOf } from "../runtime/commands";
 import { omitDefaultFields } from "../scene/serialize";
@@ -54,7 +54,8 @@ function shapeOf(entity: Entity): string {
   if (mesh) {
     const material = entity.components.Material;
     const texture = surfaceTexture(material?.texture);
-    return `${String(mesh.shape ?? "box")}${texture ? ` texture=${texture.id} mapping=${material?.textureMapping ?? "auto"}${material?.textureMapping === "custom" ? ` tiling=${material?.textureRepeatX ?? 1}x${material?.textureRepeatY ?? 1}` : ""} normal=${material?.normalStrength ?? 1}` : ""}`;
+    const normal = normalTexture(material ?? {});
+    return `${String(mesh.shape ?? "box")}${texture || normal ? ` texture=${texture?.id ?? "none"} mapping=${material?.textureMapping ?? "auto"}${material?.textureMapping === "custom" ? ` tiling=${material?.textureRepeatX ?? 1}x${material?.textureRepeatY ?? 1}` : ""} normal=${material?.normalStrength ?? 1} normalMap=${normal?.id ?? "none"}` : ""}`;
   }
   if (entity.components.Light) return `${String(entity.components.Light.type ?? "point")} light`;
   if (entity.components.Camera) return "camera";

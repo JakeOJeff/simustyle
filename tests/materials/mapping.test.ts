@@ -73,4 +73,13 @@ describe("automatic texture mapping", () => {
     const output = createThreeScene(scene);
     expect(uvExtents(output.getObjectByName("Floor") as THREE.Mesh)).toEqual([10, 6]);
   });
+
+  it("automatically repeats a normal map on an untextured surface", () => {
+    const mesh = new THREE.Mesh(new THREE.PlaneGeometry(1, 1));
+    mesh.scale.set(5, 3, 1);
+    applySurfaceMapping(mesh, { shape: "plane" }, { normalTexture: "bricks" });
+    expect(uvExtents(mesh)).toEqual([5, 3]);
+    applySurfaceMapping(mesh, { shape: "plane" }, { normalTexture: "none" });
+    expect(uvExtents(mesh)).toEqual([1, 1]);
+  });
 });

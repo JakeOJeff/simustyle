@@ -1084,6 +1084,7 @@
       ...(typeof mesh?.shape === "string" ? { shape: mesh.shape } : entity.components.Light ? { shape: "light" } : {}),
       ...(typeof material?.color === "string" ? { color: material.color } : {}),
       ...(typeof material?.texture === "string" && material.texture !== "none" ? { texture: material.texture } : {}),
+      ...(typeof material?.normalTexture === "string" ? { normalTexture: material.normalTexture } : {}),
       ...(Array.isArray(transform?.position) ? { position: transform.position as Vec3 } : {}),
       ...(parent ? { parent } : {})
     };

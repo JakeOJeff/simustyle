@@ -16,6 +16,7 @@ export interface ParseEntity {
   shape?: string;
   color?: string;
   texture?: string;
+  normalTexture?: string;
   position?: [number, number, number];
   parent?: string;
 }

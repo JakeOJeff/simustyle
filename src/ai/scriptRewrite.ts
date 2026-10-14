@@ -88,6 +88,7 @@ function describeEntity(entity: ParseEntity): string {
     entity.shape,
     entity.color,
     entity.texture ? `${entity.texture} surface` : undefined,
+    entity.normalTexture ? `${entity.normalTexture} normal map` : undefined,
     entity.position ? `at ${entity.position.map(round).join(" ")}` : undefined,
     entity.parent ? `in ${entity.parent}` : undefined
   ].filter(Boolean);
