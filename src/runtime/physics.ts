@@ -292,9 +292,14 @@ export class SimulationController {
   private readonly animationWarnings = new Set<string>();
   private readonly scriptMessages: string[] = [];
   private startedScene: Scene | null = null;
+  private playRequest = 0;
+  private starting = false;
 
   async play(scene: Scene): Promise<string[]> {
-    if (this.state !== "stopped") return [];
+    if (this.state !== "stopped" || this.starting) return [];
+    const request = ++this.playRequest;
+    this.starting = true;
+    this.scriptMessages.length = 0;
     this.snapshot = structuredClone(scene);
     this.animator.reset();
     this.cameras.reset();
@@ -310,13 +315,18 @@ export class SimulationController {
       this.scripts.setScene(scene);
       this.startedScene = scene;
       this.scriptMessages.push(...this.scripts.takeIssues().map((issue) => `${issue.entityId}:${issue.line}:${issue.column} ${issue.message}`));
-      this.runtime = await PhysicsRuntime.create(scene);
+      const runtime = await PhysicsRuntime.create(scene);
+      if (request !== this.playRequest) { runtime.dispose(); return []; }
+      this.runtime = runtime;
       this.state = "playing";
       return this.runtime.warnings;
     } catch (error) {
-      this.snapshot = null;
+      if (request !== this.playRequest) return [];
+      this.stop();
       const reason = error instanceof Error ? error.message : String(error);
       return [`Could not start physics: ${reason}`];
+    } finally {
+      if (request === this.playRequest) this.starting = false;
     }
   }
 
@@ -378,6 +388,8 @@ export class SimulationController {
   }
 
   stop(): Scene | null {
+    this.playRequest += 1;
+    this.starting = false;
     const snapshot = this.snapshot;
     this.runtime?.dispose();
     this.scripts = null;
@@ -399,4 +411,5 @@ export class SimulationController {
     return this.scripts?.setParameter(entityId, name, value) ?? false;
   }
   get initialScene(): Scene | null { return this.startedScene ? structuredClone(this.startedScene) : null; }
+  get originalScene(): Scene | null { return this.snapshot ? structuredClone(this.snapshot) : null; }
 }

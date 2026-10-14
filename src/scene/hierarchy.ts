@@ -59,6 +59,18 @@ function transformFrom(matrix: THREE.Matrix4): { position: Vec3; rotation: Vec3;
   };
 }
 
+/** Reject poses that cannot be represented by the editor's position/rotation/scale fields. */
+export function relativeTransform(parentWorld: THREE.Matrix4, world: THREE.Matrix4): ReturnType<typeof transformFrom> {
+  if (Math.abs(parentWorld.determinant()) < 1e-12) throw new Error("The parent has zero scale. Give it nonzero scale before moving objects inside it.");
+  const local = parentWorld.clone().invert().multiply(world);
+  const transform = transformFrom(local);
+  const rebuilt = localMatrix({ id: "", name: "", parent: null, components: { Transform: transform } });
+  if (local.elements.some((value, index) => !Number.isFinite(value) || Math.abs(value - rebuilt.elements[index]!) > 1e-5 * Math.max(1, Math.abs(value)))) {
+    throw new Error("This parent change would distort the object. Use uniform parent scale before changing parents.");
+  }
+  return transform;
+}
+
 export function childrenOf(scene: Scene, id: string | null): Entity[] {
   return scene.entities.filter((entity) => entity.parent === id);
 }
@@ -88,9 +100,12 @@ export function reparentOps(scene: Scene, id: string, parent: string | null): { 
   if (parent !== null && !find(scene, parent)) return { ops: [], error: `Object '${parent}' does not exist.` };
   if (parent !== null && isSelfOrAncestor(scene, id, parent)) return { ops: [], error: `${entity.name} cannot go inside itself or one of its own children.` };
   if (entity.parent === parent) return { ops: [] };
-  if (!entity.components.Transform) return { ops: [{ op: "update", id, components: {}, parent }] };
-  const local = worldMatrix(scene, parent).invert().multiply(worldMatrix(scene, id));
-  return { ops: [{ op: "update", id, components: { Transform: transformFrom(local) }, parent }] };
+  try {
+    const transform = relativeTransform(worldMatrix(scene, parent), worldMatrix(scene, id));
+    return { ops: [{ op: "update", id, components: { Transform: transform }, parent }] };
+  } catch (error) {
+    return { ops: [], error: (error as Error).message };
+  }
 }
 
 /**
@@ -104,19 +119,20 @@ export function groupOps(scene: Scene, ids: string[], groupId: string, name: str
   const parents = new Set(members.map((member) => member.parent));
   const parent = parents.size === 1 ? members[0]!.parent : null;
   const parentWorld = worldMatrix(scene, parent);
+  if (Math.abs(parentWorld.determinant()) < 1e-12) return { ops: [], error: "The parent has zero scale. Give it nonzero scale before grouping." };
   const toParent = parentWorld.clone().invert();
   const center = new THREE.Vector3();
   for (const member of members) center.add(new THREE.Vector3().setFromMatrixPosition(worldMatrix(scene, member.id)).applyMatrix4(toParent));
   center.divideScalar(members.length);
   const position = center.toArray().map(tidy) as Vec3;
   const groupWorld = parentWorld.clone().multiply(new THREE.Matrix4().makeTranslation(...position));
-  const toGroup = groupWorld.invert();
   const ops: SceneOp[] = [{ op: "create", id: groupId, name, parent, components: { Transform: { position } } }];
-  for (const member of members) {
-    const local = toGroup.clone().multiply(worldMatrix(scene, member.id));
-    ops.push(member.components.Transform
-      ? { op: "update", id: member.id, components: { Transform: transformFrom(local) }, parent: groupId }
-      : { op: "update", id: member.id, components: {}, parent: groupId });
+  try {
+    for (const member of members) {
+      ops.push({ op: "update", id: member.id, components: { Transform: relativeTransform(groupWorld, worldMatrix(scene, member.id)) }, parent: groupId });
+    }
+  } catch (error) {
+    return { ops: [], error: (error as Error).message };
   }
   return { ops };
 }
@@ -127,7 +143,12 @@ export function ungroupOps(scene: Scene, id: string): { ops: SceneOp[]; error?: 
   if (!group) return { ops: [], error: `Object '${id}' does not exist.` };
   const children = childrenOf(scene, id);
   if (!children.length) return { ops: [], error: `${group.name} has no children to ungroup.` };
-  const ops = children.flatMap((child) => reparentOps(scene, child.id, group.parent).ops);
+  const ops: SceneOp[] = [];
+  for (const child of children) {
+    const result = reparentOps(scene, child.id, group.parent);
+    if (result.error) return { ops: [], error: result.error };
+    ops.push(...result.ops);
+  }
   // Only remove the group itself when it is just a container (no mesh, light, script...).
   const onlyTransform = Object.keys(group.components).every((name) => name === "Transform");
   if (onlyTransform) ops.push({ op: "delete", id });

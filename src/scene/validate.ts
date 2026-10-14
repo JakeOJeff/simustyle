@@ -37,7 +37,7 @@ function validateAnimationTracks(value: unknown, path: string, errors: string[])
       if (!componentSchema) {
         errors.push(`${trackPath}.component: unknown component '${track.component}'`);
       } else {
-        keyField = componentSchema.fields[track.field];
+        keyField = Object.hasOwn(componentSchema.fields, track.field) ? componentSchema.fields[track.field] : undefined;
         if (!keyField) errors.push(`${trackPath}.field: unknown field '${track.field}' on ${track.component}`);
         else if (keyField.type !== "float" && keyField.type !== "vec3" && keyField.type !== "color") {
           errors.push(`${trackPath}.field: ${track.component}.${track.field} cannot be animated`);
@@ -76,6 +76,9 @@ function validateAnimationTracks(value: unknown, path: string, errors: string[])
         if (!validValue) {
           const expected = keyField.type === "float" ? "a finite number" : keyField.type === "vec3" ? "an array of three finite numbers" : "a #rrggbb color";
           errors.push(`${keyPath}.value: must be ${expected}`);
+        } else {
+          const error = validateFieldValue(keyField, key.value);
+          if (error) errors.push(`${keyPath}.value: ${error}`);
         }
       }
     }
@@ -123,7 +126,7 @@ function validateComponent(componentName: string, value: unknown, path: string, 
     return;
   }
   for (const [fieldName, fieldValue] of Object.entries(value)) {
-    const fieldSchema = schema.fields[fieldName];
+    const fieldSchema = Object.hasOwn(schema.fields, fieldName) ? schema.fields[fieldName] : undefined;
     if (fieldSchema) {
       const error = validateFieldValue(fieldSchema, fieldValue);
       if (error) errors.push(`${path}.${fieldName}: ${error}`);
@@ -133,7 +136,7 @@ function validateComponent(componentName: string, value: unknown, path: string, 
       validateAnimationTracks(fieldValue, `${path}.${fieldName}`, errors);
       continue;
     }
-    if (schema.managedFields?.[fieldName] === "scriptParameters" && isRecord(fieldValue) && Object.values(fieldValue).every((value) => ["number", "boolean", "string"].includes(typeof value))) continue;
+    if (schema.managedFields?.[fieldName] === "scriptParameters" && isRecord(fieldValue) && Object.values(fieldValue).every((value) => typeof value === "number" ? Number.isFinite(value) : typeof value === "boolean" || typeof value === "string")) continue;
     errors.push(`${path}.${fieldName}: unknown field`);
   }
 }
@@ -149,7 +152,7 @@ export function validateScene(scene: unknown): string[] {
     errors.push("scene.settings: must be an object");
   } else {
     for (const [key, value] of Object.entries(scene.settings)) {
-      const schema = settingSchemas[key as keyof SceneSettings];
+      const schema = Object.hasOwn(settingSchemas, key) ? settingSchemas[key as keyof SceneSettings] : undefined;
       if (!schema) errors.push(`scene.settings.${key}: unknown setting`);
       else {
         const error = validateFieldValue(schema, value);
@@ -190,7 +193,7 @@ export function validateScene(scene: unknown): string[] {
     if (entity.parent !== null && !ids.has(entity.parent)) errors.push(`entity '${entity.id}': parent '${entity.parent}' does not exist`);
     for (const [componentName, componentData] of Object.entries(entity.components)) {
       const schema = componentSchemas[componentName];
-      if (!schema) continue;
+      if (!schema || !isRecord(componentData)) continue;
       for (const required of schema.requires ?? []) {
         if (!(required in entity.components)) errors.push(`entity '${entity.id}': ${componentName} requires ${required}`);
       }

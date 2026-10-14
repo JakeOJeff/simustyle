@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { applyOps } from "../../src/scene/applyOps";
 import { createEmptyScene } from "../../src/scene/types";
 import { PhysicsRuntime, SimulationController } from "../../src/runtime/physics";
@@ -22,6 +22,55 @@ function boxScene(count: number, firstY = 0.5) {
 }
 
 describe("Rapier simulation", () => {
+  it("cancels an in-flight Play and disposes the runtime that finishes after Stop", async () => {
+    const initial = boxScene(1, 5);
+    const runtime = await PhysicsRuntime.create(initial);
+    const dispose = vi.spyOn(runtime, "dispose");
+    let finish!: (value: PhysicsRuntime) => void;
+    const create = vi.spyOn(PhysicsRuntime, "create").mockImplementationOnce(() => new Promise((resolve) => finish = resolve));
+    const controller = new SimulationController();
+    try {
+      const pending = controller.play(initial);
+      expect(controller.stop()).toEqual(initial);
+      finish(runtime);
+      await pending;
+      expect(dispose).toHaveBeenCalledOnce();
+      expect(controller.state).toBe("stopped");
+      expect(controller.initialScene).toBeNull();
+      expect(controller.advance(initial, 1)).toBe(initial);
+    } finally { controller.stop(); create.mockRestore(); }
+  });
+
+  it("does not start two runtimes when Play is pressed twice during loading", async () => {
+    const initial = boxScene(1);
+    const runtime = await PhysicsRuntime.create(initial);
+    let finish!: (value: PhysicsRuntime) => void;
+    const create = vi.spyOn(PhysicsRuntime, "create").mockImplementationOnce(() => new Promise((resolve) => finish = resolve));
+    const controller = new SimulationController();
+    try {
+      const first = controller.play(initial);
+      await controller.play(initial);
+      expect(create).toHaveBeenCalledOnce();
+      finish(runtime);
+      await first;
+      expect(controller.state).toBe("playing");
+      expect(controller.originalScene).toEqual(initial);
+    } finally { controller.stop(); create.mockRestore(); }
+  });
+
+  it("cleans up failed startup and permits another Play", async () => {
+    const initial = boxScene(1);
+    const create = vi.spyOn(PhysicsRuntime, "create").mockRejectedValueOnce(new Error("test initialization failure"));
+    const controller = new SimulationController();
+    try {
+      expect((await controller.play(initial)).join(" ")).toContain("test initialization failure");
+      expect(controller.initialScene).toBeNull();
+      expect(controller.originalScene).toBeNull();
+      expect(controller.state).toBe("stopped");
+      expect(await controller.play(initial)).toEqual([]);
+      expect(controller.state).toBe("playing");
+    } finally { controller.stop(); create.mockRestore(); }
+  });
   it("steps a 20-box stack and lets it settle on the ground", async () => {
     const runtime = await PhysicsRuntime.create(boxScene(20));
     let scene = boxScene(20);

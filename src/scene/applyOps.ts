@@ -11,11 +11,13 @@ function operationShapeError(value: unknown, index: number): string | undefined 
   if (!isRecord(value) || typeof value.op !== "string") return `${path}: must be an operation object`;
   switch (value.op) {
     case "create":
+      if ("index" in value && (typeof value.index !== "number" || !Number.isInteger(value.index) || value.index < 0)) return `${path}.index: must be a nonnegative integer`;
       if (typeof value.id !== "string" || typeof value.name !== "string" ||
           (value.parent !== null && typeof value.parent !== "string") || !isRecord(value.components)) {
         return `${path}: create requires id, name, parent, and components`;
       }
       for (const [name, component] of Object.entries(value.components)) {
+        if (!componentSchemas[name]) return `${path}.components.${name}: unknown component '${name}'`;
         if (!isRecord(component)) return `${path}.components.${name}: must be an object`;
       }
       return undefined;
@@ -24,6 +26,7 @@ function operationShapeError(value: unknown, index: number): string | undefined 
       if ("parent" in value && value.parent !== null && typeof value.parent !== "string") return `${path}.parent: must be an entity id or null`;
       if ("name" in value && (typeof value.name !== "string" || !value.name.trim())) return `${path}.name: must be a non-empty string`;
       for (const [name, component] of Object.entries(value.components)) {
+        if (!componentSchemas[name]) return `${path}.components.${name}: unknown component '${name}'`;
         if (component !== null && !isRecord(component)) return `${path}.components.${name}: must be an object or null`;
       }
       return undefined;
@@ -38,7 +41,7 @@ function operationShapeError(value: unknown, index: number): string | undefined 
 
 function normalizedComponent(name: string, fields: Record<string, unknown>): Record<string, unknown> {
   const schema = componentSchemas[name];
-  const result: Record<string, unknown> = {};
+  const result: Record<string, unknown> = Object.create(null);
   if (!schema) return structuredClone(fields);
   for (const [key, value] of Object.entries(fields)) {
     const field = schema.fields[key];
@@ -49,20 +52,8 @@ function normalizedComponent(name: string, fields: Record<string, unknown>): Rec
   return result;
 }
 
-function settingsPatch(value: Record<string, unknown>): Partial<Scene["settings"]> {
-  const result: Partial<Scene["settings"]> = {};
-  for (const [key, setting] of Object.entries(value)) {
-    if (key === "gravity" && Array.isArray(setting)) result.gravity = structuredClone(setting) as [number, number, number];
-    else if (key === "background" && typeof setting === "string") result.background = setting;
-    else if (key === "fixedTimestep" && typeof setting === "number") result.fixedTimestep = setting;
-    else if (key === "ambientLightIntensity" && typeof setting === "number") result.ambientLightIntensity = setting;
-    else if (key === "collisions" && typeof setting === "boolean") result.collisions = setting;
-  }
-  return result;
-}
-
 function inverseForUpdate(entity: Entity, changes: Record<string, Record<string, unknown> | null>, parent?: string | null, name?: string): SceneOp {
-  const inverse: Record<string, Record<string, unknown> | null> = {};
+  const inverse: Record<string, Record<string, unknown> | null> = Object.create(null);
   for (const [componentName, patch] of Object.entries(changes)) {
     const current = entity.components[componentName];
     if (patch === null) {
@@ -70,11 +61,11 @@ function inverseForUpdate(entity: Entity, changes: Record<string, Record<string,
     } else if (!current) {
       inverse[componentName] = null;
     } else {
-      const restore: Record<string, unknown> = {};
+      const restore: Record<string, unknown> = Object.create(null);
       for (const fieldName of Object.keys(patch)) {
         const schema = componentSchemas[componentName];
-        const field = schema.fields[fieldName];
-        restore[fieldName] = fieldName in current
+        const field = Object.hasOwn(schema?.fields ?? {}, fieldName) ? schema.fields[fieldName] : undefined;
+        restore[fieldName] = Object.hasOwn(current, fieldName)
           ? structuredClone(current[fieldName])
           : structuredClone(field ? field.default : fieldName === "parameters" ? {} : []);
       }
@@ -132,12 +123,12 @@ export function applyOps(scene: Scene, inputOps: readonly unknown[]): ApplyOpsRe
           id: operation.id,
           name: operation.name,
           parent: operation.parent,
-          components: {}
+          components: Object.create(null)
         };
         for (const [name, fields] of Object.entries(operation.components)) {
           if (isRecord(fields)) entity.components[name] = normalizedComponent(name, fields);
         }
-        candidate.entities.push(entity);
+        candidate.entities.splice(operation.index ?? candidate.entities.length, 0, entity);
         inverses.unshift({ op: "delete", id: operation.id });
         break;
       }
@@ -158,19 +149,19 @@ export function applyOps(scene: Scene, inputOps: readonly unknown[]): ApplyOpsRe
           break;
         }
         const [entity] = candidate.entities.splice(indexInScene, 1);
-        inverses.unshift({ op: "create", ...structuredClone(entity) });
+        inverses.unshift({ op: "create", ...structuredClone(entity), index: indexInScene });
         break;
       }
       case "settings": {
         const previous: Partial<Scene["settings"]> = {};
         for (const key of Object.keys(operation.settings)) {
-          if (key in candidate.settings) {
+          if (Object.hasOwn(candidate.settings, key)) {
             const settingKey = key as keyof Scene["settings"];
             previous[settingKey] = structuredClone(candidate.settings[settingKey]) as never;
           }
         }
         inverses.unshift({ op: "settings", settings: previous });
-        Object.assign(candidate.settings, settingsPatch(operation.settings));
+        candidate.settings = { ...candidate.settings, ...structuredClone(operation.settings) };
         break;
       }
     }
@@ -180,6 +171,10 @@ export function applyOps(scene: Scene, inputOps: readonly unknown[]): ApplyOpsRe
   // Deleting a followed object clears camera references in the same undo batch.
   const deletedIds = new Set(scene.entities.filter((entity) => !candidate.entities.some((other) => other.id === entity.id)).map((entity) => entity.id));
   for (const entity of candidate.entities) {
+    if (deletedIds.has(entity.components.Joint?.target as string)) {
+      inverses.push(inverseForUpdate(entity, { Joint: null }));
+      updateEntity(entity, { Joint: null });
+    }
     if (!entity.components.Camera) continue;
     const clear: Record<string, unknown> = {};
     for (const field of ["followTarget", "lookAtTarget"]) {
