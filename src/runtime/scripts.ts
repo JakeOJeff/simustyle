@@ -1,5 +1,6 @@
 import { applyOps } from "../scene/applyOps";
-import type { Scene, SceneOp } from "../scene/types";
+import type { Scene, SceneOp, Vec3 } from "../scene/types";
+import { componentSchemas } from "../registry";
 import { generateScript, type GeneratedHandler } from "../lang/codegen";
 import { typecheckScript } from "../lang/checker";
 import { parseScript } from "../lang/parser";
@@ -7,6 +8,10 @@ import type { ScriptProgram } from "../lang/ast";
 import { COLOR_NAMES, DIRECTIONS, matchAnimation, type RelationName } from "../lang/vocabulary";
 import type { Entity } from "../scene/types";
 import { reactionSource } from "./reactions";
+import * as THREE from "three";
+import { cameraSchema } from "../registry/components/camera";
+import { activeCamera, activateCameraOps, cameraValues, moveCameraOp } from "./camera";
+import { localPosition, reparentOps, uniqueId, worldMatrix } from "../scene/hierarchy";
 import { MotionController, describedMatches, findNamed, halfExtents, placeRelative, positionOf, rotationOf, scaleOf, uniqueName, type RuntimeDescription } from "./commands";
 
 /** Generated handler bodies are generator functions: `yield n` means "wait n seconds". */
@@ -144,8 +149,9 @@ export class ScriptRuntime {
         const entity = self();
         if (!entity) return undefined;
         if (path[0] === "name") return entity.name;
-        const component = Object.entries(entity.components).find(([name]) => name.toLowerCase() === path[0]?.toLowerCase())?.[1];
-        let value: unknown = component?.[path[1] ?? ""];
+        const entry = Object.entries(entity.components).find(([name]) => name.toLowerCase() === path[0]?.toLowerCase());
+        const field = path[1] ?? "";
+        let value: unknown = entry ? entry[1][field] ?? componentSchemas[entry[0]]?.fields[field]?.default : undefined;
         for (const key of path.slice(2)) {
           const vectorIndex = ["x", "y", "z"].indexOf(key);
           value = Array.isArray(value) && vectorIndex >= 0 ? value[vectorIndex] : (value as Record<string, unknown> | undefined)?.[key];
@@ -160,7 +166,9 @@ export class ScriptRuntime {
         if (!actual) return;
         const component = structuredClone(entity.components[actual]);
         const field = path[1];
-        if (path.length === 2) component[field] = applyOperator(component[field], operator, value);
+        if (!(field in component) && componentSchemas[actual]?.fields[field]) component[field] = structuredClone(componentSchemas[actual].fields[field].default);
+        if (path.length === 2) component[field] = applyOperator(component[field], operator,
+          componentSchemas[actual]?.fields[field]?.type === "entityRef" && value && typeof value === "object" && "id" in value ? (value as Handle).id : value);
         else {
           let target = component[field] as Record<string, unknown>;
           for (const key of path.slice(2, -1)) target = target?.[key] as Record<string, unknown>;
@@ -169,11 +177,14 @@ export class ScriptRuntime {
           if (Array.isArray(target) && vectorIndex >= 0) target[vectorIndex] = applyOperator(target[vectorIndex], operator, value);
           else target[key] = applyOperator(target[key], operator, value);
         }
-        const result = applyOps(this.currentScene, [{ op: "update", id: instance.id, components: { [actual]: component } }]);
+        const updates: SceneOp[] = [{ op: "update", id: instance.id, components: { [actual]: component } }];
+        if (actual === "Camera" && component.isActive === true) updates.unshift(...activateCameraOps(this.currentScene, instance.id));
+        const result = applyOps(this.currentScene, updates);
         if (result.errors.length) this.issues.push({ entityId: instance.id, line: 1, column: 1, message: result.errors.join("; ") });
         else this.currentScene = result.scene;
       },
       call: (name, args) => {
+        if (name === "camera" || name.startsWith("camera.")) return this.cameraCall(name, args, instance.id);
         switch (name) {
           case "random": return this.random(Number(args[0]), Number(args[1]));
           case "sin": return Math.sin(Number(args[0]));
@@ -271,6 +282,89 @@ export class ScriptRuntime {
     return context;
   }
 
+  private cameraCall(name: string, args: unknown[], scriptId: string): unknown {
+    const target = (value: unknown) => this.resolveTargets(value as RuntimeTarget, scriptId)[0];
+    const problem = (message: string) => { this.report(scriptId, 1, message); return undefined; };
+    if (name === "camera.create") {
+      const id = uniqueId(this.currentScene, "camera");
+      const label = uniqueName(this.currentScene, String(args[0]), false);
+      this.applyChanges([{ op: "create", id, name: label, parent: null, components: { Transform: { position: args.slice(1, 4) }, Camera: { isActive: !activeCamera(this.currentScene) } } }], scriptId, 1);
+      const created = this.currentScene.entities.find((entity) => entity.id === id);
+      return created ? handle(created) : null;
+    }
+    if (name === "camera.use") {
+      const chosen = target(args[0]);
+      if (!chosen?.components.Camera) return problem("camera.use expects an object with a Camera component.");
+      this.applyChanges(activateCameraOps(this.currentScene, chosen.id), scriptId, 1); return undefined;
+    }
+    const entity = activeCamera(this.currentScene);
+    if (name === "camera") return entity ? handle(entity) : null;
+    if (!entity) return problem("There is no scene camera. Add one or call camera.create(\"Camera\", 0, 4, 10).");
+    const patch = (fields: Record<string, unknown>) => this.applyChanges([{ op: "update", id: entity.id, components: { Camera: fields } }], scriptId, 1);
+    switch (name) {
+      case "camera.get": {
+        const field = String(args[0]);
+        if (!cameraSchema.fields[field]) return problem(`Camera has no parameter '${field}'.`);
+        return cameraValues(entity)[field];
+      }
+      case "camera.set": {
+        const field = String(args[0]);
+        const schema = cameraSchema.fields[field];
+        if (!schema) return problem(`Camera has no parameter '${field}'.`);
+        const value = schema.type === "entityRef" ? (args[1] == null ? null : target(args[1])?.id) : args[1];
+        if (field === "isActive" && value === true) this.applyChanges(activateCameraOps(this.currentScene, entity.id), scriptId, 1);
+        else patch({ [field]: value });
+        return undefined;
+      }
+      case "camera.move":
+        if (entity.components.Camera.followTarget) return problem("Clear camera following with camera.unfollow() before moving it.");
+        this.applyChanges([moveCameraOp(this.currentScene, entity, args.map(Number) as Vec3)], scriptId, 1); return undefined;
+      case "camera.position":
+        this.applyChanges([{ op: "update", id: entity.id, components: { Camera: { followTarget: null }, Transform: { position: localPosition(this.currentScene, entity.parent, args.map(Number) as Vec3) } } }], scriptId, 1); return undefined;
+      case "camera.rotate": {
+        const rotation = rotationOf(entity).map((part, index) => part + Number(args[index])) as Vec3;
+        this.applyChanges([{ op: "update", id: entity.id, components: { Camera: { lookAtTarget: null }, Transform: { rotation } } }], scriptId, 1); return undefined;
+      }
+      case "camera.follow": {
+        const followed = target(args[0]);
+        if (!followed) return problem("camera.follow could not find its target.");
+        patch({ followTarget: followed.id, lookAtTarget: followed.id, followOffset: args.slice(1, 4).map(Number), followDamping: args[4] ?? 0 }); return undefined;
+      }
+      case "camera.unfollow": patch({ followTarget: null, lookAtTarget: null }); return undefined;
+      case "camera.lookAt": {
+        const looked = target(args[0]);
+        if (!looked) return problem("camera.lookAt could not find its target.");
+        patch({ lookAtTarget: looked.id }); return undefined;
+      }
+      case "camera.aim": {
+        const position = new THREE.Vector3().setFromMatrixPosition(worldMatrix(this.currentScene, entity.id));
+        const aim = new THREE.Vector3(...args.map(Number) as Vec3);
+        if (position.distanceToSquared(aim) < 1e-12) return problem("Aim at a point away from the camera.");
+        const parentRotation = new THREE.Quaternion(); worldMatrix(this.currentScene, entity.parent).decompose(new THREE.Vector3(), parentRotation, new THREE.Vector3());
+        const orientation = new THREE.Quaternion().setFromRotationMatrix(new THREE.Matrix4().lookAt(position, aim, new THREE.Vector3(0, 1, 0)));
+        orientation.premultiply(parentRotation.invert());
+        const euler = new THREE.Euler().setFromQuaternion(orientation);
+        this.applyChanges([{ op: "update", id: entity.id, components: { Camera: { lookAtTarget: null }, Transform: { rotation: [euler.x, euler.y, euler.z].map(THREE.MathUtils.radToDeg) } } }], scriptId, 1); return undefined;
+      }
+      case "camera.attach": {
+        const attached = target(args[0]);
+        if (!attached) return problem("camera.attach could not find its object.");
+        // Use reparent validation to reject cycles, then place at the requested local offset.
+        const result = reparentOps(this.currentScene, attached.id, entity.id);
+        if (result.error) return problem(result.error);
+        this.applyChanges([{ op: "update", id: attached.id, parent: entity.id, components: { Transform: { position: args.slice(1, 4).map(Number) } } }], scriptId, 1); return undefined;
+      }
+      case "camera.detach": {
+        const attached = target(args[0]);
+        if (!attached || attached.parent !== entity.id) return problem("camera.detach expects a direct child of the active camera.");
+        const result = reparentOps(this.currentScene, attached.id, null);
+        if (result.error) return problem(result.error);
+        this.applyChanges(result.ops, scriptId, 1); return undefined;
+      }
+      default: return problem(`Unknown camera command '${name}'.`);
+    }
+  }
+
   /** Every entity a target refers to. Bare names fall back to descriptions, so `move ball up` finds a sphere. */
   private resolveTargets(target: RuntimeTarget, selfId: string | null): Entity[] {
     if (!target) return [];
@@ -313,7 +407,7 @@ export class ScriptRuntime {
   }
 
   private isDynamic(entity: Entity): boolean {
-    return Boolean(entity.components.RigidBody) && (entity.components.RigidBody?.bodyType ?? "dynamic") === "dynamic";
+    return Boolean(entity.components.RigidBody) && entity.components.RigidBody?.anchored !== true && (entity.components.RigidBody?.bodyType ?? "dynamic") === "dynamic";
   }
 
   private runCommand(command: RuntimeCommand, ownerId: string): void {
@@ -366,7 +460,7 @@ export class ScriptRuntime {
         return;
       case "push":
         if (!this.isDynamic(entity) || !this.physicsActions?.(entity.id, "applyImpulse", command.vector.map(Number))) {
-          this.report(ownerId, line, `push: '${entity.name}' needs a dynamic RigidBody to be pushed.`);
+          this.report(ownerId, line, `push: '${entity.name}' needs a dynamic RigidBody with Anchor off to be pushed.`);
         }
         return;
       case "animate": {
@@ -538,6 +632,7 @@ export class ScriptRuntime {
   }
 
   releaseKey(key: string): void { this.keysHeld.delete(key); }
+  releaseAllKeys(): void { this.keysHeld.clear(); }
 
   /** An object was clicked in the viewport during Play. */
   click(id: string): void { this.pendingEvents.push({ kind: "click", id }); }
@@ -608,7 +703,26 @@ export function scriptOps(before: Scene, after: Scene): SceneOp[] {
   for (const entity of after.entities) {
     const original = before.entities.find((candidate) => candidate.id === entity.id);
     if (!original) ops.push({ op: "create", id: entity.id, name: entity.name, parent: entity.parent, components: entity.components });
-    else if (JSON.stringify(original.components) !== JSON.stringify(entity.components)) ops.push({ op: "update", id: entity.id, components: entity.components });
+    else {
+      const components: Record<string, Record<string, unknown> | null> = {};
+      for (const name of new Set([...Object.keys(original.components), ...Object.keys(entity.components)])) {
+        const old = original.components[name]; const next = entity.components[name];
+        if (JSON.stringify(old) === JSON.stringify(next)) continue;
+        if (!next) { components[name] = null; continue; }
+        const fields = structuredClone(next);
+        // applyOps merges fields. Explicit defaults clear values omitted by normalization.
+        for (const field of Object.keys(old ?? {})) if (!(field in next)) {
+          const schema = componentSchemas[name]?.fields[field];
+          fields[field] = structuredClone(schema ? schema.default : field === "parameters" ? {} : []);
+        }
+        components[name] = fields;
+      }
+      if (Object.keys(components).length || original.parent !== entity.parent || original.name !== entity.name) ops.push({
+        op: "update", id: entity.id, components,
+        ...(original.parent !== entity.parent ? { parent: entity.parent } : {}),
+        ...(original.name !== entity.name ? { name: entity.name } : {})
+      });
+    }
   }
   for (const entity of before.entities) if (!after.entities.some((candidate) => candidate.id === entity.id)) ops.push({ op: "delete", id: entity.id });
   return ops;

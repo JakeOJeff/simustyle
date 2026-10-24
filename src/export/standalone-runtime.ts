@@ -1,10 +1,16 @@
 import * as THREE from "three";
 import { OrbitControls } from "three/addons/controls/OrbitControls.js";
 import type { Scene, Entity, Vec3 } from "../scene/types";
+import { DEFAULT_SCENE_SETTINGS } from "../scene/types";
 import { AnimatorRuntime } from "../runtime/animator";
 import { ScriptRuntime, scriptOps } from "../runtime/scripts";
 import { applyOps } from "../scene/applyOps";
 import { keyName } from "../lang/vocabulary";
+import { CameraRig, activeCamera } from "../runtime/camera";
+import { CameraInput } from "../runtime/cameraInput";
+import { SurfaceTextureStore } from "../materials/textures";
+import { applySurfaceMapping } from "../materials/mapping";
+import type { TextureAssets } from "../materials/catalog";
 
 type PlayController = { state: "playing" | "paused" | "stopped"; play(scene: Scene): Promise<string[]>; advance(scene: Scene, elapsed: number): Scene; stop(): Scene | null; setScriptParameter(entityId: string, name: string, value: unknown): boolean; pressKey(key: string): void; releaseKey(key: string): void; readonly initialScene: Scene | null };
 
@@ -42,19 +48,12 @@ function meshFor(entity: Entity): THREE.Mesh | null {
   }));
 }
 
-function downloadText(filename: string, text: string, type: string): void {
-  const url = URL.createObjectURL(new Blob([text], { type }));
-  const anchor = document.createElement("a");
-  anchor.href = url;
-  anchor.download = filename;
-  anchor.click();
-  setTimeout(() => URL.revokeObjectURL(url), 10_000);
-}
-
 /** Entry called by the inlined HTML bundle. It uses the editor's ScriptRuntime,
  * AnimatorRuntime, and SimulationController modules directly. */
-export async function startStandalone(sceneInput: Scene): Promise<void> {
-  let scene = structuredClone(sceneInput);
+export async function startStandalone(sceneInput: Scene, textureAssets: TextureAssets = {}): Promise<void> {
+  // HTML stores the compact save format, which omits default scene settings.
+  let scene = { ...structuredClone(sceneInput), settings: { ...structuredClone(DEFAULT_SCENE_SETTINGS), ...sceneInput.settings } };
+  const surfaceTextures = new SurfaceTextureStore(textureAssets);
   const hostElement = document.querySelector<HTMLElement>("#scene");
   const statusElement = document.querySelector<HTMLElement>("#status");
   const playButtonElement = document.querySelector<HTMLButtonElement>("#play");
@@ -75,14 +74,9 @@ export async function startStandalone(sceneInput: Scene): Promise<void> {
   host.appendChild(renderer.domElement);
   const world = new THREE.Scene();
   world.background = new THREE.Color(scene.settings.background);
-  const cameraEntity = scene.entities.find((entity) => record(entity, "Camera").isActive === true);
-  const cameraTransform = record(cameraEntity ?? ({ components: {} } as Entity), "Transform");
-  const camera = new THREE.PerspectiveCamera(
-    typeof record(cameraEntity ?? ({ components: {} } as Entity), "Camera").fov === "number" ? record(cameraEntity ?? ({ components: {} } as Entity), "Camera").fov as number : 50,
-    1, 0.1, 1000
-  );
-  const initialCameraPosition = vector(cameraTransform.position, [7, 6, 9]);
-  camera.position.set(...initialCameraPosition);
+  const camera = new THREE.PerspectiveCamera(50, 1, 0.1, 1000);
+  camera.position.set(7, 6, 9);
+  const cameraRig = new CameraRig();
   const orbit = new OrbitControls(camera, renderer.domElement);
   orbit.enableDamping = true;
   orbit.target.set(0, 0.8, 0);
@@ -119,10 +113,13 @@ export async function startStandalone(sceneInput: Scene): Promise<void> {
       if (ids.has(id)) continue;
       group.removeFromParent();
       meshes.get(id)?.geometry.dispose();
-      (meshes.get(id)?.material as THREE.Material | undefined)?.dispose();
+      const material = meshes.get(id)?.material as THREE.MeshStandardMaterial | undefined;
+      if (material) { surfaceTextures.release(material); material.dispose(); }
       groups.delete(id); meshes.delete(id);
       lights.get(id)?.removeFromParent(); lights.delete(id);
     }
+    // Create every container before parenting, including children listed first.
+    for (const entity of scene.entities) if (!groups.has(entity.id)) groups.set(entity.id, new THREE.Group());
     for (const entity of scene.entities) {
       let group = groups.get(entity.id);
       if (!group) { group = new THREE.Group(); groups.set(entity.id, group); }
@@ -148,7 +145,7 @@ export async function startStandalone(sceneInput: Scene): Promise<void> {
         material.emissiveIntensity = typeof materialData.emissiveIntensity === "number" ? materialData.emissiveIntensity : 0;
         material.opacity = typeof materialData.opacity === "number" ? materialData.opacity : 1;
         material.transparent = material.opacity < 1;
-        material.needsUpdate = true;
+        surfaceTextures.sync(material, materialData);
       }
       if (!lights.has(entity.id)) {
         const light = makeLight(entity);
@@ -162,13 +159,26 @@ export async function startStandalone(sceneInput: Scene): Promise<void> {
       }
     }
     world.background = new THREE.Color(scene.settings.background);
+    // Parent containers can appear after children; map only after all transforms update.
+    for (const entity of scene.entities) {
+      const mesh = meshes.get(entity.id);
+      if (mesh) applySurfaceMapping(mesh, record(entity, "Mesh"), record(entity, "Material"));
+    }
   }
 
   syncScene();
+  await surfaceTextures.ready();
   let controller: PlayController | null = null;
   let scripts: ScriptRuntime | null = null;
   const animator = new AnimatorRuntime();
   let playing = false;
+  const cameraInput = new CameraInput(renderer.domElement, () => playing && activeCamera(scene)?.components.Camera?.controls === "fly");
+  function renderScene(dt = 0): void {
+    orbit.enabled = !activeCamera(scene);
+    if (orbit.enabled) orbit.update();
+    const sceneCamera = cameraRig.update(scene, groups, camera.aspect, dt, !playing);
+    renderer.render(world, sceneCamera ?? camera);
+  }
   let snapshot: Scene | null = null;
   let frame = 0;
   let lastTime = 0;
@@ -202,7 +212,9 @@ export async function startStandalone(sceneInput: Scene): Promise<void> {
 
   async function start(): Promise<void> {
     if (playing) return;
+    status.textContent = query.get("controls") === "1" ? "Playing · controls enabled" : "Playing";
     snapshot = structuredClone(scene);
+    cameraRig.reset(); cameraInput.reset();
     playing = true; elapsed = 0; lastTime = performance.now(); animator.reset();
     if (hasBodies) {
       const { SimulationController } = await import("../runtime/physics");
@@ -215,11 +227,10 @@ export async function startStandalone(sceneInput: Scene): Promise<void> {
       scripts = new ScriptRuntime(scene);
       const started = scripts.start();
       const operations = scriptOps(scene, started);
-      scene = operations.length ? applyOps(scene, operations).scene : started;
+      scene = cameraRig.advanceScene(operations.length ? applyOps(scene, operations).scene : started, 0);
     }
     playButton.disabled = true;
     stopButton.disabled = false;
-    status.textContent = status.textContent || "Playing";
     frame = requestAnimationFrame(tick);
   }
 
@@ -227,6 +238,8 @@ export async function startStandalone(sceneInput: Scene): Promise<void> {
     if (!playing) return;
     const delta = Math.max(0, Math.min(0.1, (now - lastTime) / 1000));
     lastTime = now; elapsed += delta;
+    const cameraOps = cameraInput.advance(scene, delta);
+    if (cameraOps.length) scene = applyOps(scene, cameraOps).scene;
     if (controller) scene = controller.advance(scene, delta);
     else {
       if (scripts) {
@@ -237,10 +250,10 @@ export async function startStandalone(sceneInput: Scene): Promise<void> {
         scene = operations.length ? applyOps(before, operations).scene : next;
       }
       scene = animator.advance(scene, delta).scene;
+      scene = cameraRig.advanceScene(scene, delta);
     }
     syncScene();
-    orbit.update();
-    renderer.render(world, camera);
+    renderScene(delta);
     frame = requestAnimationFrame(tick);
   }
 
@@ -251,7 +264,9 @@ export async function startStandalone(sceneInput: Scene): Promise<void> {
     else if (snapshot) scene = structuredClone(snapshot);
     snapshot = null;
     controller = null; scripts = null; animator.reset();
+    cameraRig.reset(); cameraInput.reset();
     syncScene();
+    renderScene();
     playButton.disabled = false;
     stopButton.disabled = true;
     status.textContent = "Stopped";
@@ -262,18 +277,20 @@ export async function startStandalone(sceneInput: Scene): Promise<void> {
   // Keyboard input for "when space is pressed" and "key left is pressed".
   addEventListener("keydown", (event) => { if (!event.repeat) { controller?.pressKey(keyName(event.key)); scripts?.pressKey(keyName(event.key)); } });
   addEventListener("keyup", (event) => { controller?.releaseKey(keyName(event.key)); scripts?.releaseKey(keyName(event.key)); });
+  addEventListener("blur", () => {
+    for (const key of ["w", "a", "s", "d", "q", "e", "space", "left", "right", "up", "down"]) { controller?.releaseKey(key); scripts?.releaseKey(key); }
+  });
+  addEventListener("pagehide", () => { surfaceTextures.dispose(); cameraInput.dispose(); orbit.dispose(); renderer.dispose(); }, { once: true });
   function resize(): void {
     const width = host.clientWidth || innerWidth;
     const height = host.clientHeight || innerHeight;
     renderer.setSize(width, height, false);
     camera.aspect = width / Math.max(1, height);
     camera.updateProjectionMatrix();
+    renderScene();
   }
   addEventListener("resize", resize);
   resize();
-  renderer.render(world, camera);
-  status.textContent = query.get("controls") === "1" ? "Playing · controls enabled" : "Playing";
+  renderScene();
   void start().catch((error: unknown) => { status.textContent = error instanceof Error ? error.message : String(error); });
 }
-
-export { downloadText };

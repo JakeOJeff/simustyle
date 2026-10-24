@@ -1,0 +1,11 @@
+{
+  "version": 1,
+  "skills": {
+    "remotion-markup": {
+      "source": "remotion-dev/skills",
+      "sourceType": "github",
+      "skillPath": "skills/remotion-markup/SKILL.md",
+      "computedHash": "c9eae2094e92b15763da04123a88ee90538fa2539e6d31e0293f76aa37a98bc5"
+    }
+  }
+}

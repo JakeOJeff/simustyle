@@ -1,9 +1,12 @@
 import * as THREE from "three";
 import { GLTFExporter } from "three/addons/exporters/GLTFExporter.js";
 import type { Entity, Scene, Vec3 } from "../scene/types";
+import { CameraRig, createSceneCamera } from "../runtime/camera";
+import { SurfaceTextureStore } from "../materials/textures";
+import { applySurfaceMapping } from "../materials/mapping";
 
 /** Builds the scene's renderable objects using the same primitive and material rules as the viewport. */
-export function createThreeScene(scene: Scene): THREE.Scene {
+export function createThreeScene(scene: Scene, surfaceTextures?: SurfaceTextureStore): THREE.Scene {
   const output = new THREE.Scene();
   output.name = "SimuStyle Scene";
   output.background = new THREE.Color(scene.settings.background);
@@ -26,12 +29,12 @@ export function createThreeScene(scene: Scene): THREE.Scene {
         opacity: numberField(materialData, "opacity", 1)
       });
       material.transparent = material.opacity < 1;
+      surfaceTextures?.sync(material, materialData);
       object = new THREE.Mesh(geometry, material);
     } else if (entity.components.Light) {
       object = lightFor(lightData);
     } else if (entity.components.Camera) {
-      const cameraData = component(entity, "Camera");
-      object = new THREE.PerspectiveCamera(numberField(cameraData, "fov", 50), 1, 0.1, 1000);
+      object = createSceneCamera(entity);
     }
 
     // Transform-only entities still form useful parent groups for child objects.
@@ -44,6 +47,7 @@ export function createThreeScene(scene: Scene): THREE.Scene {
     object.rotation.set(...rotation.map(THREE.MathUtils.degToRad) as Vec3);
     object.scale.fromArray(vec3(transform.scale, [1, 1, 1]));
     objects.set(entity.id, object);
+    if (entity.components.Camera && !(object instanceof THREE.Camera)) object.add(createSceneCamera(entity));
   }
 
   // Attach after creation so parent entities may appear later in the scene array.
@@ -53,13 +57,33 @@ export function createThreeScene(scene: Scene): THREE.Scene {
     const parent = entity?.parent ? objects.get(entity.parent) : undefined;
     (parent ?? output).add(object);
   }
+  new CameraRig().update(scene, objects, 1, 0);
+  output.updateMatrixWorld(true);
+  for (const entity of scene.entities) {
+    const object = objects.get(entity.id);
+    if (object instanceof THREE.Mesh) applySurfaceMapping(object, component(entity, "Mesh"), component(entity, "Material"));
+  }
   return output;
 }
 
 /** Exports the current scene as a binary glTF Blob suitable for a .glb download. */
 export async function exportSceneGlb(scene: Scene): Promise<Blob> {
-  const exportScene = createThreeScene(scene);
+  const surfaceTextures = new SurfaceTextureStore();
+  const exportScene = createThreeScene(scene, surfaceTextures);
   try {
+    await surfaceTextures.ready();
+    // glTF stores the lens itself, so bake Three's extra zoom multiplier into it.
+    exportScene.traverse((object) => {
+      // glTF occlusion strength is bounded to 0..1; the editor allows stronger crevice shading.
+      if (object instanceof THREE.Mesh) for (const material of Array.isArray(object.material) ? object.material : [object.material]) {
+        if (material instanceof THREE.MeshStandardMaterial) material.aoMapIntensity = Math.min(1, material.aoMapIntensity);
+      }
+      if (object instanceof THREE.PerspectiveCamera) { object.fov = object.getEffectiveFOV(); object.zoom = 1; object.updateProjectionMatrix(); }
+      else if (object instanceof THREE.OrthographicCamera) {
+        object.left /= object.zoom; object.right /= object.zoom; object.top /= object.zoom; object.bottom /= object.zoom;
+        object.zoom = 1; object.updateProjectionMatrix();
+      }
+    });
     const result = await new GLTFExporter().parseAsync(exportScene, { binary: true, trs: true });
     if (!(result instanceof ArrayBuffer)) {
       throw new Error("GLB export did not return binary data.");
@@ -77,6 +101,7 @@ export async function exportSceneGlb(scene: Scene): Promise<Blob> {
     });
     geometries.forEach((geometry) => geometry.dispose());
     materials.forEach((material) => material.dispose());
+    surfaceTextures.dispose();
   }
 }
 

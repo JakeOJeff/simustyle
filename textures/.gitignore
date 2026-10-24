@@ -1,0 +1,2 @@
+# Keep original high-resolution archives locally; ship only optimized runtime maps.
+*.zip

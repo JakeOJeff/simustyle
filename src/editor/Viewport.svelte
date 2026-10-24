@@ -5,8 +5,12 @@
   import { TransformControls } from "three/addons/controls/TransformControls.js";
   import { ChevronDown, Focus, House } from "@lucide/svelte";
   import { easeProgress } from "../runtime/easing";
+  import { CameraRig, activeCamera } from "../runtime/camera";
+  import { CameraInput } from "../runtime/cameraInput";
+  import { SurfaceTextureStore } from "../materials/textures";
+  import { applySurfaceMapping } from "../materials/mapping";
   import { emitTutorial } from "./tutorial/tutorialState.svelte";
-  import type { Entity, Scene, Vec3 } from "../scene/types";
+  import type { Entity, Scene, SceneOp, Vec3 } from "../scene/types";
 
   /** "select" picks objects without showing a transform gizmo. */
   type TransformMode = "select" | "translate" | "rotate" | "scale";
@@ -40,11 +44,16 @@
     snap: boolean;
     /** Press-and-drag objects to slide them across surfaces (off during Play). */
     canDrag?: boolean;
+    playState?: "stopped" | "playing" | "paused";
+    onCameraInput?: (ops: SceneOp[]) => void;
     /** Extra floating controls drawn over the canvas (tool rail, create shelf). */
     overlay?: Snippet;
   }
 
-  let { scene, selectedId, selectedIds, mode, onSelect, onSelectMany, onTransform, onModeChange, onContextMenu, frameToken, focusToken, gridVisible, space, snap, canDrag = true, overlay }: Props = $props();
+  let { scene, selectedId, selectedIds, mode, onSelect, onSelectMany, onTransform, onModeChange, onContextMenu, frameToken, focusToken, gridVisible, space, snap, canDrag = true, playState = "stopped", onCameraInput, overlay }: Props = $props();
+  let cameraPreview = $state(false);
+  const sceneView = $derived(playState !== "stopped" || cameraPreview);
+  const sceneCameraName = $derived(activeCamera(scene)?.name ?? "No scene camera");
   let host: HTMLDivElement;
   let marquee: { left: number; top: number; width: number; height: number } | null = $state(null);
   let viewControls: { setView(view: ViewPreset): void; frame(): void } | null = null;
@@ -109,12 +118,16 @@
     const world = new THREE.Scene();
     world.background = new THREE.Color(scene.settings.background);
     const camera = new THREE.PerspectiveCamera(50, 1, 0.1, 1000);
+    let renderCamera: THREE.Camera = camera;
+    const cameraRig = new CameraRig();
+    const cameraInput = new CameraInput(renderer.domElement, () => playState === "playing" && activeCamera(scene)?.components.Camera?.controls === "fly");
     camera.position.set(7, 6, 9);
     const orbit = new OrbitControls(camera, renderer.domElement);
     orbit.enableDamping = true;
     orbit.target.set(0, 0.8, 0);
+    orbit.mouseButtons.LEFT = null;
     orbit.mouseButtons.MIDDLE = THREE.MOUSE.PAN;
-    orbit.mouseButtons.RIGHT = null;
+    orbit.mouseButtons.RIGHT = THREE.MOUSE.ROTATE;
 
     // Matches the standalone export: the scene's ambient setting plus a fixed base fill.
     const ambient = new THREE.HemisphereLight(0xe8efff, 0x44404b, scene.settings.ambientLightIntensity + 0.7);
@@ -131,6 +144,7 @@
     if (mode !== "select") gizmo.setMode(mode);
     world.add(gizmo.getHelper());
     const entityObjects = new Map<string, THREE.Object3D>();
+    const surfaceTextures = new SurfaceTextureStore();
     const lightObjects = new Map<string, THREE.Light>();
     const markerObjects = new Map<string, THREE.Mesh>();
     const selectionHelpers = new Map<string, THREE.BoxHelper>();
@@ -138,6 +152,9 @@
     const pointer = new THREE.Vector2();
     let downX = 0;
     let downY = 0;
+    const rightClickMaxMs = 250;
+    const rightClickSlop = 4;
+    let rightPress: { pointerId: number; x: number; y: number; startedAt: number; moved: boolean } | null = null;
     let marqueeStart: { x: number; y: number; pointerId: number } | null = null;
     let orbitWasEnabled = true;
     let frame = 0;
@@ -194,13 +211,13 @@
     function pick(event: PointerEvent) {
       if (Math.hypot(event.clientX - downX, event.clientY - downY) > 4) return;
       setPointer(event);
-      raycaster.setFromCamera(pointer, camera);
+      raycaster.setFromCamera(pointer, renderCamera);
       const entity = pickEntity();
       onSelect(entity ?? null);
     }
     function pickContextMenu(event: MouseEvent) {
       setPointer(event);
-      raycaster.setFromCamera(pointer, camera);
+      raycaster.setFromCamera(pointer, renderCamera);
       const pickables = [...[...entityObjects.values()].filter((object) => object instanceof THREE.Mesh), ...markerObjects.values()];
       const hit = raycaster.intersectObjects(pickables, false)[0];
       const entity = hit?.object.userData.markerFor ?? hit?.object.userData.entityId;
@@ -210,6 +227,16 @@
       const placement = hit?.point ?? groundHit;
       onContextMenu(entity ?? null, event.clientX, event.clientY, placement ? [placement.x, placement.y, placement.z] : null);
     }
+    function contextMenu(event: MouseEvent) {
+      // Browsers may fire this on press or release. Mouse menus are decided on
+      // pointer-up so a held RMB can orbit without opening a menu mid-gesture.
+      event.preventDefault();
+      if (event.button !== 2 && !rightPress) pickContextMenu(event);
+    }
+    // Viewport controls sit above the canvas, so the canvas listener alone cannot
+    // suppress the browser menu for every right-click in the 3D work area.
+    const preventNativeContextMenu = (event: MouseEvent) => event.preventDefault();
+    host.addEventListener("contextmenu", preventNativeContextMenu, { capture: true });
     function updateMarquee(event: PointerEvent) {
       if (!marqueeStart) return;
       const rect = renderer.domElement.getBoundingClientRect();
@@ -296,10 +323,10 @@
     }
     viewControls = { setView, frame: focusSelected };
     orbit.addEventListener("start", () => { cameraTween = null; activeView = null; cameraGesture = null; });
-    // Report finished camera gestures to the tutorials: left-drag orbits, middle-drag pans, the wheel zooms.
+    // Report finished camera gestures to the tutorials: right-drag orbits, middle-drag pans, the wheel zooms.
     let pointerButton: number | null = null;
     let cameraGesture: string | null = null;
-    orbit.addEventListener("change", () => { cameraGesture ??= pointerButton === 0 ? "camera-orbit" : pointerButton === 1 ? "camera-pan" : pointerButton === null ? "camera-zoom" : null; });
+    orbit.addEventListener("change", () => { cameraGesture ??= pointerButton === 2 ? "camera-orbit" : pointerButton === 1 ? "camera-pan" : pointerButton === null ? "camera-zoom" : null; });
     orbit.addEventListener("end", () => { if (cameraGesture) emitTutorial(cameraGesture); cameraGesture = null; });
     // Roblox-style dragging: press on an object and move the mouse to slide it across the
     // ground and the tops of other objects. A press without movement still just selects.
@@ -416,6 +443,8 @@
       pointerButton = event.button;
       downX = event.clientX;
       downY = event.clientY;
+      rightPress = event.button === 2 ? { pointerId: event.pointerId, x: event.clientX, y: event.clientY, startedAt: performance.now(), moved: false } : null;
+      if (sceneView) return;
       if (beginObjectDrag(event)) return;
       if (event.button === 0 && event.ctrlKey && !gizmo.dragging) {
         event.preventDefault();
@@ -427,6 +456,10 @@
       }
     };
     const pointerMove = (event: PointerEvent) => {
+      if (rightPress?.pointerId === event.pointerId) {
+        if (!(event.buttons & 2)) rightPress = null;
+        else if (Math.hypot(event.clientX - rightPress.x, event.clientY - rightPress.y) > rightClickSlop) rightPress.moved = true;
+      }
       if (objectDrag?.pointerId === event.pointerId) { moveObjectDrag(event); return; }
       updateMarquee(event);
       lastHover = event;
@@ -434,6 +467,15 @@
     };
     const pointerUp = (event: PointerEvent) => {
       pointerButton = null;
+      const press = rightPress;
+      rightPress = null;
+      if (event.button === 2) {
+        const rect = renderer.domElement.getBoundingClientRect();
+        if (press?.pointerId === event.pointerId && !press.moved && performance.now() - press.startedAt < rightClickMaxMs
+          && Math.hypot(event.clientX - press.x, event.clientY - press.y) <= rightClickSlop
+          && event.clientX >= rect.left && event.clientX < rect.right && event.clientY >= rect.top && event.clientY < rect.bottom) pickContextMenu(event);
+        return;
+      }
       if (objectDrag?.pointerId === event.pointerId && endObjectDrag(true)) return;
       if (marqueeStart?.pointerId === event.pointerId) { finishMarquee(event); return; }
       if (event.button === 0) pick(event);
@@ -441,6 +483,7 @@
     const pointerLeave = () => { lastHover = null; if (!objectDrag) setCursor(""); };
     const pointerCancel = () => {
       pointerButton = null;
+      rightPress = null;
       if (objectDrag) endObjectDrag(true);
       if (!marqueeStart) return;
       marqueeStart = null;
@@ -453,14 +496,18 @@
     renderer.domElement.addEventListener("pointermove", pointerMove);
     renderer.domElement.addEventListener("pointerup", pointerUp);
     renderer.domElement.addEventListener("pointercancel", pointerCancel);
-    renderer.domElement.addEventListener("contextmenu", pickContextMenu);
+    renderer.domElement.addEventListener("contextmenu", contextMenu);
+    const cancelRightPress = () => { rightPress = null; };
+    renderer.domElement.addEventListener("lostpointercapture", cancelRightPress);
+    window.addEventListener("blur", cancelRightPress);
 
     function onKey(event: KeyboardEvent) {
+      if (sceneView || event.ctrlKey || event.metaKey || event.altKey || event.defaultPrevented) return;
       if (event.target instanceof HTMLElement && (event.target.isContentEditable || ["INPUT", "TEXTAREA", "SELECT"].includes(event.target.tagName))) return;
       if (event.key.toLowerCase() === "q") onModeChange("select");
       else if (event.key.toLowerCase() === "w") onModeChange("translate");
-      else if (event.key.toLowerCase() === "e") onModeChange("rotate");
-      else if (event.key.toLowerCase() === "r") onModeChange("scale");
+      else if (event.key.toLowerCase() === "e") onModeChange("scale");
+      else if (event.key.toLowerCase() === "r") onModeChange("rotate");
       else if (event.key.toLowerCase() === "f") focusSelected();
     }
     window.addEventListener("keydown", onKey);
@@ -470,8 +517,10 @@
       if (object instanceof THREE.Mesh) {
         object.geometry.dispose();
         const material = object.material;
-        if (Array.isArray(material)) material.forEach((item) => item.dispose());
-        else material.dispose();
+        for (const item of Array.isArray(material) ? material : [material]) {
+          if (item instanceof THREE.MeshStandardMaterial) surfaceTextures.release(item);
+          item.dispose();
+        }
       }
     }
 
@@ -592,6 +641,7 @@
         material.opacity = typeof materialData.opacity === "number" ? materialData.opacity : 1;
         material.transparent = material.opacity < 1;
         material.wireframe = shading === "wireframe";
+        surfaceTextures.sync(material, materialData);
       }
 
       // Parent once every object exists, so children listed before their parent still attach.
@@ -601,6 +651,11 @@
         syncMarker(entity, object);
         const intendedParent = (entity.parent ? entityObjects.get(entity.parent) : undefined) ?? world;
         if (object.parent !== intendedParent) intendedParent.add(object);
+      }
+
+      for (const entity of scene.entities) {
+        const object = entityObjects.get(entity.id);
+        if (object instanceof THREE.Mesh) applySurfaceMapping(object, entity.components.Mesh ?? {}, entity.components.Material ?? {});
       }
 
       for (const [id, helper] of selectionHelpers) {
@@ -622,8 +677,8 @@
         helper.update();
       }
       const selected = selectedId ? entityObjects.get(selectedId) : undefined;
-      if (selected && mode !== "select" && selected !== gizmo.object) gizmo.attach(selected);
-      else if ((!selected || mode === "select") && gizmo.object) gizmo.detach();
+      if (selected && mode !== "select" && !sceneView && selected !== gizmo.object) gizmo.attach(selected);
+      else if ((!selected || mode === "select" || sceneView) && gizmo.object) gizmo.detach();
       world.background = new THREE.Color(scene.settings.background);
       orbit.update();
     }
@@ -650,13 +705,31 @@
       }).sort((a, b) => a.depth - b.depth);
     }
 
+    let lastRender = performance.now();
+    let wasSceneView = false;
     const render = (now = performance.now()) => {
       if (disposed) return;
       frame = requestAnimationFrame(render);
-      stepCameraTween(now);
-      orbit.update();
+      const dt = Math.max(0, Math.min(0.1, (now - lastRender) / 1000));
+      lastRender = now;
+      if (sceneView !== wasSceneView) {
+        cameraRig.reset(); cameraInput.reset();
+        // Remove effective follow poses when returning to the editor camera.
+        for (const entity of scene.entities) { const object = entityObjects.get(entity.id); if (object) applyTransform(object, entity); }
+        wasSceneView = sceneView;
+      }
+      orbit.enabled = !sceneView && !gizmo.dragging && !objectDrag && !marqueeStart;
+      gizmo.enabled = !sceneView;
+      if (sceneView) {
+        const ops = cameraInput.advance(scene, dt);
+        if (ops.length) onCameraInput?.(ops);
+        renderCamera = cameraRig.update(scene, entityObjects, camera.aspect, dt, playState === "stopped") ?? camera;
+      } else { renderCamera = camera; stepCameraTween(now); orbit.update(); }
+      grid.visible = gridVisible && !sceneView;
+      for (const marker of markerObjects.values()) marker.visible = !sceneView;
+      for (const helper of selectionHelpers.values()) helper.visible = !sceneView;
       updateAxisMarks();
-      renderer.render(world, camera);
+      renderer.render(world, renderCamera);
     };
     render();
 
@@ -666,6 +739,7 @@
         selectedId;
         selectedIds;
         shading;
+        sceneView;
         syncEntities();
       });
       $effect(() => {
@@ -701,12 +775,18 @@
       renderer.domElement.removeEventListener("pointermove", pointerMove);
       renderer.domElement.removeEventListener("pointerup", pointerUp);
       renderer.domElement.removeEventListener("pointercancel", pointerCancel);
-      renderer.domElement.removeEventListener("contextmenu", pickContextMenu);
+      renderer.domElement.removeEventListener("contextmenu", contextMenu);
+      host.removeEventListener("contextmenu", preventNativeContextMenu, { capture: true });
+      renderer.domElement.removeEventListener("lostpointercapture", cancelRightPress);
+      window.removeEventListener("blur", cancelRightPress);
       window.removeEventListener("keydown", onKey);
       gizmo.removeEventListener("objectChange", onObjectChange);
       gizmo.removeEventListener("dragging-changed", onDraggingChanged);
       gizmo.dispose();
       orbit.dispose();
+      cameraInput.dispose();
+      for (const light of lightObjects.values()) light.dispose();
+      for (const marker of markerObjects.values()) disposeObject(marker);
       for (const object of entityObjects.values()) {
         if (object instanceof THREE.Mesh) {
           object.geometry.dispose();
@@ -717,6 +797,7 @@
       }
       for (const helper of selectionHelpers.values()) helper.geometry.dispose();
       renderer.dispose();
+      surfaceTextures.dispose();
       renderer.domElement.remove();
     };
   });
@@ -729,6 +810,8 @@
     <div class="selection-marquee" style={`left:${marquee.left}px;top:${marquee.top}px;width:${marquee.width}px;height:${marquee.height}px`}></div>
   {/if}
   <div class="view-menus">
+    <button class="menu-trigger" class:active={sceneView} disabled={playState !== "stopped"} title="Preview the active scene camera" onclick={() => cameraPreview = !cameraPreview}>{sceneView ? sceneCameraName : "Scene camera"}</button>
+    {#if !sceneView}
     <div class="view-menu">
       <button class="menu-trigger" aria-haspopup="menu" aria-expanded={openMenu === "view"} title="Camera view" onclick={() => (openMenu = openMenu === "view" ? null : "view")}>
         {viewLabel}<ChevronDown size={13} />
@@ -753,8 +836,9 @@
         </div>
       {/if}
     </div>
+    {/if}
   </div>
-  <div class="view-nav">
+  {#if !sceneView}<div class="view-nav">
     <svg class="axis-gizmo" viewBox="-37 -37 74 74" role="group" aria-label="View axes">
       <circle class="gizmo-face" r="36" />
       {#each axisMarks as mark (mark.key)}
@@ -775,7 +859,10 @@
       <button title="Frame selected (F)" aria-label="Frame selected" disabled={!selectedId} onclick={() => viewControls?.frame()}><Focus size={15} /></button>
       <button title="Reset camera" aria-label="Reset camera" onclick={() => viewControls?.setView("home")}><House size={15} /></button>
     </div>
-  </div>
+  </div>{/if}
+  {#if playState === "playing" && activeCamera(scene)?.components.Camera?.controls === "fly"}
+    <div class="camera-hint">Click view · WASD move · Q/E down/up · drag to look · Shift faster</div>
+  {/if}
   {#if overlay}{@render overlay()}{/if}
 </div>
 
@@ -828,6 +915,8 @@
   }
 
   .menu-trigger :global(svg) { color: #a1a1aa; }
+  .menu-trigger.active { color: #e1dbff; border-color: #8b7cf666; }
+  .camera-hint { position: absolute; bottom: 12px; left: 50%; transform: translateX(-50%); padding: 6px 10px; border-radius: 6px; background: #18181bd9; color: #c5c5cb; font: 11px 'DM Sans', sans-serif; pointer-events: none; white-space: nowrap; }
   .menu-trigger:hover, .menu-trigger[aria-expanded="true"] { border-color: #ffffff26; background: #232327e6; }
 
   .menu {

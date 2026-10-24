@@ -15,7 +15,7 @@ export interface HighlightSpan {
 const keywords = new Set(["param", "setting", "let", "on", "every", "when", "forever", "if", "then", "else", "otherwise", "while", "repeat", "times", "until", "and", "or", "not", "is", "isn't", "equals", "true", "false", "yes", "no", "start", "starts", "started", "frame", "collide", "clicked", "pressed", "press", "touch", "touches", "receive", "hear", "game", "seconds", "second"]);
 const commands = new Set<string>([...COMMAND_WORDS, ...SENTENCE_WORDS, ...ANIMATION_VERBS]);
 const phrases = new Set(["the", "to", "by", "over", "in", "for", "as", "like", "above", "below", "under", "underneath", "beneath", "beside", "next", "near", "behind", "front", "of", "top", "with", "times", "degrees", "s", "animating", "one", "at", "from", "called", "named", "than", "more", "less", "least", "most", "all", "every", "each", "children", "parent", "key", "distance", "random", "a", "an", ...Object.keys(DIRECTION_ALIASES), ...Object.keys(SUPERLATIVES)]);
-const builtins = new Set(["self", "me", "myself", "my", "i", "it", "everyone", "time", "dt", "random", "sin", "cos", "abs", "min", "max", "clamp", "lerp", "sqrt", "print", "spawn", "destroy", "find"]);
+const builtins = new Set(["camera", "self", "me", "myself", "my", "i", "it", "everyone", "time", "dt", "random", "sin", "cos", "abs", "min", "max", "clamp", "lerp", "sqrt", "print", "spawn", "destroy", "find"]);
 
 /** Every word the highlighter colors as syntax; Parse autocorrect matches typos against these. */
 export const SYNTAX_WORDS: ReadonlySet<string> = new Set([...keywords, ...commands, ...phrases, ...builtins, ...Object.keys(COLOR_NAMES)]);

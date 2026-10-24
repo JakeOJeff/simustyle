@@ -4,6 +4,7 @@
   import { settingSchemas } from "../scene/validate";
   import { parseScript } from "../lang/parser";
   import { typecheckScript } from "../lang/checker";
+  import { surfaceTexture, normalTexture, texturePaths, textureUrl } from "../materials/catalog";
   import type { ScriptHandler } from "../lang/ast";
   import { Atom, Camera, ChevronDown, ChevronRight, Clapperboard, Cuboid, Diamond, FileCode, Globe, Lightbulb, Link, Move3d, Palette, Plus, Shapes, Sparkles, X } from "@lucide/svelte";
 
@@ -35,9 +36,10 @@
     /** Viewport grid snap, shown in the scene settings. */
     snap?: boolean;
     onSnap?: (enabled: boolean) => void;
+    readOnly?: boolean;
   }
 
-  let { scene, entity, onUpdate, onRemove, onAdd, onKeyframe, onOpenScript, onRename, onReparent, onSettings, onPhysics, onCollision, playhead = 0, onOpenTimeline, onAnimate, snap = false, onSnap }: Props = $props();
+  let { scene, entity, onUpdate, onRemove, onAdd, onKeyframe, onOpenScript, onRename, onReparent, onSettings, onPhysics, onCollision, playhead = 0, onOpenTimeline, onAnimate, snap = false, onSnap, readOnly = false }: Props = $props();
 
   /** "keyed": a key sits at the playhead; "animated": the field has a track; otherwise not animated. */
   function keyState(component: string, field: string): "keyed" | "animated" | "none" {
@@ -60,17 +62,22 @@
   const friendly: Record<string, { title: string; hint: string }> = {
     Transform: { title: "Position, rotation & size", hint: "Where it is. Inside a group, these are relative to the group." },
     Mesh: { title: "Shape", hint: "The visible 3D shape." },
-    Material: { title: "Look", hint: "Color, shine, glow, and see-through." },
+    Material: { title: "Look", hint: "Color, surface texture, tiling, shine, glow, and see-through. Color tints the texture; white keeps its original colors." },
     RigidBody: { title: "Physics", hint: "Makes it fall, bounce, and collide during Play." },
     Collider: { title: "Collider", hint: "Makes it solid and touchable during Play, and can react when touched." },
     Joint: { title: "Joint", hint: "Connects this physics body to another object." },
     Light: { title: "Light", hint: "Lights up the scene." },
-    Camera: { title: "Camera", hint: "A viewpoint for the scene." },
+    Camera: { title: "Camera", hint: "Used in Play and Scene camera preview. Forward is local -Z. Parent objects here to carry them. Follow offset uses world axes; damping 0 snaps, larger values catch up faster. Fly: click view, WASD, Q/E, drag to look." },
     Script: { title: "Script", hint: "Plain-sentence instructions this object follows during Play." },
     Animator: { title: "Animation", hint: "Keyframes made on the Timeline." }
   };
 
   function label(name: string): string {
+    if (name === "textureMapping") return "Mapping";
+    if (name === "normalTexture") return "Normal map";
+    if (name === "normalStrength") return "Normal map strength";
+    if (name === "reliefDepth") return "Relief depth (m)";
+    if (name === "occlusionStrength") return "Crevice shadow";
     const spaced = name.replace(/([a-z])([A-Z])/g, "$1 $2");
     return spaced[0]!.toUpperCase() + spaced.slice(1).toLowerCase();
   }
@@ -163,9 +170,21 @@
   }
 
   function keyframeable(field: FieldSchema): boolean { return field.type === "float" || field.type === "vec3" || field.type === "color"; }
+
+  function commitNumber(input: HTMLInputElement, current: number, schema: FieldSchema, commit: (value: number) => void) {
+    const raw = input.value.trim();
+    const value = Number(raw);
+    input.value = String(current);
+    if (!raw || !Number.isFinite(value)) return;
+    if ((schema.type === "float" || schema.type === "int" || schema.type === "vec3") &&
+        (schema.min !== undefined && value < schema.min || schema.max !== undefined && value > schema.max)) return;
+    if (schema.type === "int" && !Number.isInteger(value)) return;
+    commit(value);
+  }
 </script>
 
 <aside class="inspector panel" data-tutorial-target="inspector">
+  <fieldset disabled={readOnly} style="display:contents">
 
   {#if entity}
     {@const EntityIcon = entityIcon(entity)}
@@ -184,7 +203,7 @@
     </label>
     <label class="name-field">
       <span>INSIDE</span>
-      <select class="field-select" value={entity.parent ?? "__top__"} onchange={(event) => onReparent(event.currentTarget.value === "__top__" ? null : event.currentTarget.value)}>
+      <select class="field-select" value={entity.parent ?? "__top__"} onchange={(event) => { const parent = event.currentTarget.value === "__top__" ? null : event.currentTarget.value; event.currentTarget.value = entity.parent ?? "__top__"; onReparent(parent); }}>
         <option value="__top__">Nothing (top level)</option>
         {#each parentOptions(entity) as option (option.id)}<option value={option.id}>{option.name}</option>{/each}
       </select>
@@ -193,6 +212,11 @@
       <label title="Falls, bounces, and can be pushed during Play. Settings appear in the Physics section below."><span>Physics</span>
         <button class:checked={Boolean(entity.components.RigidBody)} class="toggle" data-tutorial-target="inspector-physics" role="switch" aria-label="Physics" aria-checked={Boolean(entity.components.RigidBody)} onclick={() => onPhysics(!entity.components.RigidBody)}><i></i></button>
       </label>
+      {#if entity.components.RigidBody}
+        <label title="Keeps this object fixed against gravity, pushes, and collisions. Turn off to use its selected body type again."><span>Anchor</span>
+          <button class:checked={entity.components.RigidBody.anchored === true} class="toggle" data-tutorial-target="inspector-anchor" role="switch" aria-label="Anchor" aria-checked={entity.components.RigidBody.anchored === true} onclick={() => update("RigidBody", "anchored", entity.components.RigidBody.anchored !== true)}><i></i></button>
+        </label>
+      {/if}
       <label title={scene.settings.collisions ? "Solid and touchable during Play: bumps into things and fires 'when I touch'." : "Collisions are off for the whole scene (toolbar). This object's setting applies when they are back on."}><span>Collision{scene.settings.collisions ? "" : " (scene off)"}</span>
         <button class:checked={collides(entity)} class="toggle" data-tutorial-target="inspector-collision" role="switch" aria-label="Collision" aria-checked={collides(entity)} onclick={() => onCollision(!collides(entity))}><i></i></button>
       </label>
@@ -213,6 +237,22 @@
           </div>
           {#if openComponents[component] ?? true}
             <div class="fields">
+              {#if component === "Material" && surfaceTexture(fields.texture)}
+                <div class="surface-preview">
+                  <img src={textureUrl(texturePaths(fields.texture).Color!)} alt="{surfaceTexture(fields.texture)?.label} texture" width="48" height="48" />
+                  <span>White keeps the texture colors.</span>
+                </div>
+              {/if}
+              {#if component === "Material" && normalTexture(fields)}
+                {@const normal = normalTexture(fields)!}
+                <div class="surface-preview normal-preview">
+                  <img src={textureUrl(texturePaths(normal.id).NormalGL!)} alt="{normal.label} normal map" width="48" height="48" />
+                  <span><strong>{normal.label} normal map</strong><br />Adds surface lighting detail. Raise strength for fine grain.</span>
+                </div>
+              {/if}
+              {#if component === "Material" && (surfaceTexture(fields.texture) || normalTexture(fields))}
+                <p class="mapping-hint">{fields.textureMapping === "stretch" ? "Fits one image across each surface." : fields.textureMapping === "custom" ? "Set your own repeat counts below." : "Repeats automatically at one tile per meter, including group size. Resizing keeps the pattern size."}</p>
+              {/if}
               {#if component === "Script"}
                 {@const summary = inspectScript(fields.source)}
                 <p class="script-owner">Runs on <b>{entity.name}</b> during Play. In this script, <code>me</code> means {entity.name}{scene.entities.some((candidate) => candidate.parent === entity.id) ? " and " : ""}{#if scene.entities.some((candidate) => candidate.parent === entity.id)}<code>my children</code> means the objects inside it{/if}.</p>
@@ -224,7 +264,12 @@
                 <button class="open-script" onclick={onOpenScript}>Edit script</button>
               {/if}
               {#each Object.entries(schema.fields) as [fieldName, field] (fieldName)}
-                {#if !(component === "Script" && fieldName === "source")}
+                {#if !(component === "Script" && fieldName === "source") && !(component === "RigidBody" && fieldName === "anchored") && !(component === "Material" && (
+                  ((fieldName === "textureRepeatX" || fieldName === "textureRepeatY") && ((!surfaceTexture(fields.texture) && !normalTexture(fields)) || fields.textureMapping !== "custom")) ||
+                  (fieldName === "textureMapping" && !surfaceTexture(fields.texture) && !normalTexture(fields)) ||
+                  (fieldName === "normalStrength" && !normalTexture(fields)) ||
+                  ((fieldName === "reliefDepth" || fieldName === "occlusionStrength") && !(normalTexture(fields) ?? surfaceTexture(fields.texture))?.normal)
+                ))}
                 <div class="inspector-animatable-field">
                   {@render fieldControl(fieldName, field, fields[fieldName] ?? field.default, scene, (value, phase) => update(component, fieldName, value, phase))}
                   {#if keyframeable(field)}
@@ -305,7 +350,7 @@
         </div>
         <div class="setting-row" title={settingHints.gravity}>
           <span class="setting-label">Gravity</span>
-          <div class="vector-input">{#each [0, 1, 2] as axis}<label class="axis-{axis}"><span>{["X", "Y", "Z"][axis]}</span><input aria-label="Gravity {["x", "y", "z"][axis]}" type="number" step="any" value={settings.gravity[axis]} onchange={(event) => { const next = [...settings.gravity] as Vec3; next[axis] = Number(event.currentTarget.value); onSettings({ gravity: next }); }} /></label>{/each}</div>
+          <div class="vector-input">{#each [0, 1, 2] as axis}<label class="axis-{axis}"><span>{["X", "Y", "Z"][axis]}</span><input aria-label="Gravity {["x", "y", "z"][axis]}" type="number" step="any" value={settings.gravity[axis]} onchange={(event) => commitNumber(event.currentTarget, settings.gravity[axis]!, settingSchemas.gravity, (value) => { const next = [...settings.gravity] as Vec3; next[axis] = value; onSettings({ gravity: next }); })} /></label>{/each}</div>
         </div>
         <div class="setting-row">
           <span class="setting-label">Preset</span>
@@ -352,25 +397,26 @@
       {/if}
     </div>
   {/if}
+  </fieldset>
 </aside>
 
 {#snippet fieldControl(name: string, schema: FieldSchema, value: unknown, scene: Scene, onchange: (value: unknown, phase?: "start" | "preview" | "end") => void)}
   <div class="field-row">
     <label class="field-label" for="field-{name}">{label(name)}</label>
     {#if schema.type === "float"}
-      <div class="range-input"><input id="field-{name}" type="range" style:--fill={rangeFill(Number(value), schema.min, schema.max)} min={schema.min} max={schema.max} step={schema.step ?? (schema.max - schema.min) / 100} value={Number(value)} onpointerdown={() => onchange(Number(value), "start")} oninput={(event) => onchange(Number(event.currentTarget.value), "preview")} onpointerup={(event) => onchange(Number(event.currentTarget.value), "end")} onpointercancel={() => onchange(Number(value), "end")} /><input class="numeric" type="number" min={schema.min} max={schema.max} step={schema.step ?? "any"} value={Number(value)} onchange={(event) => onchange(Number(event.currentTarget.value))} /></div>
+      <div class="range-input"><input id="field-{name}" type="range" style:--fill={rangeFill(Number(value), schema.min, schema.max)} min={schema.min} max={schema.max} step={schema.step ?? (schema.max - schema.min) / 100} value={Number(value)} onpointerdown={(event) => { event.currentTarget.setPointerCapture(event.pointerId); onchange(Number(value), "start"); }} oninput={(event) => onchange(Number(event.currentTarget.value), "preview")} onpointerup={(event) => onchange(Number(event.currentTarget.value), "end")} onpointercancel={(event) => onchange(Number(event.currentTarget.value), "end")} onlostpointercapture={(event) => onchange(Number(event.currentTarget.value), "end")} /><input class="numeric" type="number" min={schema.min} max={schema.max} step={schema.step ?? "any"} value={Number(value)} onchange={(event) => commitNumber(event.currentTarget, Number(value), schema, onchange)} /></div>
     {:else if schema.type === "int"}
-      <input id="field-{name}" class="numeric full" type="number" min={schema.min} max={schema.max} step="1" value={Number(value)} onchange={(event) => onchange(Number(event.currentTarget.value))} />
+      <input id="field-{name}" class="numeric full" type="number" min={schema.min} max={schema.max} step="1" value={Number(value)} onchange={(event) => commitNumber(event.currentTarget, Number(value), schema, onchange)} />
     {:else if schema.type === "bool"}
       <button id="field-{name}" class:checked={Boolean(value)} class="toggle" role="switch" aria-label={name} aria-checked={Boolean(value)} onclick={() => onchange(!Boolean(value))}><i></i></button>
     {:else if schema.type === "color"}
       <div class="color-input"><input id="field-{name}" type="color" value={String(value)} oninput={(event) => onchange(event.currentTarget.value)} /><code>{String(value)}</code></div>
     {:else if schema.type === "vec3"}
-      <div class="vector-input">{#each [0, 1, 2] as axis}<label class="axis-{axis}"><span>{["X", "Y", "Z"][axis]}</span><input aria-label="{name} {["x", "y", "z"][axis]}" type="number" step="any" value={Number((value as number[])[axis])} onchange={(event) => { const next = [...(value as number[])]; next[axis] = Number(event.currentTarget.value); onchange(next); }} /></label>{/each}</div>
+      <div class="vector-input">{#each [0, 1, 2] as axis}<label class="axis-{axis}"><span>{["X", "Y", "Z"][axis]}</span><input aria-label="{name} {["x", "y", "z"][axis]}" type="number" step="any" value={Number((value as number[])[axis])} onchange={(event) => commitNumber(event.currentTarget, Number((value as number[])[axis]), schema, (part) => { const next = [...(value as number[])]; next[axis] = part; onchange(next); })} /></label>{/each}</div>
     {:else if schema.type === "enum"}
-      <select id="field-{name}" class="field-select" value={String(value)} onchange={(event) => onchange(event.currentTarget.value)}>{#each schema.options as option}<option value={option}>{option}</option>{/each}</select>
+      <select id="field-{name}" class="field-select" value={String(value)} onchange={(event) => onchange(event.currentTarget.value)}>{#each schema.options as option}<option value={option}>{name === "texture" ? surfaceTexture(option)?.label ?? "None" : name === "normalTexture" ? option === "auto" ? "Auto (match texture)" : option === "none" ? "Off" : surfaceTexture(option)?.label ?? option : name === "textureMapping" ? { auto: "Auto repeat", stretch: "Stretch", custom: "Custom" }[option as "auto" | "stretch" | "custom"] : option}</option>{/each}</select>
     {:else if schema.type === "entityRef"}
-      <select id="field-{name}" class="field-select" value={value === null ? "__world__" : String(value)} onchange={(event) => onchange(event.currentTarget.value === "__world__" ? null : event.currentTarget.value)}><option value="__world__">World</option>{#each scene.entities as option}<option value={option.id}>{option.name}</option>{/each}</select>
+      <select id="field-{name}" class="field-select" value={value === null ? "__world__" : String(value)} onchange={(event) => onchange(event.currentTarget.value === "__world__" ? null : event.currentTarget.value)}><option value="__world__">{name === "followTarget" || name === "lookAtTarget" ? "None" : "World"}</option>{#each scene.entities.filter((option) => !(name === "followTarget" || name === "lookAtTarget") || option.id !== entity?.id) as option}<option value={option.id}>{option.name}</option>{/each}</select>
     {:else}
       {#if schema.multiline}<textarea id="field-{name}" value={String(value)} oninput={(event) => onchange(event.currentTarget.value)}></textarea>{:else}<input id="field-{name}" class="text-input" type="text" value={String(value)} oninput={(event) => onchange(event.currentTarget.value)} />{/if}
     {/if}
@@ -378,6 +424,8 @@
 {/snippet}
 
 <style>
+  .surface-preview{display:flex;align-items:center;gap:10px;margin-bottom:10px;color:#9999a5;font-size:10px;line-height:1.5}.surface-preview img{border-radius:5px;object-fit:cover;flex-shrink:0}
+  .mapping-hint{margin:0 0 10px;color:#9999a5;font-size:10px;line-height:1.5}
   .inspector{width:292px;min-width:260px;overflow:auto;background:var(--window-bg,#1c1c1f);border-left:1px solid #ffffff10}.entity-heading{display:flex;align-items:center;gap:10px;padding:17px 14px 13px}.entity-icon{display:grid;place-items:center;width:30px;height:30px;background:#2c2c31;border-radius:7px;color:#a99bff}.entity-title{display:grid;gap:3px}.entity-title strong{font-size:12px;font-weight:600}.entity-title small{font:9px 'DM Mono',monospace;color:#747480}.name-field{display:grid;gap:6px;padding:0 14px 13px}.name-field span,.field-label{font:9px 'DM Mono',monospace;color:#888894;text-transform:uppercase;letter-spacing:.07em}.name-field input,.text-input,textarea{width:100%;height:29px;background:#131315;border:1px solid #ffffff12;border-radius:6px;color:#cacacf;padding:0 8px;font:11px 'DM Sans',sans-serif}.component-card{border-top:1px solid #ffffff0d}.component-title{height:36px;padding:0 10px;display:flex;align-items:center;gap:6px;color:#d6d6d9;font-size:11px;font-weight:600}.collapse,.remove-component{border:0;background:none;color:#767682;cursor:pointer}.collapse{width:18px;font-size:16px}.remove-component{margin-left:auto;font-size:17px}.remove-component:hover{color:#ff7a87}.fields{padding:2px 11px 10px}.field-row{display:grid;gap:7px;padding:7px 0}.range-input{display:grid;grid-template-columns:1fr 64px;align-items:center;gap:8px}.numeric{width:64px;height:25px;background:#131315;border:1px solid #ffffff13;border-radius:6px;color:#d4d4d8;text-align:right;padding:0 5px;font:10px 'DM Mono',monospace}.numeric.full{width:100%}.toggle{width:30px;height:17px;border:0;border-radius:10px;background:#36363b;padding:2px;cursor:pointer}.toggle i{display:block;width:13px;height:13px;background:#94949e;border-radius:50%;transition:transform .15s}.toggle.checked{background:#7c6cf0}.toggle.checked i{transform:translateX(13px);background:#fff}.color-input{display:flex;align-items:center;gap:8px}.color-input input{width:28px;height:23px;background:none;border:0;padding:0;cursor:pointer}.color-input code{font:10px 'DM Mono',monospace;color:#c3c3c9}.vector-input{display:grid;grid-template-columns:repeat(3,1fr);gap:5px}.vector-input label{display:flex;align-items:center;border:1px solid #ffffff12;border-radius:6px;background:#131315;overflow:hidden}.vector-input span{padding-left:5px;font:9px 'DM Mono',monospace;color:#82828e}.vector-input .axis-0 span{color:#e88689}.vector-input .axis-1 span{color:#87c99f}.vector-input .axis-2 span{color:#829bdf}.vector-input input{width:100%;min-width:0;height:25px;background:transparent;border:0;outline:none;color:#e0e0e3;text-align:right;padding:0 4px;font:10px 'DM Mono',monospace}.field-select{height:27px;width:100%;background:#131315;border:1px solid #ffffff13;border-radius:6px;color:#d0d0d5;padding:0 6px;font:10px 'DM Sans',sans-serif}.text-input{height:26px}textarea{height:80px;padding:7px;resize:vertical;font:10px/1.5 'DM Mono',monospace}.managed-hint{color:#767682;font-size:9px;padding:7px 1px}.add-component-row{display:grid;grid-template-columns:1fr 29px;gap:5px;padding:12px;border-top:1px solid #ffffff0d}.add-component-row select{height:29px;background:#131315;border:1px solid #ffffff13;border-radius:6px;color:#aaaab2;padding:0 7px;font:10px 'DM Sans',sans-serif}.add-component-row button{border:0;border-radius:6px;background:#7c6cf0;color:#fff;font-size:17px;cursor:pointer}.add-component-row button:hover:not(:disabled){background:#8b7cf6}.add-component-row button:disabled{opacity:.4;cursor:default}
   .script-params{display:grid;gap:7px;margin:8px 0;padding:9px;background:#131315;border:1px solid #ffffff10;border-radius:8px}.script-params>strong{font:9px 'DM Mono',monospace;color:#8e87bd;letter-spacing:.08em}.script-params label{display:flex;align-items:center;justify-content:space-between;color:#b9b9bf;font-size:10px}.script-params input:not([type=range]){width:100px;height:25px;background:#1b1b1f;color:#e3e3e5;border:1px solid #ffffff14;border-radius:6px;padding:0 6px}.script-params input[type=range]{flex:1;min-width:60px;margin:0 8px}.script-errors{display:grid;gap:4px;color:#ff8992;font:10px/1.4 'DM Mono',monospace;padding:7px 2px}
   .quick-toggles{display:grid;grid-template-columns:1fr 1fr;gap:8px;padding:0 14px 13px}.quick-toggles label{display:flex;align-items:center;justify-content:space-between;gap:6px;padding:7px 9px;background:#131315;border:1px solid #ffffff12;border-radius:6px;cursor:pointer}.quick-toggles span{font:9px 'DM Mono',monospace;color:#888894;text-transform:uppercase;letter-spacing:.07em}

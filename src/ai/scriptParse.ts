@@ -7,6 +7,7 @@ import { declaredNames, findUnclearWords, type UnclearWord } from "../lang/fuzzy
 import { parseScript } from "../lang/parser";
 import { requestJson, type ChatMessage } from "./client";
 import { SCRIPT_AGENT_SPEC } from "./prompt";
+import { TEXTURE_AGENT_SPEC } from "../materials/catalog";
 
 /** What the model (and the confirm popover) knows about each scene object. */
 export interface ParseEntity {
@@ -14,6 +15,8 @@ export interface ParseEntity {
   name: string;
   shape?: string;
   color?: string;
+  texture?: string;
+  normalTexture?: string;
   position?: [number, number, number];
   parent?: string;
 }
@@ -94,6 +97,8 @@ export function buildParseMessages(request: ScriptParseRequest): ChatMessage[] {
 
 ## Script language
 ${SCRIPT_AGENT_SPEC}
+
+${TEXTURE_AGENT_SPEC}
 
 ## How to answer
 Return only JSON: { "fixes": [ { "line", "original", "meaning", "options": [ { "text", "entityId", "label" } ] } ] }
@@ -203,7 +208,7 @@ export function validateParseReply(source: string, raw: unknown, entities: Parse
 
 export type ParseCompletion = (messages: ChatMessage[]) => Promise<unknown>;
 
-const defaultCompletion: ParseCompletion = (messages) => requestJson(messages, PARSE_RESPONSE_SCHEMA);
+const defaultCompletion: ParseCompletion = (messages) => requestJson(messages, PARSE_RESPONSE_SCHEMA, "parse");
 
 /** Ask the model for fixes, retrying once with the rejected options if none survive validation. */
 export async function runScriptParse(request: ScriptParseRequest, complete: ParseCompletion = defaultCompletion): Promise<ScriptParseResult> {

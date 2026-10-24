@@ -61,8 +61,8 @@ const contextActions = ["cut", "copy", "paste", "duplicate", "rename", "delete",
 
 export const chapters: TutorialChapter[] = [
   { id: "workspace", title: "Workspace and navigation", summary: "Move around the scene and arrange the editor.", steps: [
-    { title: "Orbit the scene", instruction: "In the Scene view, hold the left mouse button on empty space and drag to orbit the camera around your scene.", targets: ["viewport"], tasks: [
-      { label: "Left-drag in the Scene view to orbit", done: (context) => context.happened("camera-orbit") }
+    { title: "Orbit the scene", instruction: "In the Scene view, hold the right mouse button and drag to orbit the camera around your scene. A short right-click opens the context menu instead.", targets: ["viewport"], tasks: [
+      { label: "Right-drag in the Scene view to orbit", done: (context) => context.happened("camera-orbit") }
     ] },
     { title: "Pan and zoom", instruction: "Hold the middle mouse button and drag to pan. Use the mouse wheel to zoom in and out.", targets: ["viewport"], tasks: [
       { label: "Middle-drag to pan", done: (context) => context.happened("camera-pan") },
@@ -105,7 +105,7 @@ export const chapters: TutorialChapter[] = [
       selectTask,
       { label: "Drag an arrow on the gizmo", done: (context) => context.happened("gizmo-drag", (detail) => detail.mode === "translate"), targets: ["viewport"] }
     ] },
-    { title: "Rotate and scale", instruction: "Switch to Rotate (E) and Scale (R) and drag the gizmo. Q returns to Select.", targets: ["tool-segment"], tasks: [
+    { title: "Rotate and scale", instruction: "Switch to Rotate (R) and Scale (E) and drag the gizmo. Q returns to Select.", targets: ["tool-segment"], tasks: [
       { label: "Switch to Rotate", done: (context) => context.happened("tool", (detail) => detail.mode === "rotate") },
       { label: "Switch to Scale", done: (context) => context.happened("tool", (detail) => detail.mode === "scale") },
       { label: "Return to Select", done: (context) => context.happened("tool", (detail) => detail.mode === "select") }

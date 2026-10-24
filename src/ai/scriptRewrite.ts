@@ -12,6 +12,7 @@ import { autocorrect, scriptProblems, type ScriptProblem } from "../lang/autocor
 import { declaredNames } from "../lang/fuzzy";
 import { requestJson, type ChatMessage } from "./client";
 import { SCRIPT_AGENT_SPEC } from "./prompt";
+import { TEXTURE_AGENT_SPEC } from "../materials/catalog";
 import type { ParseEntity } from "./scriptParse";
 
 export interface ScriptRewriteRequest {
@@ -64,6 +65,8 @@ const SYSTEM_PROMPT = `You fix broken lines in scripts for a 3D scene editor. Us
 ## Script language
 ${SCRIPT_AGENT_SPEC}
 
+${TEXTURE_AGENT_SPEC}
+
 ## Rules
 - Only rewrite the listed broken lines. Never add actions, events, or objects the user did not write.
 - Something the user counts or tracks ("give me a point", "lose a life", "add a coin") becomes a variable: "increase score by 1", "decrease lives by 1". That is their intent, not an addition.
@@ -84,6 +87,8 @@ function describeEntity(entity: ParseEntity): string {
   const details = [
     entity.shape,
     entity.color,
+    entity.texture ? `${entity.texture} surface` : undefined,
+    entity.normalTexture ? `${entity.normalTexture} normal map` : undefined,
     entity.position ? `at ${entity.position.map(round).join(" ")}` : undefined,
     entity.parent ? `in ${entity.parent}` : undefined
   ].filter(Boolean);
@@ -191,7 +196,7 @@ function sentence(text: string): string {
   return !trimmed || /[.!?]$/.test(trimmed) ? trimmed : `${trimmed}.`;
 }
 
-const defaultCompletion: RewriteCompletion = (messages, schema) => requestJson(messages, schema);
+const defaultCompletion: RewriteCompletion = (messages, schema) => requestJson(messages, schema, "parse");
 
 /**
  * Apply a reply one line at a time from the top, keeping each replacement that

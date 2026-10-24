@@ -4,10 +4,11 @@
   import Hierarchy from "./editor/Hierarchy.svelte";
   import Viewport from "./editor/Viewport.svelte";
   import AIPanel, { type AIPanelMessage } from "./editor/AIPanel.svelte";
-  import { fetchCredits, onCreditsChange, requestSceneEdit, type CreditStatus } from "./ai/client";
+  import { fetchAiStatus, onCreditsChange, requestSceneEdit, type CreditStatus } from "./ai/client";
   import SupportDialog from "./editor/SupportDialog.svelte";
   import { AI_RESPONSE_JSON_SCHEMA, buildSystemPrompt } from "./ai/prompt";
-  import { runSceneAgent } from "./ai/agent";
+  import { runSceneAgent, type SceneAgentReply } from "./ai/agent";
+  import { BuildCache } from "./ai/cache";
   import Timeline from "./editor/Timeline.svelte";
   import DocsPanel from "./editor/DocsPanel.svelte";
   import PanelResizeHandles, { type ResizeEdge } from "./editor/PanelResizeHandles.svelte";
@@ -34,18 +35,22 @@
     Sun, Terminal, Trash, Ungroup, ArrowUpFromLine, X, ChevronDown, FolderInput, FolderOpen, History, GripVertical, Ban
   } from "@lucide/svelte";
   import { applyOps } from "./scene/applyOps";
+  import { copyEntityTree, pasteEntityOps, type EntityClipboard } from "./scene/clipboard";
+  import { deleteEntityOps } from "./scene/delete";
+  import { removeComponentOps } from "./scene/components";
   import { describeChanges } from "./scene/describeChanges";
   import { groupOps, localPosition, reparentOps, ungroupOps, uniqueId } from "./scene/hierarchy";
   import { keyName } from "./lang/vocabulary";
   import { deserializeScene, serializeScene } from "./scene/serialize";
-  import { createEmptyScene, type Entity, type Scene, type SceneOp, type Vec3 } from "./scene/types";
+  import { type Entity, type Scene, type SceneOp, type Vec3 } from "./scene/types";
+  import { createDefaultScene, activateCameraOps } from "./runtime/camera";
   import type { PlayState, SimulationController } from "./runtime/physics";
 
   type EditorPanel = "hierarchy" | "inspector" | "console" | "ai" | "timeline" | "docs" | "sceneLoader";
   type PanelDock = "left" | "right" | "top" | "bottom" | "floating";
   type PanelLayout = { dock: PanelDock; x: number; y: number; width: number; height: number; dockSize?: number };
 
-  let scene: Scene = $state.raw(createEmptyScene());
+  let scene: Scene = $state.raw(createDefaultScene());
   let selectedId: string | null = $state(null);
   let selectedIds: string[] = $state([]);
   let mode: ToolMode = $state("translate");
@@ -89,8 +94,18 @@
   let aiLoading = $state(false);
   let aiProgress = $state("Building the first pass…");
   let aiMessages: AIPanelMessage[] = $state([]);
+  let aiBuildCache = new BuildCache<SceneAgentReply>();
+  let aiSuccessfulRequests: string[] = [];
+
+  function resetAIBuildCache() {
+    aiBuildCache.clear();
+    // Pending builds retain their old cache instance and cannot refill the new document/provider cache.
+    aiBuildCache = new BuildCache<SceneAgentReply>();
+  }
   /** Today's free AI credits on the hosted site; null on the desktop app or when AI is off. */
   let aiCredits: CreditStatus | null = $state(null);
+  /** Server lets scene reviews escalate to the stronger model (task "scene_review"). */
+  let solReviewEnabled = false;
   let supportOpen = $state(false);
   let supportOutOfCredits = $state(false);
   let outOfCreditsNoticeShown = false;
@@ -114,6 +129,7 @@
     }
   }
   let aiUndoRecords: Record<string, SceneOp[]> = $state.raw({});
+  let aiDraftScenes: Record<string, Scene> = {};
   let nextAIId = 1;
   let timelineTime = $state(0);
   let settingsOpen = $state(false);
@@ -126,6 +142,7 @@
   // Script tabs open over the viewport, like script windows in Roblox Studio.
   let openScripts: string[] = $state([]);
   let activeTab: string = $state("scene");
+  const scriptTabId = (id: string) => `script:${id}`;
   let scriptDrafts: Record<string, string> = $state({});
   let commandText = $state("");
   let commandInput: HTMLInputElement | undefined = $state();
@@ -136,13 +153,15 @@
   let contextAddOpen = $state(false);
   let presetGallery: { entityId: string; anchor: DOMRect } | null = $state(null);
   let renameTarget: { id: string; name: string } | null = $state(null);
-  let entityClipboard: Entity[] | null = $state.raw(null);
+  let entityClipboard: EntityClipboard | null = $state.raw(null);
   const animatorPreview = new AnimatorRuntime();
   let openInput: HTMLInputElement;
   let activeGesture: { id: string; initial: Scene; operation: SceneOp | null } | null = null;
   let simulation: SimulationController | null = null;
   let animationFrame = 0;
   let lastFrameTime = 0;
+  let simulationRequest = 0;
+  let sceneDocument = 0;
 
   function panelWindowStyle(panel: EditorPanel): string {
     const layout = panelLayouts[panel];
@@ -351,13 +370,15 @@
   }
 
   function selectEntity(id: string | null) {
+    finishGesture();
     selectedId = id;
     selectedIds = id ? [id] : [];
   }
 
   function selectEntities(ids: string[]) {
-    selectedIds = ids;
-    selectedId = ids[0] ?? null;
+    finishGesture();
+    selectedIds = [...new Set(ids)].filter((id) => scene.entities.some((entity) => entity.id === id));
+    selectedId = selectedIds[0] ?? null;
   }
 
   onMount(() => {
@@ -367,7 +388,7 @@
       outOfCreditsNoticeShown = true;
       openSupport(true);
     });
-    void fetchCredits().then((credits) => { if (credits) aiCredits = credits; });
+    void fetchAiStatus().then(({ credits, solReview }) => { if (credits) aiCredits = credits; solReviewEnabled = solReview; });
     restorePanelWorkspace();
     recentScenes = loadRecentScenes();
     if (isDesktopRuntime()) {
@@ -378,7 +399,10 @@
   });
 
   $effect(() => {
-    if (panelWorkspaceReady) localStorage.setItem("simustyle.panelWorkspace", JSON.stringify({ open: panelOpen, layouts: panelLayouts }));
+    if (panelWorkspaceReady) {
+      try { localStorage.setItem("simustyle.panelWorkspace", JSON.stringify({ open: panelOpen, layouts: panelLayouts })); }
+      catch { /* Keep editing when storage is full or blocked. */ }
+    }
   });
 
   // Interactive tutorials compare these snapshots to notice when a step's action has been done.
@@ -461,23 +485,37 @@
     emitTutorial("ai-request");
     aiPrompt = "";
     aiLoading = true;
+    finishGesture();
+    commitAllScripts();
+    const requestedScene = scene;
     aiProgress = "Building the first pass…";
     panelOpen.ai = true;
     try {
-      const result = await runSceneAgent(scene, prompt, {
+      const result = await runSceneAgent(requestedScene, prompt, {
         buildSystemPrompt,
+        cache: aiBuildCache,
+        previousRequests: aiSuccessfulRequests,
+        focusIds: selectedIds.length ? selectedIds : selectedId ? [selectedId] : [],
         responseSchema: AI_RESPONSE_JSON_SCHEMA.schema,
         onProgress: (progress) => aiProgress = progress,
-        complete: ({ systemPrompt, userPrompt, correctionErrors, responseSchema, previousReply }) =>
-          requestSceneEdit(systemPrompt, userPrompt, correctionErrors, responseSchema, previousReply)
+        solReviewEnabled,
+        complete: ({ systemPrompt, userPrompt, correctionErrors, responseSchema, previousReply, task }) =>
+          requestSceneEdit(systemPrompt, userPrompt, correctionErrors, responseSchema, previousReply, task)
       });
       const id = `ai_${nextAIId++}`;
+      if (scene !== requestedScene || playState !== "stopped" || playStarting || Object.keys(scriptDrafts).length) {
+        pushAIMessage({ id, role: "assistant", content: "The scene changed while this request was loading. Send the request again to use the current scene." });
+        message = "AI result skipped because the scene changed.";
+        return;
+      }
       if (!result.ok || !result.scene || !result.inverseOps) {
+        if (result.fallbackDraft) aiDraftScenes[id] = requestedScene;
         pushAIMessage({ id, role: "assistant", content: result.errors.join(" · "), summary: `Could not complete after ${result.attempts} AI call${result.attempts === 1 ? "" : "s"}.`, ...(result.preflight ? { preflight: result.preflight } : {}), ...(result.fallbackDraft ? { fallbackDraft: { summary: result.fallbackDraft.summary, operations: result.fallbackDraft.ops } } : {}) });
         message = result.errors.join(" · ") || "AI changes could not be validated";
         return;
       }
       scene = result.scene;
+      aiSuccessfulRequests = [...aiSuccessfulRequests, prompt].slice(-6);
       undoStack = [...undoStack, result.inverseOps];
       redoStack = [];
       aiUndoRecords = { ...aiUndoRecords, [id]: result.inverseOps };
@@ -498,12 +536,15 @@
   }
 
   function undoAIChange(messageId: string) {
+    if (playState !== "stopped" || playStarting) return;
+    finishGesture();
     const operations = aiUndoRecords[messageId];
     if (!operations) return;
+    if (undoStack.at(-1) !== operations) { message = "Undo newer edits first before undoing this AI change."; return; }
     const result = applyOps(scene, operations);
     if (result.errors.length) { message = `Could not undo AI change: ${result.errors.join(" · ")}`; return; }
     scene = result.scene;
-    undoStack = undoStack.filter((batch) => JSON.stringify(batch) !== JSON.stringify(operations));
+    undoStack = undoStack.slice(0, -1);
     redoStack = [...redoStack, result.inverseOps];
     const { [messageId]: _removed, ...remaining } = aiUndoRecords;
     aiUndoRecords = remaining;
@@ -512,9 +553,12 @@
   }
 
   function applyAIFallback(messageId: string) {
+    if (playState !== "stopped" || playStarting) { message = "Stop the simulation before applying AI changes."; return; }
+    finishGesture();
     const messageEntry = aiMessages.find((entry) => entry.id === messageId);
     const operations = messageEntry?.fallbackDraft?.operations;
     if (!operations) return;
+    if (aiDraftScenes[messageId] !== scene) { message = "The scene changed after this draft was created. Send a new request to use the current scene."; return; }
     const result = applyOps(scene, operations);
     if (result.errors.length) { message = `Could not apply the first draft: ${result.errors.join(" · ")}`; return; }
     const scriptErrors = validateScripts(result.scene);
@@ -533,11 +577,15 @@
   }
 
   function apply(ops: SceneOp[]) {
+    if (playState !== "stopped" || playStarting) { message = "Stop the simulation before editing the scene."; return false; }
+    finishGesture();
+    if (!ops.length) return true;
     const result = applyOps(scene, ops);
     if (result.errors.length) {
       message = result.errors.join(" · ");
       return false;
     }
+    if (JSON.stringify(result.scene) === JSON.stringify(scene)) return true;
     scene = result.scene;
     if (playState === "stopped" && result.inverseOps.length) {
       undoStack = [...undoStack, result.inverseOps];
@@ -676,16 +724,12 @@
     if (apply([{ op: "settings", settings }])) message = "Scene settings updated";
   }
 
-  function descendantsInDeleteOrder(id: string): string[] {
-    const children = scene.entities.filter((entity) => entity.parent === id);
-    return [...children.flatMap((child) => descendantsInDeleteOrder(child.id)), id];
-  }
-
   function deleteEntity(id: string): boolean {
     if (playState !== "stopped") { message = "Stop the simulation before deleting entities."; return false; }
     if (!scene.entities.some((entity) => entity.id === id)) { message = "That entity no longer exists."; return false; }
-    const ids = descendantsInDeleteOrder(id);
-    if (apply(ids.map((entityId) => ({ op: "delete" as const, id: entityId })))) {
+    const ops = deleteEntityOps(scene, [id]);
+    const ids = ops.map((operation) => (operation as { id: string }).id);
+    if (apply(ops)) {
       if (ids.includes(selectedId ?? "") || ids.some((entityId) => selectedIds.includes(entityId))) {
         selectEntities(selectedIds.filter((entityId) => !ids.includes(entityId)));
       }
@@ -707,7 +751,7 @@
   function copyEntity(id: string) {
     const entity = scene.entities.find((candidate) => candidate.id === id);
     if (!entity) return;
-    entityClipboard = descendantsInDeleteOrder(id).reverse().map((entityId) => structuredClone(scene.entities.find((candidate) => candidate.id === entityId)!));
+    entityClipboard = copyEntityTree(scene, id);
     emitTutorial("copy");
     message = `Copied ${entity.name}`;
     contextMenu = null;
@@ -716,7 +760,7 @@
   function cutEntity(id: string) {
     const entity = scene.entities.find((candidate) => candidate.id === id);
     if (!entity) return;
-    const copied = descendantsInDeleteOrder(id).reverse().map((entityId) => structuredClone(scene.entities.find((candidate) => candidate.id === entityId)!));
+    const copied = copyEntityTree(scene, id);
     if (!deleteEntity(id)) return;
     entityClipboard = copied;
     emitTutorial("cut");
@@ -726,35 +770,11 @@
 
   function pasteEntity(position: Vec3 | null = contextMenu?.position ?? null) {
     if (!entityClipboard || playState !== "stopped") return;
-    const sourceTree = entityClipboard;
-    const idMap = new Map<string, string>();
-    const usedIds = new Set(scene.entities.map((entity) => entity.id));
-    for (const source of sourceTree) {
-      let suffix = 1;
-      let id = `${source.id}_copy`;
-      while (usedIds.has(id)) id = `${source.id}_copy${++suffix}`;
-      usedIds.add(id);
-      idMap.set(source.id, id);
-    }
-    const root = sourceTree[0];
-    const rootId = idMap.get(root.id)!;
-    const operations: SceneOp[] = sourceTree.map((source, index) => {
-      const components = structuredClone(source.components);
-      if (index === 0) {
-        const transform = components.Transform ?? (components.Transform = {});
-        const current = Array.isArray(transform.position) && transform.position.length === 3 ? transform.position.map(Number) : [0, 0, 0];
-        transform.position = position
-          ? [position[0], current[1], position[2]]
-          : [current[0] + 1.5, current[1], current[2] + 1.5];
-      }
-      const parent = index === 0
-        ? (position || contextMenu?.source === "hierarchy" && contextMenu.id === null
-          ? null
-          : (source.parent && scene.entities.some((entity) => entity.id === source.parent) ? source.parent : null))
-        : (source.parent ? idMap.get(source.parent) ?? source.parent : null);
-      return { op: "create", id: idMap.get(source.id)!, name: index === 0 ? `${root.name} Copy` : source.name, parent, components };
+    const { ops, rootId, error } = pasteEntityOps(scene, entityClipboard, {
+      position, ...(contextMenu?.source === "hierarchy" ? { parent: contextMenu.id } : {})
     });
-    if (apply(operations)) { selectEntity(rootId); emitTutorial("paste"); }
+    if (error) { message = error; return; }
+    if (apply(ops)) { selectEntity(rootId ?? null); emitTutorial("paste"); }
     contextMenu = null;
   }
 
@@ -762,8 +782,9 @@
     const entity = scene.entities.find((candidate) => candidate.id === id);
     if (!entity) return;
     const previousClipboard = entityClipboard;
-    entityClipboard = descendantsInDeleteOrder(id).reverse().map((entityId) => structuredClone(scene.entities.find((candidate) => candidate.id === entityId)!));
-    pasteEntity();
+    entityClipboard = copyEntityTree(scene, id);
+    contextMenu = null;
+    pasteEntity(null);
     entityClipboard = previousClipboard;
     emitTutorial("duplicate");
   }
@@ -784,6 +805,7 @@
     if (sceneRenameTarget === null) return;
     const name = sceneRenameTarget.trim();
     if (!name) return;
+    if (name.length > 100) { message = "Scene names must be at most 100 characters."; return; }
     scene = { ...scene, name };
     sceneRenameTarget = null;
     message = `Renamed scene to ${name}`;
@@ -791,7 +813,7 @@
   }
 
   function sceneNameFromFile(fileName: string): string {
-    return fileName.replace(/(\.scene)?\.(json|simu)$/i, "") || fileName;
+    return (fileName.replace(/(\.scene)?\.(json|simu)$/i, "") || fileName).trim().slice(0, 100) || "Untitled scene";
   }
 
   function sceneDownloadName(): string {
@@ -816,9 +838,20 @@
   }
 
   function installOpenedScene(loadedScene: Scene, path: string | null, fileName: string) {
+    sceneDocument += 1;
+    aiSuccessfulRequests = [];
+    resetAIBuildCache();
     const nextScene = loadedScene.name?.trim() ? loadedScene : { ...loadedScene, name: sceneNameFromFile(fileName) };
     stopSimulation();
     scene = nextScene;
+    scriptDrafts = {};
+    openScripts = [];
+    activeTab = "scene";
+    aiUndoRecords = {};
+    aiDraftScenes = {};
+    contextMenu = null;
+    renameTarget = null;
+    presetGallery = null;
     scenePath = path ?? fileName;
     activeGesture = null;
     selectEntity(null);
@@ -893,6 +926,8 @@
 
   /** Editor shortcuts, and keyboard input for scripts ("when space is pressed") during Play. */
   function windowKeyDown(event: KeyboardEvent) {
+    if (event.defaultPrevented) return;
+    if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === "s") { event.preventDefault(); void saveScene(); return; }
     if (typingInField(event)) return;
     if (event.key === "/" && !event.ctrlKey && !event.metaKey && !event.altKey) {
       event.preventDefault();
@@ -929,7 +964,7 @@
     else if (ctrl && key === "d" && selectedId) { event.preventDefault(); duplicateEntity(selectedId); }
     else if ((event.key === "Delete" || event.key === "Backspace") && selectedIds.length) {
       event.preventDefault();
-      for (const id of [...selectedIds]) if (scene.entities.some((entity) => entity.id === id)) deleteEntity(id);
+      if (apply(deleteEntityOps(scene, selectedIds))) { selectEntity(null); emitTutorial("delete"); }
     } else if (event.key === "F2" && selectedEntity) { event.preventDefault(); renameTarget = { id: selectedEntity.id, name: selectedEntity.name }; }
     else if (!ctrl && !event.altKey && key === "k" && selectedEntity?.components.Transform) {
       event.preventDefault();
@@ -949,6 +984,8 @@
   }
 
   function undo() {
+    if (playState !== "stopped" || playStarting) return;
+    finishGesture();
     const ops = undoStack.at(-1);
     if (!ops) return;
     const result = applyOps(scene, ops);
@@ -961,6 +998,8 @@
   }
 
   function redo() {
+    if (playState !== "stopped" || playStarting) return;
+    finishGesture();
     const ops = redoStack.at(-1);
     if (!ops) return;
     const result = applyOps(scene, ops);
@@ -985,6 +1024,8 @@
     if (!gesture?.operation) return;
     const result = applyOps(gesture.initial, [gesture.operation]);
     if (result.errors.length) { message = result.errors.join(" · "); return; }
+    if (!preview([gesture.operation])) return;
+    if (JSON.stringify(result.scene) === JSON.stringify(gesture.initial)) return;
     if (playState === "stopped" && result.inverseOps.length) {
       undoStack = [...undoStack, result.inverseOps];
       redoStack = [];
@@ -993,10 +1034,16 @@
   }
 
   function updateComponent(component: string, fields: Record<string, unknown>, phase?: "start" | "preview" | "end") {
+    if (playState !== "stopped" || playStarting) return;
     if (!selectedId) return;
     const id = selectedId;
+    if (component === "Camera" && fields.isActive === true) {
+      apply([...activateCameraOps(scene, id), { op: "update", id, components: { Camera: fields } }]);
+      return;
+    }
     const operation: SceneOp = { op: "update", id, components: { [component]: fields } };
     if (phase === "start") {
+      finishGesture();
       activeGesture = { id, initial: structuredClone(scene), operation };
       return;
     }
@@ -1015,8 +1062,10 @@
   }
 
   function updateTransform(id: string, fields: Record<string, unknown>, phase: "start" | "change" | "end") {
+    if (playState !== "stopped" || playStarting) return;
     const operation: SceneOp = { op: "update", id, components: { Transform: fields } };
     if (phase === "start") {
+      finishGesture();
       activeGesture = { id, initial: structuredClone(scene), operation };
     } else if (phase === "change" && activeGesture?.id === id) {
       activeGesture.operation = operation;
@@ -1051,6 +1100,8 @@
       name: entity.name,
       ...(typeof mesh?.shape === "string" ? { shape: mesh.shape } : entity.components.Light ? { shape: "light" } : {}),
       ...(typeof material?.color === "string" ? { color: material.color } : {}),
+      ...(typeof material?.texture === "string" && material.texture !== "none" ? { texture: material.texture } : {}),
+      ...(typeof material?.normalTexture === "string" ? { normalTexture: material.normalTexture } : {}),
       ...(Array.isArray(transform?.position) ? { position: transform.position as Vec3 } : {}),
       ...(parent ? { parent } : {})
     };
@@ -1059,6 +1110,10 @@
   function storedSource(id: string): string {
     const source = scene.entities.find((entity) => entity.id === id)?.components.Script?.source;
     return typeof source === "string" ? source : "";
+  }
+
+  function draftSource(id: string): string | undefined {
+    return Object.hasOwn(scriptDrafts, id) ? scriptDrafts[id] : undefined;
   }
 
   function scriptTemplate(name: string, sceneScript: boolean): string {
@@ -1089,7 +1144,7 @@ when clicked
       message = `Added a script to ${entity.name}`;
     }
     if (!openScripts.includes(id)) openScripts = [...openScripts, id];
-    activeTab = id;
+    activeTab = scriptTabId(id);
   }
 
   /** Toolbar Script button: the selected object's script, or a scene-wide script when nothing is selected. */
@@ -1106,28 +1161,34 @@ when clicked
   }
 
   function commitScript(id: string) {
-    const draft = scriptDrafts[id];
-    if (draft === undefined) return;
+    const draft = draftSource(id);
+    if (typeof draft !== "string") return;
+    if (draft !== storedSource(id) && !apply([{ op: "update", id, components: { Script: { source: draft } } }])) return;
     const { [id]: _done, ...rest } = scriptDrafts;
     scriptDrafts = rest;
     emitTutorial("script-apply", { source: draft });
-    if (draft !== storedSource(id) && apply([{ op: "update", id, components: { Script: { source: draft } } }])) message = "Script saved";
+    message = "Script saved";
   }
 
   function commitAllScripts() { for (const id of Object.keys(scriptDrafts)) commitScript(id); }
 
   function closeScript(id: string) {
     commitScript(id);
+    if (Object.hasOwn(scriptDrafts, id)) return;
     openScripts = openScripts.filter((candidate) => candidate !== id);
-    if (activeTab === id) activeTab = openScripts.at(-1) ?? "scene";
+    if (activeTab === scriptTabId(id)) activeTab = openScripts.length ? scriptTabId(openScripts.at(-1)!) : "scene";
   }
 
   // Close tabs whose entity was deleted (including by undo or the AI agent).
   $effect(() => {
+    const validDrafts = Object.fromEntries(Object.entries(scriptDrafts).filter(([id]) => scene.entities.some((entity) => entity.id === id && entity.components.Script)));
+    if (Object.keys(validDrafts).length !== Object.keys(scriptDrafts).length) scriptDrafts = validDrafts;
+    const selected = selectedIds.filter((id) => scene.entities.some((entity) => entity.id === id));
+    if (selected.length !== selectedIds.length) { selectedIds = selected; selectedId = selected[0] ?? null; }
     const alive = openScripts.filter((id) => scene.entities.some((entity) => entity.id === id && entity.components.Script));
     if (alive.length !== openScripts.length) {
       openScripts = alive;
-      if (activeTab !== "scene" && !alive.includes(activeTab)) activeTab = "scene";
+      if (activeTab !== "scene" && !alive.some((id) => scriptTabId(id) === activeTab)) activeTab = "scene";
     }
   });
 
@@ -1218,10 +1279,20 @@ when clicked
   }
 
   function newScene() {
+    sceneDocument += 1;
+    aiSuccessfulRequests = [];
+    resetAIBuildCache();
     scriptDrafts = {};
     stopSimulation();
     activeGesture = null;
-    scene = createEmptyScene();
+    scene = createDefaultScene();
+    openScripts = [];
+    activeTab = "scene";
+    aiUndoRecords = {};
+    aiDraftScenes = {};
+    contextMenu = null;
+    renameTarget = null;
+    presetGallery = null;
     selectEntity(null);
     undoStack = [];
     redoStack = [];
@@ -1233,17 +1304,24 @@ when clicked
   }
 
   async function saveScene() {
+    finishGesture();
     commitAllScripts();
+    if (Object.keys(scriptDrafts).length) { message = "Stop the simulation before saving script drafts."; return; }
+    const sceneToSave = simulation?.originalScene ?? scene;
+    const historyToSave = undoStack;
+    const nameToSave = sceneToSave.name;
+    const documentToSave = sceneDocument;
     if (isDesktopRuntime()) {
       try {
         const path = scenePath ?? await chooseSceneToSave(`${sceneName.replace(/[<>:"/\\|?*]/g, "-")}.simu`);
         if (!path) return;
-        const contents = serializeScene(scene);
+        const contents = serializeScene(sceneToSave);
         await writeSceneFile(path, contents);
+        await rememberOpenedScene(nameToSave ?? "Untitled scene", path, contents);
+        if (documentToSave !== sceneDocument) return;
         scenePath = path;
-        savedHistory = undoStack;
-        savedSceneName = scene.name;
-        await rememberOpenedScene(sceneName, path, contents);
+        savedHistory = historyToSave;
+        savedSceneName = nameToSave;
         message = `Saved ${path.split(/[\\/]/).at(-1) ?? "scene"}`;
         emitTutorial("save");
       } catch (error) {
@@ -1251,7 +1329,7 @@ when clicked
       }
       return;
     }
-    const contents = serializeScene(scene);
+    const contents = serializeScene(sceneToSave);
     const fileName = sceneDownloadName();
     const file = new Blob([contents], { type: "application/json" });
     const url = URL.createObjectURL(file);
@@ -1259,9 +1337,9 @@ when clicked
     anchor.href = url;
     anchor.download = fileName;
     anchor.click();
-    URL.revokeObjectURL(url);
-    savedHistory = undoStack;
-    savedSceneName = scene.name;
+    setTimeout(() => URL.revokeObjectURL(url), 10_000);
+    savedHistory = historyToSave;
+    savedSceneName = nameToSave;
     scenePath = fileName;
     const recentCached = await rememberOpenedScene(sceneName, null, contents, fileName);
     emitTutorial("save");
@@ -1274,15 +1352,21 @@ when clicked
       return;
     }
     commitAllScripts();
+    if (Object.keys(scriptDrafts).length) { message = "Stop the simulation before saving script drafts."; return; }
+    finishGesture();
+    const sceneToSave = simulation?.originalScene ?? scene;
+    const historyToSave = undoStack;
+    const documentToSave = sceneDocument;
     try {
       const path = await chooseSceneToSave(sceneDownloadName());
       if (!path) return;
-      const contents = serializeScene(scene);
+      const contents = serializeScene(sceneToSave);
       await writeSceneFile(path, contents);
+      await rememberOpenedScene(sceneToSave.name ?? "Untitled scene", path, contents);
+      if (documentToSave !== sceneDocument) return;
       scenePath = path;
-      savedHistory = undoStack;
-      savedSceneName = scene.name;
-      await rememberOpenedScene(sceneName, path, contents);
+      savedHistory = historyToSave;
+      savedSceneName = sceneToSave.name;
       message = `Saved ${path.split(/[\\/]/).at(-1) ?? "scene"}`;
       emitTutorial("save");
     } catch (error) {
@@ -1323,11 +1407,13 @@ when clicked
 
   async function saveAiSettings(settings: { model: string; baseUrl: string; apiKey: string }): Promise<void> {
     aiSettings = await saveDesktopAiSettings({ model: settings.model, baseUrl: settings.baseUrl, ...(settings.apiKey ? { apiKey: settings.apiKey } : {}) });
+    resetAIBuildCache();
     emitTutorial("ai-settings");
   }
 
   async function removeAiKey(): Promise<void> {
     aiSettings = await saveDesktopAiSettings({ ...aiSettings, apiKey: null });
+    resetAIBuildCache();
   }
 
   function physicsFrame(time: number) {
@@ -1351,13 +1437,19 @@ when clicked
     if (playStarting || playState !== "stopped") return;
     commandInput?.blur();
     commitAllScripts();
+    finishGesture();
     playStarting = true;
+    const request = ++simulationRequest;
+    const initial = scene;
     activeGesture = null;
     timelineTime = 0;
     try {
       const { SimulationController: Controller } = await import("./runtime/physics");
+      if (request !== simulationRequest || scene !== initial) return;
       simulation ??= new Controller();
-      const warnings = await simulation.play(scene);
+      const warnings = await simulation.play(initial);
+      if (request !== simulationRequest) return;
+      if (scene !== initial) { simulation.stop(); message = "The scene changed while Play was starting. Press Play again."; return; }
       if (simulation.initialScene) scene = simulation.initialScene;
       simulationWarnings = warnings;
       if (simulation.state !== "playing") {
@@ -1371,7 +1463,7 @@ when clicked
     } catch (error) {
       message = error instanceof Error ? `Could not start simulation: ${error.message}` : "Could not start simulation";
     } finally {
-      playStarting = false;
+      if (request === simulationRequest) playStarting = false;
     }
   }
 
@@ -1380,15 +1472,18 @@ when clicked
     const wasPaused = playState === "paused";
     if (wasStopped) await startSimulation();
     else if (wasPaused) resumeSimulation();
-    if (playState !== "playing") throw new Error("Start Play before exporting video; the simulation could not start.");
-    const canvas = document.querySelector<HTMLCanvasElement>(".viewport canvas");
-    if (!canvas) throw new Error("The 3D viewport canvas is unavailable.");
+    const request = simulationRequest;
     try {
+      if (playState !== "playing") throw new Error("Start Play before exporting video; the simulation could not start.");
+      const canvas = document.querySelector<HTMLCanvasElement>(".viewport canvas");
+      if (!canvas) throw new Error("The 3D viewport canvas is unavailable.");
       const { exportCanvasVideo } = await import("./export/video");
       return await exportCanvasVideo(canvas, config, { signal, onProgress });
     } finally {
-      if (wasStopped) stopSimulation();
-      else if (wasPaused) pauseSimulation();
+      if (request === simulationRequest) {
+        if (wasStopped) stopSimulation();
+        else if (wasPaused) pauseSimulation();
+      }
     }
   }
 
@@ -1410,6 +1505,7 @@ when clicked
   }
 
   function stopSimulation() {
+    simulationRequest += 1;
     cancelAnimationFrame(animationFrame);
     const snapshot = simulation?.stop() ?? null;
     if (snapshot) scene = snapshot;
@@ -1437,8 +1533,8 @@ when clicked
   const railTools: { mode: ToolMode; label: string; key: string; icon: typeof Move }[] = [
     { mode: "select", label: "Select", key: "Q", icon: MousePointer2 },
     { mode: "translate", label: "Move", key: "W", icon: Move },
-    { mode: "rotate", label: "Rotate", key: "E", icon: RotateCw },
-    { mode: "scale", label: "Scale", key: "R", icon: Scaling }
+    { mode: "rotate", label: "Rotate", key: "R", icon: RotateCw },
+    { mode: "scale", label: "Scale", key: "E", icon: Scaling }
   ];
   const shelfPrimitives: { shape: PrimitiveShape; label: string; icon: typeof Box }[] = [
     { shape: "box", label: "Cube", icon: Box }, { shape: "sphere", label: "Sphere", icon: Circle }, { shape: "cylinder", label: "Cylinder", icon: Cylinder },
@@ -1502,7 +1598,7 @@ when clicked
     copy: () => { if (selectedId) copyEntity(selectedId); },
     paste: () => pasteEntity(null),
     duplicate: () => { if (selectedId) duplicateEntity(selectedId); },
-    remove: () => { for (const id of [...selectedIds]) if (scene.entities.some((entity) => entity.id === id)) deleteEntity(id); },
+    remove: () => { if (apply(deleteEntityOps(scene, selectedIds))) { selectEntity(null); emitTutorial("delete"); } },
     rename: () => { if (selectedEntity) renameTarget = { id: selectedEntity.id, name: selectedEntity.name }; },
     group: groupSelection,
     togglePanel,
@@ -1532,13 +1628,13 @@ when clicked
 </script>
 
 <svelte:head><title>SimuStyle — Scene Editor</title></svelte:head>
-<svelte:window onpointermove={movePanelDrag} onpointerup={endPanelDrag} onpointerdown={closeShelfMenuOutside} onkeydown={(event) => { if (event.key === "Escape" && shelfMenu) { shelfMenu = null; return; } windowKeyDown(event); }} onkeyup={windowKeyUp} />
+<svelte:window onblur={() => simulation?.releaseAllKeys()} onpointermove={movePanelDrag} onpointerup={endPanelDrag} onpointerdown={closeShelfMenuOutside} onkeydown={(event) => { if (event.key === "Escape" && shelfMenu) { shelfMenu = null; return; } windowKeyDown(event); }} onkeyup={windowKeyUp} />
 
 <main class="editor" class:simulation-playing={playState === "playing"} class:simulation-paused={playState === "paused"}>
   <TopBar
     {sceneName}
     saved={undoStack === savedHistory && scene.name === savedSceneName}
-    editable={playState === "stopped"}
+    editable={playState === "stopped" && !playStarting}
     canUndo={undoStack.length > 0}
     canRedo={redoStack.length > 0}
     hasSelection={selectedId !== null}
@@ -1566,15 +1662,15 @@ when clicked
           <button role="tab" class="stage-tab" aria-selected={activeTab === "scene"} onclick={() => activeTab = "scene"}><Box size={13} /> Scene</button>
           {#each openScripts as id (id)}
             {@const entity = scene.entities.find((candidate) => candidate.id === id)}
-            <div class="stage-tab" role="tab" tabindex="0" aria-selected={activeTab === id} onclick={() => { activeTab = id; selectEntity(id); }} onkeydown={(event) => { if (event.key === "Enter") activeTab = id; }}>
-              <FileCode2 size={13} /> {entity?.name ?? id}{#if scriptDrafts[id] !== undefined}<i class="dirty-dot" title="Unsaved changes">●</i>{/if}
+            <div class="stage-tab" role="tab" tabindex="0" aria-selected={activeTab === scriptTabId(id)} onclick={() => { activeTab = scriptTabId(id); selectEntity(id); }} onkeydown={(event) => { if (event.key === "Enter") { activeTab = scriptTabId(id); selectEntity(id); } }}>
+              <FileCode2 size={13} /> {entity?.name ?? id}{#if draftSource(id) !== undefined}<i class="dirty-dot" title="Unsaved changes">●</i>{/if}
               <button class="close-tab" aria-label="Close {entity?.name ?? id} script" onclick={(event) => { event.stopPropagation(); closeScript(id); }}><X size={12} /></button>
             </div>
           {/each}
         </div>
       {/if}
       <div class="stage" bind:this={stageHost} style={stageContentStyle()} use:observeStageSize>
-        <Viewport scene={viewportScene} {selectedId} {selectedIds} {mode} {frameToken} {focusToken} {gridVisible} {space} {snap} canDrag={playState === "stopped"} onSelect={viewportSelect} onSelectMany={selectEntities} onTransform={updateTransform} onModeChange={(nextMode) => setMode(nextMode, "key")} onContextMenu={(id, x, y, position) => openEntityMenu(id, x, y, position, id ? "object" : "viewport")}>
+        <Viewport scene={viewportScene} {selectedId} {selectedIds} {mode} {frameToken} {focusToken} {gridVisible} {space} {snap} playState={playState} onCameraInput={(ops) => { const result = applyOps(scene, ops); if (!result.errors.length) scene = result.scene; }} canDrag={playState === "stopped"} onSelect={viewportSelect} onSelectMany={selectEntities} onTransform={updateTransform} onModeChange={(nextMode) => setMode(nextMode, "key")} onContextMenu={(id, x, y, position) => openEntityMenu(id, x, y, position, id ? "object" : "viewport")}>
           {#snippet overlay()}
             <div class="tool-rail" role="toolbar" aria-label="Transform tools" aria-orientation="vertical">
               {#each railTools as item (item.mode)}
@@ -1626,16 +1722,16 @@ when clicked
             {/if}
           {/snippet}
         </Viewport>
-        {#if activeTab !== "scene" && openScripts.includes(activeTab)}
-          {@const id = activeTab}
+        {#if activeTab !== "scene" && openScripts.some((id) => scriptTabId(id) === activeTab)}
+          {@const id = activeTab.slice("script:".length)}
           <div class="scene-content-window" style={sceneContentStyle()}>
             {#key id}
               <ScriptEditor
                 title={`${scene.entities.find((entity) => entity.id === id)?.name ?? id} — script`}
                 owner={scene.entities.find((entity) => entity.id === id)?.name ?? id}
                 ownerHasChildren={scene.entities.some((entity) => entity.parent === id)}
-                source={scriptDrafts[id] ?? storedSource(id)}
-                dirty={scriptDrafts[id] !== undefined}
+                source={draftSource(id) ?? storedSource(id)}
+                dirty={draftSource(id) !== undefined}
                 readOnly={playState !== "stopped"}
                 {entityNames}
                 entities={parseEntities}
@@ -1657,7 +1753,18 @@ when clicked
           {#if panelOpen.inspector}
             <section class="panel-window" class:floating-panel={panelLayouts.inspector.dock === "floating"} style={panelWindowStyle("inspector")} use:rememberPanelSize={"inspector"}>
               {@render panelTitle("inspector", "Inspector", "")}
-              <div class="panel-window-body sidebar-panel-body"><Inspector {scene} entity={selectedEntity} onUpdate={updateComponent} onRemove={(component) => selectedId && apply([{ op: "update", id: selectedId, components: { [component]: null } }])} onAdd={addComponent} onKeyframe={addKeyframe} onOpenScript={() => selectedId && openScript(selectedId)} onRename={(name) => selectedId && apply([{ op: "update", id: selectedId, components: {}, name }])} onReparent={(parent) => selectedId && reparentEntity(selectedId, parent)} onSettings={(settings) => { updateSettings(settings); emitTutorial("scene-settings"); }} onPhysics={(enabled) => selectedId && setPhysics(selectedId, enabled)} onCollision={(enabled) => selectedId && setCollision(selectedId, enabled)} playhead={timelineTime} onOpenTimeline={() => { if (!panelOpen.timeline) togglePanel("timeline"); else focusedPanel = "timeline"; }} onAnimate={(anchor) => openPresetGallery(selectedId, anchor)} {snap} onSnap={(enabled) => snap = enabled} /></div>
+              <div class="panel-window-body sidebar-panel-body">
+                <Inspector {scene} entity={selectedEntity} readOnly={playState !== "stopped" || playStarting}
+                  onUpdate={updateComponent} onRemove={(component) => selectedId && apply(removeComponentOps(scene, selectedId, component))}
+                  onAdd={addComponent} onKeyframe={addKeyframe} onOpenScript={() => selectedId && openScript(selectedId)}
+                  onRename={(name) => selectedId && apply([{ op: "update", id: selectedId, components: {}, name }])}
+                  onReparent={(parent) => selectedId && reparentEntity(selectedId, parent)}
+                  onSettings={(settings) => { updateSettings(settings); emitTutorial("scene-settings"); }}
+                  onPhysics={(enabled) => selectedId && setPhysics(selectedId, enabled)}
+                  onCollision={(enabled) => selectedId && setCollision(selectedId, enabled)} playhead={timelineTime}
+                  onOpenTimeline={() => { if (!panelOpen.timeline) togglePanel("timeline"); else focusedPanel = "timeline"; }}
+                  onAnimate={(anchor) => openPresetGallery(selectedId, anchor)} {snap} onSnap={(enabled) => snap = enabled} />
+              </div>
               <PanelResizeHandles panelName="Inspector" dock={panelLayouts.inspector.dock} onResizeStart={(event, edge) => startPanelResize(event, "inspector", edge)} />
             </section>
           {/if}
@@ -1692,7 +1799,7 @@ when clicked
           {#if panelOpen.timeline}
             <section class="panel-window" class:floating-panel={panelLayouts.timeline.dock === "floating"} style={panelWindowStyle("timeline")} use:rememberPanelSize={"timeline"}>
               {@render panelTitle("timeline", "Timeline", "")}
-              <div class="panel-window-body"><Timeline {scene} {selectedId} playhead={timelineTime} onPlayheadChange={(value) => timelineTime = value} onTrackChange={(tracks) => selectedId && changeTracks(selectedId, tracks)} onAnimatorChange={(fields) => selectedId && changeAnimator(selectedId, fields)} onApplyPreset={(presetId) => selectedId && applyAnimationPreset(selectedId, presetId)} /></div>
+              <div class="panel-window-body"><Timeline {scene} {selectedId} readOnly={playState !== "stopped" || playStarting} playhead={timelineTime} onPlayheadChange={(value) => { if (playState === "stopped" && !playStarting) timelineTime = value; }} onTrackChange={(tracks) => selectedId && changeTracks(selectedId, tracks)} onAnimatorChange={(fields) => selectedId && changeAnimator(selectedId, fields)} onApplyPreset={(presetId) => selectedId && applyAnimationPreset(selectedId, presetId)} /></div>
               <PanelResizeHandles panelName="Timeline" dock={panelLayouts.timeline.dock} onResizeStart={(event, edge) => startPanelResize(event, "timeline", edge)} />
             </section>
           {/if}
@@ -1761,7 +1868,7 @@ when clicked
     </div>
   {/if}
   {#if contextMenu}
-    <button class="context-dismiss" type="button" aria-label="Close entity menu" onclick={() => contextMenu = null}></button>
+    <button class="context-dismiss" type="button" aria-label="Close entity menu" onclick={() => contextMenu = null} oncontextmenu={(event) => event.preventDefault()}></button>
     <div class="entity-context-menu" data-tutorial-target="context-menu" style={`left:${contextMenu.x}px;top:${contextMenu.y}px`} role="menu" aria-label="Entity actions" tabindex="-1" oncontextmenu={(event) => event.preventDefault()}>
       <button role="menuitem" data-tutorial-target="context-add" aria-expanded={contextAddOpen} onclick={() => contextAddOpen = !contextAddOpen}><Plus size={13} /> Add <span class="context-chevron">{contextAddOpen ? "−" : "›"}</span></button>
       {#if contextAddOpen}

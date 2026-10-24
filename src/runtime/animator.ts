@@ -66,6 +66,7 @@ export function evaluateTrack(track: AnimationTrack, timeSeconds: number): Anima
     const first = keys[index]!;
     const second = keys[index + 1]!;
     if (timeSeconds > second.time) continue;
+    if (timeSeconds === second.time) return second.value;
     const span = second.time - first.time;
     if (span <= 0) return second.value;
     if (first.interpolation === "step") return first.value;
@@ -153,7 +154,7 @@ export function evaluateAnimations(scene: Scene, timeSeconds: number): AnimatorR
     const time = localTime(entity, timeSeconds);
     const changes: Record<string, Record<string, unknown>> = {};
     for (const track of tracks) {
-      if (track.component === "Transform" && entity.components.RigidBody && entity.components.RigidBody.bodyType !== "static" && entity.components.RigidBody.bodyType !== "kinematic") {
+      if (track.component === "Transform" && entity.components.RigidBody && entity.components.RigidBody.anchored !== true && entity.components.RigidBody.bodyType !== "static" && entity.components.RigidBody.bodyType !== "kinematic") {
         warnings.push(`Animation on dynamic rigid body '${entity.name}' was skipped; Transform animation is supported only for kinematic bodies.`);
         continue;
       }

@@ -10,7 +10,7 @@ import { scriptSchema } from "./components/script";
 import { transformSchema } from "./components/transform";
 import type { ComponentSchema } from "./types";
 
-export const componentSchemas: Record<string, ComponentSchema> = {
+export const componentSchemas: Record<string, ComponentSchema> = Object.assign(Object.create(null), {
   Transform: transformSchema,
   Mesh: meshSchema,
   Material: materialSchema,
@@ -21,6 +21,6 @@ export const componentSchemas: Record<string, ComponentSchema> = {
   Camera: cameraSchema,
   Script: scriptSchema,
   Animator: animatorSchema
-};
+});
 
 export { type ComponentSchema, type FieldSchema } from "./types";

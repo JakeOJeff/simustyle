@@ -11,6 +11,15 @@ function scriptScene(source: string, extra: Record<string, Record<string, unknow
 }
 
 describe("script runtime", () => {
+  it("clears held keys when input focus is lost", () => {
+    const runtime = new ScriptRuntime(scriptScene("forever\n  if key right is pressed\n    move right 1"));
+    runtime.start();
+    runtime.pressKey("right");
+    expect(runtime.advance(0.1).entities[0].components.Transform.position).toEqual([1, 0, 0]);
+    runtime.releaseAllKeys();
+    expect(runtime.advance(0.1).entities[0].components.Transform.position).toEqual([1, 0, 0]);
+    expect(runtime.takeIssues()).toEqual([]);
+  });
   it("runs initialization, start, and frame handlers through validated scene ops", () => {
     const runtime = new ScriptRuntime(scriptScene("param speed: float 0..10 = 3\nlet count = 0\non start:\n  self.transform.position.x = speed\nevery frame:\n  self.transform.position.x += dt\n  count += 1\n"));
     const started = runtime.start();

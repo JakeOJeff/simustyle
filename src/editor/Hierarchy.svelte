@@ -32,6 +32,7 @@
   let dragging = $state<string | null>(null);
   let dropZone = $state<DropZone | null>(null);
   let anchorId: string | null = null;
+  const isCollapsed = (id: string) => Object.hasOwn(collapsed, id) && collapsed[id];
 
   let rows = $derived.by(() => {
     const byParent = new Map<string, Entity[]>();
@@ -54,7 +55,7 @@
       visited.add(entity.id);
       const children = byParent.get(entity.id) ?? [];
       if (!hidden) result.push({ entity, depth, childCount: children.length });
-      for (const child of children) visit(child, depth + 1, hidden || Boolean(collapsed[entity.id]));
+      for (const child of children) visit(child, depth + 1, hidden || Boolean(isCollapsed(entity.id)));
     };
     for (const root of roots) visit(root, 0, false);
     // Keep malformed cyclic data visible instead of silently hiding entities.
@@ -74,7 +75,7 @@
     if (entity.components.Light) return { icon: Lightbulb, label: "Light" };
     if (entity.components.Camera) return { icon: Camera, label: "Camera" };
     if (entity.components.Script && !childCount) return { icon: ScrollText, label: "Scene script" };
-    return { icon: childCount && !collapsed[entity.id] ? FolderOpen : Folder, label: "Group" };
+    return { icon: childCount && !isCollapsed(entity.id) ? FolderOpen : Folder, label: "Group" };
   }
 
   function select(event: MouseEvent, id: string) {
@@ -158,7 +159,7 @@
         {@const kind = kindOf(row.entity, row.childCount)}
         {@const Icon = kind.icon}
         {@const selected = selectedIds.includes(row.entity.id)}
-        <li class="entity-row" data-tutorial-target="hierarchy-row" role="treeitem" aria-level={row.depth + 1} aria-selected={selected} aria-expanded={row.childCount ? !collapsed[row.entity.id] : undefined}
+        <li class="entity-row" data-tutorial-target="hierarchy-row" role="treeitem" aria-level={row.depth + 1} aria-selected={selected} aria-expanded={row.childCount ? !isCollapsed(row.entity.id) : undefined}
           class:selected
           class:primary={selectedIds[0] === row.entity.id}
           class:drop-inside={dropZone?.mode === "inside" && dropZone.id === row.entity.id}
@@ -177,8 +178,8 @@
           ondrop={(event) => { event.preventDefault(); event.stopPropagation(); finishDrop(zoneFor(event, row.entity)); }}
         >
           {#if row.childCount && !filter}
-            <button class="twisty" type="button" aria-label={collapsed[row.entity.id] ? `Expand ${row.entity.name}` : `Collapse ${row.entity.name}`} onclick={() => collapsed = { ...collapsed, [row.entity.id]: !collapsed[row.entity.id] }}>
-              {#if collapsed[row.entity.id]}<ChevronRight size={12} />{:else}<ChevronDown size={12} />{/if}
+            <button class="twisty" type="button" aria-label={isCollapsed(row.entity.id) ? `Expand ${row.entity.name}` : `Collapse ${row.entity.name}`} onclick={() => collapsed = { ...collapsed, [row.entity.id]: !isCollapsed(row.entity.id) }}>
+              {#if isCollapsed(row.entity.id)}<ChevronRight size={12} />{:else}<ChevronDown size={12} />{/if}
             </button>
           {:else}
             <span class="twisty" aria-hidden="true"></span>
@@ -194,7 +195,7 @@
               onkeydown={(event) => { if (event.key === "F2") { event.preventDefault(); startRename(row.entity); } }}>
               <span class="entity-icon" aria-hidden="true"><Icon size={13} /></span>
               <span class="entity-name">{row.entity.name}</span>
-              {#if row.childCount && collapsed[row.entity.id]}<span class="child-count" title="{row.childCount} inside">{row.childCount}</span>{/if}
+              {#if row.childCount && isCollapsed(row.entity.id)}<span class="child-count" title="{row.childCount} inside">{row.childCount}</span>{/if}
             </button>
           {/if}
           <button class="script-button" class:has-script={Boolean(row.entity.components.Script)} type="button"

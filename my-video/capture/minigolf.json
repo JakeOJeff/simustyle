@@ -1,0 +1,441 @@
+{
+  "version": 1,
+  "name": "Mini golf",
+  "settings": {
+    "background": "#17171c",
+    "ambientLightIntensity": 0.6
+  },
+  "entities": [
+    {
+      "id": "fairway",
+      "name": "Fairway",
+      "parent": null,
+      "components": {
+        "Transform": {
+          "position": [
+            0,
+            -0.1,
+            0
+          ],
+          "scale": [
+            3,
+            0.2,
+            12
+          ]
+        },
+        "Mesh": {
+          "shape": "box"
+        },
+        "Material": {
+          "color": "#3f9b5a",
+          "roughness": 0.9
+        },
+        "RigidBody": {
+          "bodyType": "static"
+        },
+        "Collider": {}
+      }
+    },
+    {
+      "id": "wall-left",
+      "name": "Wall left",
+      "parent": null,
+      "components": {
+        "Transform": {
+          "position": [
+            -1.6,
+            0.2,
+            0
+          ],
+          "scale": [
+            0.2,
+            0.4,
+            12
+          ]
+        },
+        "Mesh": {
+          "shape": "box"
+        },
+        "Material": {
+          "color": "#9a6a44"
+        },
+        "RigidBody": {
+          "bodyType": "static"
+        },
+        "Collider": {}
+      }
+    },
+    {
+      "id": "wall-right",
+      "name": "Wall right",
+      "parent": null,
+      "components": {
+        "Transform": {
+          "position": [
+            1.6,
+            0.2,
+            0
+          ],
+          "scale": [
+            0.2,
+            0.4,
+            12
+          ]
+        },
+        "Mesh": {
+          "shape": "box"
+        },
+        "Material": {
+          "color": "#9a6a44"
+        },
+        "RigidBody": {
+          "bodyType": "static"
+        },
+        "Collider": {}
+      }
+    },
+    {
+      "id": "wall-back",
+      "name": "Wall back",
+      "parent": null,
+      "components": {
+        "Transform": {
+          "position": [
+            0,
+            0.2,
+            -5.9
+          ],
+          "scale": [
+            3.4,
+            0.4,
+            0.2
+          ]
+        },
+        "Mesh": {
+          "shape": "box"
+        },
+        "Material": {
+          "color": "#9a6a44"
+        },
+        "RigidBody": {
+          "bodyType": "static"
+        },
+        "Collider": {}
+      }
+    },
+    {
+      "id": "ball",
+      "name": "Ball",
+      "parent": null,
+      "components": {
+        "Transform": {
+          "position": [
+            0.55,
+            0.6,
+            5
+          ],
+          "scale": [
+            0.5,
+            0.5,
+            0.5
+          ]
+        },
+        "Mesh": {
+          "shape": "sphere"
+        },
+        "Material": {
+          "color": "#f4f4f5",
+          "roughness": 0.35
+        },
+        "RigidBody": {
+          "bodyType": "dynamic",
+          "mass": 0.2,
+          "restitution": 0.3,
+          "linearDamping": 0.55,
+          "initialVelocity": [
+            -0.34,
+            0,
+            -5.9
+          ]
+        },
+        "Collider": {},
+        "Script": {
+          "source": "when I touch Hole\n  say \"Hole in one!\""
+        }
+      }
+    },
+    {
+      "id": "windmill",
+      "name": "Windmill",
+      "parent": null,
+      "components": {
+        "Transform": {
+          "position": [
+            0,
+            0,
+            0
+          ]
+        }
+      }
+    },
+    {
+      "id": "tower",
+      "name": "Tower",
+      "parent": "windmill",
+      "components": {
+        "Transform": {
+          "position": [
+            -0.85,
+            1.6,
+            0.4
+          ],
+          "scale": [
+            0.9,
+            3.2,
+            0.9
+          ]
+        },
+        "Mesh": {
+          "shape": "cylinder"
+        },
+        "Material": {
+          "color": "#c9c4bb",
+          "roughness": 0.8
+        }
+      }
+    },
+    {
+      "id": "roof",
+      "name": "Roof",
+      "parent": "windmill",
+      "components": {
+        "Transform": {
+          "position": [
+            -0.85,
+            3.55,
+            0.4
+          ],
+          "scale": [
+            1.3,
+            0.8,
+            1.3
+          ]
+        },
+        "Mesh": {
+          "shape": "cone"
+        },
+        "Material": {
+          "color": "#7c6cf0"
+        }
+      }
+    },
+    {
+      "id": "hub",
+      "name": "Blades",
+      "parent": "windmill",
+      "components": {
+        "Transform": {
+          "position": [
+            -0.85,
+            2.6,
+            -0.15
+          ],
+          "rotation": [
+            90,
+            0,
+            0
+          ]
+        },
+        "Mesh": {
+          "shape": "cylinder"
+        },
+        "Material": {
+          "color": "#2a2a30"
+        },
+        "Script": {
+          "source": "when game starts\n  spin me slowly"
+        }
+      }
+    },
+    {
+      "id": "blade-1",
+      "name": "Blade 1",
+      "parent": "hub",
+      "components": {
+        "Transform": {
+          "position": [
+            0,
+            0,
+            0
+          ],
+          "scale": [
+            0.28,
+            0.06,
+            3.4
+          ]
+        },
+        "Mesh": {
+          "shape": "box"
+        },
+        "Material": {
+          "color": "#e5484d"
+        }
+      }
+    },
+    {
+      "id": "blade-2",
+      "name": "Blade 2",
+      "parent": "hub",
+      "components": {
+        "Transform": {
+          "position": [
+            0,
+            0,
+            0
+          ],
+          "rotation": [
+            0,
+            90,
+            0
+          ],
+          "scale": [
+            0.28,
+            0.06,
+            3.4
+          ]
+        },
+        "Mesh": {
+          "shape": "box"
+        },
+        "Material": {
+          "color": "#e5484d"
+        }
+      }
+    },
+    {
+      "id": "hole",
+      "name": "Hole",
+      "parent": null,
+      "components": {
+        "Transform": {
+          "position": [
+            0,
+            0.01,
+            -4.5
+          ],
+          "scale": [
+            0.8,
+            0.02,
+            0.8
+          ]
+        },
+        "Mesh": {
+          "shape": "cylinder"
+        },
+        "Material": {
+          "color": "#0b0b0d"
+        },
+        "Collider": {
+          "trigger": true
+        }
+      }
+    },
+    {
+      "id": "pole",
+      "name": "Flag pole",
+      "parent": null,
+      "components": {
+        "Transform": {
+          "position": [
+            0,
+            0.9,
+            -4.5
+          ],
+          "scale": [
+            0.06,
+            1.8,
+            0.06
+          ]
+        },
+        "Mesh": {
+          "shape": "cylinder"
+        },
+        "Material": {
+          "color": "#e4e4e7"
+        }
+      }
+    },
+    {
+      "id": "flag",
+      "name": "Flag",
+      "parent": null,
+      "components": {
+        "Transform": {
+          "position": [
+            0.35,
+            1.6,
+            -4.5
+          ],
+          "scale": [
+            0.7,
+            0.42,
+            0.04
+          ]
+        },
+        "Mesh": {
+          "shape": "box"
+        },
+        "Material": {
+          "color": "#f5c46b"
+        },
+        "Script": {
+          "source": "when game starts\n  sway gently"
+        }
+      }
+    },
+    {
+      "id": "sun",
+      "name": "Sun",
+      "parent": null,
+      "components": {
+        "Transform": {
+          "position": [
+            5,
+            9,
+            6
+          ],
+          "rotation": [
+            -50,
+            35,
+            0
+          ]
+        },
+        "Light": {
+          "type": "directional",
+          "intensity": 2.4,
+          "color": "#fff4e6"
+        }
+      }
+    },
+    {
+      "id": "fill",
+      "name": "Fill light",
+      "parent": null,
+      "components": {
+        "Transform": {
+          "position": [
+            -4,
+            4,
+            -3
+          ]
+        },
+        "Light": {
+          "type": "point",
+          "intensity": 18,
+          "color": "#b4a9ff",
+          "castShadow": false
+        }
+      }
+    }
+  ]
+}

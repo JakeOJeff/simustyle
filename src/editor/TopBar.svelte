@@ -54,8 +54,8 @@
   const tools: { mode: ToolMode; label: string; key: string; icon: typeof Move }[] = [
     { mode: "select", label: "Select", key: "Q", icon: MousePointer2 },
     { mode: "translate", label: "Move", key: "W", icon: Move },
-    { mode: "rotate", label: "Rotate", key: "E", icon: RotateCw },
-    { mode: "scale", label: "Scale", key: "R", icon: Scaling }
+    { mode: "rotate", label: "Rotate", key: "R", icon: RotateCw },
+    { mode: "scale", label: "Scale", key: "E", icon: Scaling }
   ];
   const primitives: { shape: PrimitiveShape; label: string; icon: typeof Box }[] = [
     { shape: "box", label: "Cube", icon: Box }, { shape: "sphere", label: "Sphere", icon: Circle },
@@ -188,7 +188,7 @@
     <button class="tb-icon tb-support" title="SimuStyle is free forever. Support it" aria-label="Support SimuStyle" onclick={actions.openSupport}><Heart size={15} /></button>
     <div class="tb-transport" role="group" aria-label="Simulation">
       <span class="tb-clock" aria-label="Play time">{clock}<small>f {frame}</small></span>
-      <button class="tb-icon" title="Stop and restore the scene" data-tutorial-target="stop" aria-label="Stop" disabled={playState === "stopped"} onclick={actions.stop}><Square size={12} /></button>
+      <button class="tb-icon" title="Stop and restore the scene" data-tutorial-target="stop" aria-label="Stop" disabled={playState === "stopped" && !playStarting} onclick={actions.stop}><Square size={12} /></button>
       <button class="tb-icon" title="Step one frame" data-tutorial-target="step" aria-label="Step one frame" disabled={playState === "stopped"} onclick={actions.step}><SkipForward size={13} /></button>
       {#if playState === "playing"}
         <button class="tb-play" data-tutorial-target="play" onclick={actions.pause}><Pause size={13} fill="currentColor" /> Pause</button>

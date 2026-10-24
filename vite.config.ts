@@ -3,8 +3,8 @@ import { defineConfig } from "vitest/config";
 import { loadEnv } from "vite";
 import { build as esbuild } from "esbuild";
 import { resolve } from "node:path";
-import { forwardChat, MAX_CHAT_REQUEST_BYTES } from "./src/ai/chatProxy";
-import { creditClientIds, creditCookie, creditLimits, CreditLedger, memoryCreditStorage } from "./src/ai/credits";
+import { forwardChat, isAiConfigured, MAX_CHAT_REQUEST_BYTES, solReviewEnabled } from "./src/ai/chatProxy";
+import { adminSpendResult, creditClientIds, creditCookie, creditLimits, CreditLedger, memoryCreditStorage } from "./src/ai/credits";
 
 export default defineConfig(({ mode }) => {
   // Do not use Vite's VITE_ prefix: these values must stay on the server.
@@ -31,7 +31,7 @@ export default defineConfig(({ mode }) => {
 });
 
 function aiProxy(env: Record<string, string>) {
-  // Same daily credits as the hosted Worker, kept in memory until the dev server restarts.
+  // Same credits and monthly budget as the hosted Worker, kept in memory until the dev server restarts.
   const ledger = new CreditLedger(memoryCreditStorage(), creditLimits(env));
   // Charged under both the address and a cookie, like the Worker, so a refresh never refills credits.
   const clientIds = (request: unknown, response: { setHeader(name: string, value: string): unknown }) => {
@@ -46,11 +46,20 @@ function aiProxy(env: Record<string, string>) {
       server.middlewares.use("/api/ai/credits", async (request, response) => {
         response.setHeader("Cache-Control", "no-store");
         response.setHeader("Content-Type", "application/json; charset=utf-8");
-        if (!env.AI_API_KEY || !env.AI_MODEL) {
-          response.end(JSON.stringify({ enabled: false }));
+        if (!isAiConfigured(env)) {
+          response.end(JSON.stringify({ enabled: false, solReview: false }));
           return;
         }
-        response.end(JSON.stringify({ enabled: true, credits: await ledger.status(await clientIds(request, response)) }));
+        const credits = await ledger.status(await clientIds(request, response));
+        response.end(JSON.stringify({ enabled: true, credits, solReview: solReviewEnabled(env) }));
+      });
+      server.middlewares.use("/api/ai/spend", async (request, response) => {
+        response.setHeader("Cache-Control", "no-store");
+        response.setHeader("Content-Type", "application/json; charset=utf-8");
+        const secret = request.headers["x-admin-secret"];
+        const result = await adminSpendResult(Array.isArray(secret) ? secret[0] : secret, env, () => ledger.report());
+        response.statusCode = result.status;
+        response.end(JSON.stringify(result.body));
       });
       server.middlewares.use("/api/ai/chat", async (request, response) => {
         const incoming = request as unknown as {
@@ -100,14 +109,17 @@ function aiProxy(env: Record<string, string>) {
           offset += chunk.byteLength;
         }
         const id = await clientIds(request, response);
-        const result = await forwardChat(bytes, env, { spend: () => ledger.spend(id), refund: () => ledger.refund(id) });
+        const result = await forwardChat(bytes, env, {
+          reserve: (task) => ledger.reserve(id, task),
+          settle: (reservation, charge) => ledger.settle(id, reservation, charge)
+        });
         send(result.status, result.body);
       });
     }
   };
 }
 
-function standaloneRuntime() {
+function standaloneRuntime(): import("vite").Plugin {
   const publicId = "virtual:simustyle-standalone-runtime";
   const resolvedId = `\0${publicId}`;
   return {
@@ -119,7 +131,11 @@ function standaloneRuntime() {
         entryPoints: [resolve(process.cwd(), "src/export/standalone-runtime.ts")],
         bundle: true,
         write: false,
-        format: "esm",
+        format: "iife",
+        globalName: "SimuStyleRuntime",
+        footer: { js: "const startStandalone = SimuStyleRuntime.startStandalone;" },
+        define: { "import.meta.env.BASE_URL": JSON.stringify("/") },
+        metafile: true,
         platform: "browser",
         target: "es2022",
         minify: true,
@@ -127,6 +143,7 @@ function standaloneRuntime() {
       });
       const bundle = result.outputFiles[0]?.text;
       if (!bundle) throw new Error("Could not bundle the standalone scene runtime.");
+      for (const input of Object.keys(result.metafile!.inputs)) this.addWatchFile(resolve(process.cwd(), input));
       return `export default ${JSON.stringify(bundle)};`;
     }
   };

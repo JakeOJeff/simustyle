@@ -20,7 +20,54 @@ The top bar contains scene file actions, edit and view menus, transform tools, A
 - Drag a window title bar to move it. Drop it near an edge to snap it there; keep it away from edges to leave it floating.
 - Resize a floating window from any edge or corner. Resize a snapped window from its edge facing the center of the editor.
 - Snapped windows reserve their space so the Scene viewport and script editor fit between them. The current window layout is saved on this device.
-- The Scene viewport is the 3D work area. Drag with the left mouse button to orbit, use the wheel to zoom, and drag with the middle button to pan. The Perspective menu in the top-left corner switches between Perspective, Top, Bottom, Front, Back, Right, and Left views, and the Shaded menu beside it toggles wireframe display. In the top-right corner, click an axis on the gizmo to look down it; the buttons below it frame the selection and reset the camera. The tool rail on the left switches Select, Move, Rotate, and Scale, and the shelf along the bottom adds the last-used shape or light in one click (the arrow beside each picks another, plus empty groups and script objects), adds a camera, imports a scene file, or opens the AI panel with **Generate**. Selecting or transforming an object does not orbit the camera.
+- The Scene viewport is the 3D work area. Hold the right mouse button and drag to orbit, use the wheel to zoom, and drag with the middle button to pan. A short right-click (under 250 ms without dragging) opens the context menu; a longer hold or drag does not. The Perspective menu in the top-left corner switches between Perspective, Top, Bottom, Front, Back, Right, and Left views, and the Shaded menu beside it toggles wireframe display. In the top-right corner, click an axis on the gizmo to look down it; the buttons below it frame the selection and reset the camera. The tool rail on the left switches Select, Move, Rotate, and Scale, and the shelf along the bottom adds the last-used shape or light in one click (the arrow beside each picks another, plus empty groups and script objects), adds a camera, imports a scene file, or opens the AI panel with **Generate**. Selecting or transforming an object does not orbit the camera.
+
+## Cameras
+
+New scenes include an active **Camera**. Select it in Scene to edit Transform and Camera parameters. It looks along local **-Z**. **Scene camera** in the viewport previews the active lens; Play uses it automatically. Turning on **Is active** on another camera switches cameras. When importing an older scene with inactive cameras, the first camera is used; scenes without cameras use the editor's fallback view.
+
+Perspective uses **Fov** (degrees); orthographic uses **Ortho size** (visible vertical height before zoom). **Zoom** works on both. **Near** must be less than **Far**. Camera Transform, Fov, Zoom, Ortho size, and Follow offset support Timeline keyframes.
+
+**Follow target** follows an object with a **Follow offset** along world axes. **Follow damping** of 0 snaps; positive values smooth movement, with larger values catching up faster. **Look at target** continually aims at an object. Targets cannot create a dependency cycle through parents or other cameras. Deleting a target clears its camera references and undo restores them.
+
+Set **Controls** to `fly`, press Play, and click the viewport. Use **WASD** to move, **Q/E** for down/up, **Shift** for faster movement, and **left-drag** to look. Move speed is meters per second; Look speed is degrees per pointer pixel. Following overrides movement, and a look target overrides manual rotation. Pause freezes these controls; Stop restores the scene snapshot.
+
+Parent a light, mesh, or group under a camera to carry it. Child transforms are local to the camera. Use a negative Z offset to place an object in front of its lens. Keep camera rigs and carried objects without dynamic physics bodies.
+
+The `camera.*` API works in scene scripts, object scripts, and the Console:
+
+```text
+setting lens = 65 from 10 to 120
+when game starts
+  camera.set("fov", lens)
+  camera.follow(find("Player"), 0, 3, 6, 5)
+  camera.attach(find("Lamp"), 0.5, -0.3, -1)
+
+when space is pressed
+  camera.use(find("Overview"))
+```
+
+Create the named Player, Lamp, and Overview objects before using this example.
+
+| Call | Effect |
+| --- | --- |
+| `camera()` | Get the active camera handle. |
+| `camera.create("Overview", 0, 10, 10)` | Create and return a camera; the first becomes active. |
+| `camera.use(find("Overview"))` | Switch the active camera. |
+| `camera.get("fov")`, `camera.set("fov", 65)` | Read or change a parameter, with schema validation. |
+| `camera.set("projection", "orthographic")` | Change lens type. |
+| `camera.set("controls", "fly")` | Enable movement while playing. |
+| `camera.position(0, 4, 10)` | Set world position and clear following. |
+| `camera.move(0, 0, -1)` | Move along local axes; negative Z is forward. |
+| `camera.rotate(0, 15, 0)` | Add pitch, yaw, roll in degrees; clear look targeting. |
+| `camera.aim(0, 1, 0)` | Aim once at a world point; clear look targeting. |
+| `camera.lookAt(find("Player"))` | Track an object's position. |
+| `camera.follow(find("Player"), 0, 3, 6, 5)` | Follow and aim; damping is optional, default 0. |
+| `camera.unfollow()` | Clear follow and look targets, retaining the live Transform. |
+| `camera.attach(find("Lamp"), 0, 0, -1)` | Parent an object at a camera-local position. |
+| `camera.detach(find("Lamp"))` | Release a direct child into the scene, retaining its world pose. |
+
+Calls act on the active camera. You can also put a script on a camera and use `self.Camera.fov = 65` or ordinary sentences such as `move camera up 2 over 1 second`. Lens changes, following, scripts, and attachments work in standalone HTML and video exports. GLB captures the current camera lens and pose.
 
 ## Build and edit a scene
 
@@ -28,7 +75,7 @@ The top bar contains scene file actions, edit and view menus, transform tools, A
 
 Choose **Add** in the top bar to create a Cube, Sphere, Cylinder, Capsule, Cone, Plane, Point/Sun/Spot light, Camera, Script object, or Empty group. Lights and cameras show a small clickable wireframe marker; rotate a Sun or Spot light to aim it. New primitives are spaced around the origin. Select an object by clicking it in the viewport or its row in the Scene panel. The selected object's properties appear in Inspector.
 
-Press on an object and drag to move it, like in Roblox Studio: it slides across the floor and settles on top of other objects (or beside them when you drag onto a side). The pointer becomes an open hand over objects you can drag and a closed hand while dragging. Snap rounds the drop point to 0.5 m, and one undo puts the object back. Dragging is off during Play, and the gizmo handles take priority when the pointer is over them. A left-drag that starts on empty space still orbits the camera.
+Press on an object and drag to move it, like in Roblox Studio: it slides across the floor and settles on top of other objects (or beside them when you drag onto a side). The pointer becomes an open hand over objects you can drag and a closed hand while dragging. Snap rounds the drop point to 0.5 m, and one undo puts the object back. Dragging is off during Play, and the gizmo handles take priority when the pointer is over them. Left-drag on empty space keeps the camera still; hold the right mouse button and drag to orbit.
 
 Hold **Ctrl** and drag in the viewport to draw a selection box. Every object whose visible bounds intersect the box is selected. Ctrl-click or Shift-click rows in the Scene panel to add or remove items from the current selection.
 
@@ -53,6 +100,58 @@ Use the scene menu at the left of the top bar or the File menu to create, open, 
 Inspector edits the selected entity. Rename it in the Name field; edit Position, Rotation, and Scale in the Transform section. Component sections expose their fields and can be collapsed or removed when allowed. Add a component from the controls at the bottom of Inspector. Script settings and ranged parameters appear here too. Click a keyframe diamond beside an animatable property to key its current value at the Timeline playhead.
 
 With nothing selected (or **View → Scene settings…**), Inspector shows **Scene settings**: Physics (Collisions, Gravity with Earth/Moon/Zero presets, and Physics step), Environment (Sky color and Ambient light), and Grid (viewport Snap). These edits are undoable and take effect the next time you press Play.
+
+### Surface textures
+
+Select a mesh object, open **Look** in Inspector, and choose **Texture**: Bricks,
+Grass, Ground, Metal, Paper, Paving stones, Rock, Wood, or Wood floor. Choose
+**None** to return to a plain surface. **Mapping** has three modes:
+
+- **Auto repeat** (default): repeats at roughly one tile per meter. Resizing an
+  object or its parent group keeps the pattern size. Box faces and cylinder caps
+  use their own dimensions; curved surfaces use approximate circumference/arc length.
+- **Stretch**: fits one image across each surface.
+- **Custom**: exposes **Texture repeat X/Y** for your own repeat counts in UV space.
+
+**Normal map** selects the surface's lighting detail independently of color.
+**Auto (match texture)** uses the selected color texture's normal, **Off** disables
+normal mapping, or choose Bricks, Grass, Ground, Paving stones, Rock, Wood, or Wood
+floor directly. This also works with **Texture → None**, so a plain painted object
+can have brick edges, wood grain, or rock detail. The blue/purple preview shows the
+actual selected normal map. Paper and metal have flat source normals, so Auto
+uses no normal for those; a separate normal can still be applied to them.
+
+**Normal map strength** controls the effect: 0 flattens it, 1 uses the original
+map, and up to 10 makes subtle grain more visible. Color, normal, roughness and
+metalness maps share the selected Stretch/Auto repeat/Custom mapping.
+
+**Relief depth (m)** makes joints and grain look recessed as the camera moves,
+especially at shallow angles. Height-based parallax is enabled by default at
+0.035 m; increase toward 0.05–0.07 m for more pronounced stone relief, or set 0
+to disable it. **Crevice shadow** darkens the supplied occlusion map's cracks.
+Both effects use one small packed texture and add no mesh vertices. Turning
+both controls to 0 skips that texture entirely.
+
+Relief works in the editor, Play, offline HTML, and video. GLB preserves normal
+and ambient-occlusion maps; its standard materials do not carry the custom
+view-dependent parallax shader. Collision shapes stay unchanged.
+
+Color tints the image: white (`#ffffff`) keeps its original colors. Set roughness
+to 1 to preserve the supplied roughness map, and metalness to 1 for bare metal.
+One material covers the entire object; use separate parts for different surfaces.
+Texture and tiling edits support undo/redo, saving, duplication, Play, GLB, offline
+HTML, and video exports. HTML embeds each used image once and remains offline.
+
+Ask the Assistant to "give this wall a brick texture" or "make the floor wood with
+tiling 4 by 4." Scene and script agents receive texture context. Scripts can use
+`self.Material.texture = "wood"`, `self.Material.normalTexture = "rock"`,
+`self.Material.normalStrength = 2`, and
+`self.Material.textureMapping = "auto"`. For manual repeats, set
+`self.Material.textureMapping = "custom"` before `self.Material.textureRepeatX = 4`.
+
+The nine sets use compact 512px WebP maps and load only when selected. Height and
+AO are packed together for relief. Unused DirectX normals, previews and source
+files are excluded from the app; original 2K archives remain local in `textures/`.
 
 ### Collisions
 
@@ -88,7 +187,11 @@ The editor provides syntax highlighting, line numbers, starter examples, and inl
 
 ## AI scene assistant
 
-Open the Assistant window and describe a scene change in the prompt box; Enter sends the request and Shift+Enter adds a new line. The suggestions in an empty panel send a starter request with one click. Before applying anything, the assistant builds a first draft, runs its scripts in an isolated Play-start preview, then asks for an independent second pass that checks the design against your request and the captured Console output. The second result is validated before it is applied as one undoable edit. Expand **Checked before apply** in the response to see script output and runtime issues. This preview runs game-start scripts and five short script ticks; it does not render the scene or run Rapier physics, so it cannot verify the visual appearance or physics behavior. New objects are placed on free floor space when no position is given, lifted if they would sink into the floor, and renamed if their name is already taken; the reply mentions any adjustment. AI requires a configured provider and network access.
+Open the Assistant window and describe a scene change in the prompt box; Enter sends the request and Shift+Enter adds a new line. Include your style, colors, mood, materials, proportions, and important details. The assistant gives those instructions priority and uses the last six successful requests in this document as context for follow-up edits. New/Open clears that context. For example: "Build a cozy reading corner with sage-green upholstery, warm oak, rounded forms, and a brass floor lamp. Organize the chair and lamp into named folders."
+
+Before applying anything, the assistant builds a first draft using reusable assembly, repetition, and grouping functions. It validates components and scripts, checks world bounds, materials, duplicate surfaces, hierarchy, possible starting overlaps, and static camera framing, and runs an isolated Play-start script preview. An independent second pass compares the design against your exact request and these diagnostics. The final result is validated before it is applied as one undoable edit. Expand **Checked before apply** to see design checks, remaining advisory warnings, script output, and runtime issues.
+
+The preview runs game-start scripts and five short script ticks. Geometry diagnostics use conservative world-space bounds, with parent transforms included. The preview does not render the scene or run Rapier physics, so it cannot verify visual appearance or physics behavior; intentional contacts can produce warnings. New objects with no position are placed on free floor space, while explicitly supplied positions are preserved for review. Duplicate names are adjusted and reported. In large scenes, the assistant receives a bounded snapshot that prioritizes the objects you select and the subject you name. Select an assembly or describe it by name for precise follow-up edits. Exact, fully reviewed builds can be reused from a five-minute session cache, with local validation and preview repeated. AI requires a configured provider and network access for new builds.
 
 On the hosted site and the development server, AI uses daily credits: one credit per model call, and a request usually takes two or three. The balance shows under the prompt box and resets at 00:00 UTC. SimuStyle is free and its AI costs are paid by the developer, which is why the limit exists; the heart button in the top bar explains this and links to donations. The desktop app uses your own API key and has no credit limit.
 
@@ -118,7 +221,7 @@ Choose **Export** in the top bar:
 | Delete | Delete selection and its descendants |
 | F2 | Rename selected object |
 | Ctrl+G / Ctrl+Shift+G | Group selection / ungroup selection |
-| Q / W / E / R | Select / Move / Rotate / Scale tool |
+| Q / W / E / R | Select / Move / Scale / Rotate tool |
 | F | Frame selected object |
 | Drag an object in viewport | Move it across surfaces |
 | Ctrl+drag in viewport | Box-select intersecting objects |

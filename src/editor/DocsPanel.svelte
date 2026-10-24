@@ -5,7 +5,7 @@
   const topics = [
     ["getting-started", "Getting started"], ["workspace", "Workspace"], ["scene-editing", "Scene editing"],
     ["hierarchy-inspector", "Scene panel & Inspector"], ["scripts", "Scripts & Console"],
-    ["ai-assistant", "AI assistant"], ["animation-play", "Animation & Play"],
+    ["cameras", "Cameras"], ["ai-assistant", "AI assistant"], ["animation-play", "Animation & Play"],
     ["save-export", "Save & export"], ["shortcuts", "Keyboard shortcuts"], ["troubleshooting", "Troubleshooting"]
   ];
 </script>
@@ -43,7 +43,7 @@
       <h2>Arrange your workspace</h2>
       <p>Scene, Inspector, Console, Assistant, Timeline, and Docs are independent windows. The tabs along the bottom show or hide them. Drag a title bar to move a window; drop near an edge to snap it, or release away from edges to float it.</p>
       <p>Resize a floating window from any edge or corner. Resize a snapped window from its inner edge. Snapped windows reserve room for the Scene and Script work areas. Your panel layout is saved on this device.</p>
-      <p>In the Scene view, drag to orbit the camera, use the wheel to zoom, and middle-drag to pan. Right-click to open the context menu; choose <b>Add</b> to create an object at the pointer, or as a child of the clicked object. Drag a selected object's gizmo to transform the object without orbiting the camera.</p>
+      <p>In the Scene view, hold the right mouse button and drag to orbit the camera, use the wheel to zoom, and middle-drag to pan. A short right-click (under 250 ms without dragging) opens the context menu; choose <b>Add</b> to create an object at the pointer, or as a child of the clicked object. Left-drag objects or their gizmos to move them.</p>
     </section>
 
     <section id="docs-scene-editing">
@@ -59,6 +59,7 @@
       <p>In Inspector, edit the selected object's name and transform, change component fields, collapse sections, or add components. Script controls and ranged script settings also appear here. Click a diamond beside an animatable field to key its value at the current Timeline time.</p>
       <p>With nothing selected, Inspector shows <b>Scene settings</b>: collisions, gravity (with Earth, Moon, and Zero presets), physics step, sky color, ambient light, and grid snap. They apply the next time you press Play.</p>
       <p><b>Collisions:</b> the stacked-boxes toolbar button turns collisions on or off. Each object has <b>Physics</b> and <b>Collision</b> switches at the top of Inspector. A <b>Collider</b> makes an object solid and touchable without Physics; <b>Trigger</b> detects touches without blocking; <b>Reaction</b> (flash, shake, change color, jump, disappear, destroy other) reacts without a script. Scripts can use <code>when I touch a ball</code>.</p>
+      <p><b>Anchor:</b> with Physics on, enable Anchor to hold an object against gravity, pushes, and impacts while keeping collisions active. Turning Anchor off restores its selected body type. For a rolling ball, anchor the tilted plane, leave the sphere dynamic and unanchored, enable Collision on both, and use nonzero friction. Scripts and animation can still explicitly position anchored objects.</p>
     </section>
 
     <section id="docs-scripts">
@@ -81,6 +82,23 @@ when space is pressed
         <li><b>Logic:</b> <code>set score to 0</code>, <code>change score by 1</code>, <code>wait 1 second</code>, <code>repeat 3 times</code>, <code>if score is at least 3</code>, <code>broadcast "win"</code>.</li>
       </ul>
       <p>Commands can target <code>me</code>, <code>it</code>, a named object, <code>my children</code>, <code>my parent</code>, or a description such as <code>the nearest red ball</code>. Use <code>--</code> to start a comment. Runtime and compile errors appear in Console or inline beside the script.</p>
+    </section>
+
+    <section id="docs-cameras">
+      <h2>Cameras</h2>
+      <p>New scenes include an active Camera. Select it to edit its position, rotation and lens in Inspector. The camera looks along its local negative Z axis. <b>Scene camera</b> previews the active camera; Play uses it automatically. Stop restores your edits and the editor view. Set <b>Is active</b> on another camera to switch.</p>
+      <p>Choose perspective or orthographic projection. Fov controls the perspective lens; Ortho size is the visible vertical height before zoom. Near and Far clip distances must satisfy Near &lt; Far. Zoom works for both lenses. Use Timeline keyframes to animate Transform, Fov, Zoom, Ortho size or Follow offset.</p>
+      <p>Follow target follows an object using a world offset. Damping 0 snaps; positive damping smooths movement, with larger values catching up faster. Look at target keeps the camera aimed at an object. Set Controls to <b>fly</b>, press Play, then click the view: WASD moves, Q/E moves down/up, Shift moves faster, and left-drag looks around. Follow and Look at targets override their respective manual controls.</p>
+      <p>Put a light, shape or group inside the camera in the Scene panel to carry it. Child positions are camera-local: a negative Z offset puts something in front of the lens. Keep carried objects without dynamic physics.</p>
+      <pre>{`setting lens = 65 from 10 to 120
+when game starts
+  camera.set("fov", lens)
+  camera.follow(find("Player"), 0, 3, 6, 5)
+  camera.attach(find("Lamp"), 0.5, -0.3, -1)
+
+when space is pressed
+  camera.use(find("Overview"))`}</pre>
+      <p>From any script or Console: <code>camera()</code> returns the current camera, <code>camera.create("Overview", 0, 10, 10)</code> creates one, <code>camera.position(0, 4, 10)</code> sets world position, <code>camera.move(0, 0, -1)</code> moves forward locally, <code>camera.rotate(0, 15, 0)</code> turns, and <code>camera.aim(0, 1, 0)</code> aims at a world point. <code>camera.get("fov")</code> reads a parameter. <code>camera.unfollow()</code> clears tracking and <code>camera.detach(find("Lamp"))</code> releases a child. Ordinary sentences such as <code>move camera up 2 over 1 second</code> also work. HTML and video exports use the same camera behavior.</p>
     </section>
 
     <section id="docs-ai-assistant">
@@ -115,7 +133,7 @@ when space is pressed
         <div><dt>Delete</dt><dd>Delete selection</dd></div>
         <div><dt>F2</dt><dd>Rename selection</dd></div>
         <div><dt>Ctrl+G / Ctrl+Shift+G</dt><dd>Group / ungroup</dd></div>
-        <div><dt>Q / W / E / R</dt><dd>Select / Move / Rotate / Scale</dd></div>
+        <div><dt>Q / W / E / R</dt><dd>Select / Move / Scale / Rotate</dd></div>
         <div><dt>F</dt><dd>Frame selected object</dd></div>
         <div><dt>Drag an object</dt><dd>Slide it across the floor and onto other objects</dd></div>
         <div><dt>Ctrl+drag</dt><dd>Box-select in viewport</dd></div>

@@ -1,6 +1,14 @@
-import { describe, expect, it } from "vitest";
-import { runSceneAgent } from "../../src/ai/agent";
+import { beforeEach, describe, expect, it, vi } from "vitest";
+import { MAX_SCENE_INPUT_CHARS, runSceneAgent } from "../../src/ai/agent";
 import { createEmptyScene } from "../../src/scene/types";
+import type { SceneAgentRequest } from "../../src/ai/agent";
+import { buildSystemPrompt } from "../../src/ai/prompt";
+import { checkGeometry } from "../../src/ai/geometry";
+
+// The geometry checker is built separately; these tests control its lines directly.
+vi.mock("../../src/ai/geometry", () => ({ checkGeometry: vi.fn(() => []) }));
+const geometry = vi.mocked(checkGeometry);
+beforeEach(() => { geometry.mockReset(); geometry.mockReturnValue([]); });
 
 const dependencies = (replies: unknown[]) => ({
   buildSystemPrompt: () => "generated system prompt",
@@ -8,24 +16,121 @@ const dependencies = (replies: unknown[]) => ({
   complete: async () => replies.shift()
 });
 
+/** Total characters the client sends: system + user, plus the echoed reply and correction turn when correcting. */
+const requestChars = (request: SceneAgentRequest) => request.systemPrompt.length + request.userPrompt.length
+  + (request.correctionErrors.length ? request.previousReply.length + `Fix only these errors and return the full corrected JSON response: ${JSON.stringify(request.correctionErrors)}`.length : 0);
+
+const cube = (id: string, position: [number, number, number] = [0, 0.5, 0]) => ({ op: "create", id, name: id, parent: null, components: { Transform: { position }, Mesh: {}, Material: { color: "#3366aa" } } });
+const clean = { plan: "One 1 m cube at the origin.", summary: "Added a cube.", ops: [cube("cube")] };
+/** Below ground, so the design checks warn and the draft is not clean. */
+const sunken = { summary: "Added a sunken cube.", ops: [cube("cube", [0, -1, 0])] };
+const threeCubes = { summary: "Added three cubes.", ops: [cube("a", [-3, 0.5, 0]), cube("b", [0, 0.5, 0]), cube("c", [3, 0.5, 0])] };
+
+function recorder(replies: unknown[]) {
+  const requests: SceneAgentRequest[] = [];
+  return { requests, complete: async (request: SceneAgentRequest) => { requests.push(request); return replies.length > 1 ? replies.shift() : replies[0]; } };
+}
+
 describe("scene agent validation loop", () => {
-  it("accepts a valid operation and returns one inverse batch", async () => {
+  it("keeps review context below transport limits for a 1,407-object repeated build", async () => {
+    const build = { summary: "Built a row of assemblies.", ops: [
+      { op: "assemble", id: "module", name: "Module", parent: null, parts: Array.from({ length: 6 }, (_, i) => ({
+        id: `module_part_${i}`, name: `Module detail ${i}`, components: {
+          Transform: { position: [i * 0.2, 0.5, 0], scale: [0.1, 0.1, 0.1] }, Mesh: {}, Material: { color: "#334455" }
+        }
+      })) },
+      { op: "repeat", source: "module", idPrefix: "row", name: "Row module", count: 200, step: [2, 0, 0] }
+    ] };
+    const requests: SceneAgentRequest[] = [];
+    const result = await runSceneAgent(createEmptyScene(), "Build 201 modules with consistent detail", {
+      buildSystemPrompt, responseSchema: {}, solReviewEnabled: true, complete: async (request) => { requests.push(request); return build; }
+    });
+    expect(result.ok).toBe(true);
+    expect(result.scene?.entities).toHaveLength(1407);
+    expect(requests.map((request) => request.task)).toEqual(["scene_draft", "scene_review"]);
+    for (const request of requests) expect(requestChars(request)).toBeLessThanOrEqual(MAX_SCENE_INPUT_CHARS);
+    expect(requests[1]?.userPrompt).toContain("Bounded snapshot");
+    expect(requests[1]?.userPrompt).toContain('"op":"repeat"');
+  });
+
+  it("rejects invalid source scenes before making any model requests", async () => {
+    const scene = createEmptyScene();
+    scene.entities.push({ id: "bad", name: "Bad", parent: "missing", components: { Transform: {} } });
+    let calls = 0;
+    const result = await runSceneAgent(scene, "build", { ...dependencies([]), complete: async () => { calls++; return {}; } });
+    expect(result.ok).toBe(false);
+    expect(result.attempts).toBe(0);
+    expect(calls).toBe(0);
+    expect(result.errors.join()).toContain("current entity 'bad'");
+  });
+
+  it("expands assemblies before review and supplies style context and measured design feedback", async () => {
+    const part = (id: string, y: number) => ({ id, name: id, components: { Transform: { position: [0, y, 0] }, Mesh: {}, Material: { color: "#bb2233" } } });
+    const build = { plan: "Arch: beam 2 m up on two posts.", summary: "Built the red arch.", ops: [{ op: "assemble", id: "arch", name: "Arch", parent: null,
+      parts: [part("beam", 2), part("post_left", 1), part("post_right", 1.01)] }] };
+    const { requests, complete } = recorder([build]);
+    const result = await runSceneAgent(createEmptyScene(), "Use bright red in my playful style", {
+      ...dependencies([]), previousRequests: ["Use a playful low-poly style"], solReviewEnabled: true, complete
+    });
+    expect(result.ok).toBe(true);
+    expect(result.ops.every((op) => op.op === "create")).toBe(true);
+    expect(requests[0]?.userPrompt).toContain("Use a playful low-poly style");
+    expect(requests[1]?.task).toBe("scene_review");
+    expect(requests[1]?.systemPrompt).toBe(requests[0]?.systemPrompt);
+    expect(requests[1]?.userPrompt).toContain("DESIGN AND ORGANIZATION CHECKS");
+    expect(requests[1]?.userPrompt).toContain("ORIGINAL scene");
+    expect(requests[1]?.userPrompt).toContain('"op":"assemble"');
+    expect(requests[1]?.userPrompt).toContain("Arch: beam 2 m up on two posts.");
+    expect(requests[1]?.userPrompt).toContain("Use bright red in my playful style");
+    expect(result.preflight?.quality?.stats).toMatchObject({ groups: 1, meshes: 3 });
+  });
+
+  it("turns malformed operation payloads into correction feedback instead of crashing", async () => {
+    const result = await runSceneAgent(createEmptyScene(), "build", {
+      ...dependencies([{ summary: "Bad", ops: [{ op: "create", id: "bad", parent: null, components: { Mesh: null } }] }]), maxRetries: 0
+    });
+    expect(result.ok).toBe(false);
+    expect(result.ops).toEqual([]);
+    expect(result.errors.length).toBeGreaterThan(0);
+  });
+
+  it("allows unrelated edits when a baseline script already has compile errors", async () => {
+    const scene = createEmptyScene();
+    scene.entities.push({ id: "old", name: "Old script", parent: null, components: { Transform: {}, Script: { source: "when game starts\n  unsupported command" } } });
+    const reply = { summary: "Changed the background.", ops: [{ op: "settings", settings: { background: "#112233" } }] };
+    const result = await runSceneAgent(scene, "change the background", dependencies([reply, reply]));
+    expect(result.ok).toBe(true);
+    expect(result.preflight?.baselineIssues.length).toBeGreaterThan(0);
+    expect(result.scene?.settings.background).toBe("#112233");
+  });
+
+  it("does not hide a new runtime error behind twenty existing baseline issues", async () => {
+    const scene = createEmptyScene();
+    scene.entities = Array.from({ length: 21 }, (_, i) => ({ id: `old_${i}`, name: `Old ${i}`, parent: null,
+      components: { Transform: {}, Script: { source: `when game starts\n  move missing_${i} up 1` } } }));
+    const broken = { summary: "Added a broken script.", ops: [{ op: "create", id: "new", name: "New", parent: null,
+      components: { Transform: {}, Script: { source: "when game starts\n  move another_missing up 1" } } }] };
+    const result = await runSceneAgent(scene, "add script", { ...dependencies([]), complete: async () => broken, maxRetries: 0 });
+    expect(result.ok).toBe(false);
+    expect(result.errors.join()).toContain("another_missing");
+  });
+
+  it("accepts a valid operation and returns one inverse batch without a review for a clean draft", async () => {
     const result = await runSceneAgent(createEmptyScene(), "add a cube", dependencies([
-      { summary: "First build: added a cube.", ops: [{ op: "create", id: "cube", name: "Cube", parent: null, components: { Transform: {}, Mesh: {}, Material: {} } }] },
-      { summary: "Reviewed the request and kept the cube.", ops: [{ op: "create", id: "cube", name: "Cube", parent: null, components: { Transform: {}, Mesh: {}, Material: {} } }] }
+      { summary: "First build: added a cube.", ops: [{ op: "create", id: "cube", name: "Cube", parent: null, components: { Transform: {}, Mesh: {}, Material: {} } }] }
     ]));
     expect(result.ok).toBe(true);
+    expect(result.summary).toBe("First build: added a cube.");
     expect(result.scene?.entities[0]?.id).toBe("cube");
     expect(result.inverseOps).toEqual([{ op: "delete", id: "cube" }]);
-    expect(result.attempts).toBe(2);
+    expect(result.attempts).toBe(1);
     expect(result.preflight?.frames).toBe(5);
   });
 
-  it("sends validation errors into the correction retry and caps attempts", async () => {
+  it("sends validation errors into the correction retry", async () => {
     const replies = [
       { summary: "Bad edit", ops: [{ op: "create", id: "bad", name: "Bad", parent: null, components: { Mesh: { unsupported: 1 } } }] },
-      { summary: "Fixed edit", ops: [{ op: "create", id: "good", name: "Good", parent: null, components: { Transform: {}, Mesh: {}, Material: {} } }] },
-      { summary: "Reviewed the fixed edit.", ops: [{ op: "create", id: "good", name: "Good", parent: null, components: { Transform: {}, Mesh: {}, Material: {} } }] }
+      { summary: "Fixed edit", ops: [{ op: "create", id: "good", name: "Good", parent: null, components: { Transform: {}, Mesh: {}, Material: {} } }] }
     ];
     const requests: string[][] = [];
     const result = await runSceneAgent(createEmptyScene(), "make a cube", {
@@ -33,9 +138,20 @@ describe("scene agent validation loop", () => {
       complete: async ({ correctionErrors }) => { requests.push(correctionErrors); return replies.shift(); }
     });
     expect(result.ok).toBe(true);
-    expect(result.attempts).toBe(3);
+    expect(result.attempts).toBe(2);
     expect(requests[0]).toEqual([]);
     expect(requests[1]?.length).toBeGreaterThan(0);
+  });
+
+  it("caps the draft at two correction retries", async () => {
+    const bad = { summary: "Bad", ops: [{ op: "update", id: "ghost", components: {} }] };
+    for (const maxRetries of [undefined, 5]) {
+      const { requests, complete } = recorder([bad]);
+      const result = await runSceneAgent(createEmptyScene(), "x", { ...dependencies([]), complete, ...(maxRetries === undefined ? {} : { maxRetries }) });
+      expect(result.ok).toBe(false);
+      expect(requests).toHaveLength(3);
+      expect(requests.every((request) => request.task === "scene_draft")).toBe(true);
+    }
   });
 
   it("rejects scripts with compile errors before committing ops", async () => {
@@ -63,14 +179,11 @@ describe("scene agent validation loop", () => {
       parent: null,
       components: { Transform: {}, Script: { source: 'when game starts\n  say "reviewed hello"' } }
     }] };
-    const requests: { systemPrompt: string; userPrompt: string }[] = [];
-    const replies = [first, second];
-    const result = await runSceneAgent(createEmptyScene(), "make a player say hello when the game starts", {
-      ...dependencies(replies),
-      complete: async (request) => { requests.push(request); return replies.shift(); }
-    });
+    const { requests, complete } = recorder([first, second]);
+    const result = await runSceneAgent(createEmptyScene(), "make a player say hello when the game starts", { ...dependencies([]), complete });
     expect(result.ok).toBe(true);
     expect(requests).toHaveLength(2);
+    expect(requests[1]?.task).toBe("scene_draft");
     expect(requests[1]?.userPrompt).toContain("make a player say hello when the game starts");
     expect(requests[1]?.userPrompt).toContain("could not find 'missing'");
     expect(requests[1]?.userPrompt).toContain("Player: draft hello");
@@ -86,9 +199,12 @@ describe("scene agent validation loop", () => {
       parent: null,
       components: { Transform: {}, Script: { source: "when game starts\n  move missing up 1" } }
     }] };
-    const result = await runSceneAgent(createEmptyScene(), "add a player", dependencies([broken, broken, broken, broken]));
+    const { requests, complete } = recorder([broken]);
+    const result = await runSceneAgent(createEmptyScene(), "add a player", { ...dependencies([]), complete });
     expect(result.ok).toBe(false);
     expect(result.scene).toBeUndefined();
+    expect(result.fallbackDraft).toBeDefined();
+    expect(requests).toHaveLength(3);
     expect(result.errors.join(" ")).toContain("could not find 'missing'");
   });
 
@@ -107,5 +223,145 @@ describe("scene agent validation loop", () => {
     const { diagnose } = await import("../../src/lang/autocorrect");
     expect(SCRIPT_AGENT_SPEC).toContain("there is no kill");
     expect(diagnose("when I touch player\n  move it to 0 2 0")).toEqual([]);
+  });
+});
+
+describe("prompt caching layout", () => {
+  it("sends one byte-identical system prompt for every scene, request, correction and review", async () => {
+    const prompts = new Set<string>();
+    const users: string[] = [];
+    const run = async (scene: ReturnType<typeof createEmptyScene>, request: string, replies: unknown[]) => {
+      const { requests, complete } = recorder(replies);
+      await runSceneAgent(scene, request, { buildSystemPrompt, responseSchema: {}, complete, previousRequests: [`before ${request}`], focusIds: scene.entities.map((entity) => entity.id) });
+      for (const sent of requests) { prompts.add(sent.systemPrompt); users.push(sent.userPrompt); }
+      return requests;
+    };
+    const populated = createEmptyScene();
+    populated.entities.push({ id: "room", name: "Room", parent: null, components: { Transform: {} } });
+    const first = await run(createEmptyScene(), "add a sunken cube", [{ summary: "bad", ops: [{ op: "delete", id: "ghost" }] }, sunken]);
+    const second = await run(populated, "paint the room", [clean]);
+    expect(first.map((request) => request.task)).toEqual(["scene_draft", "scene_draft", "scene_draft"]);
+    expect(first[2]?.userPrompt).toContain("second-pass review");
+    expect(second).toHaveLength(1);
+    expect(prompts.size).toBe(1);
+    expect([...prompts][0]).toBe(buildSystemPrompt());
+    expect(first[0]?.userPrompt.startsWith("## Current scene\n")).toBe(true);
+    expect(second[0]?.userPrompt.startsWith("## Current scene\n")).toBe(true);
+    expect(second[0]?.userPrompt).toContain('- room "Room"');
+    expect(second[0]?.userPrompt).toContain('Selected object ids (resolve this/these using this selection): ["room"]');
+    expect(second[0]?.userPrompt).toContain("before paint the room");
+    expect(users.every((user) => !buildSystemPrompt().includes(user))).toBe(true);
+  });
+
+  it("ignores the plan when applying and accepts a reply that omits it", async () => {
+    for (const reply of [clean, { summary: clean.summary, ops: clean.ops }]) {
+      const { requests, complete } = recorder([reply]);
+      const result = await runSceneAgent(createEmptyScene(), "add a cube", { ...dependencies([]), complete });
+      expect(result.ok).toBe(true);
+      expect(requests).toHaveLength(1);
+      expect(result.ops).toHaveLength(1);
+      expect(JSON.stringify(result.ops)).not.toContain("One 1 m cube");
+    }
+  });
+});
+
+describe("geometry checks", () => {
+  const flag = "Wheel3 is 0.4 m below CarBody and touches nothing";
+
+  it("feeds geometry lines into the draft correction errors", async () => {
+    geometry.mockReturnValueOnce([flag]);
+    const { requests, complete } = recorder([clean]);
+    const result = await runSceneAgent(createEmptyScene(), "add a cube", { ...dependencies([]), complete });
+    expect(result.ok).toBe(true);
+    expect(requests).toHaveLength(2);
+    expect(requests[1]?.correctionErrors).toContain(flag);
+    expect(requests[1]?.previousReply).toContain("Added a cube.");
+    expect(geometry.mock.calls[0]?.[2]).toBe("add a cube");
+  });
+
+  it("accepts a draft with only geometry flags on its last attempt and passes them to the review", async () => {
+    geometry.mockReturnValue([flag]);
+    const { requests, complete } = recorder([clean]);
+    const result = await runSceneAgent(createEmptyScene(), "add a cube", { ...dependencies([]), complete });
+    expect(result.ok).toBe(true);
+    expect(requests.map((request) => request.task)).toEqual(["scene_draft", "scene_draft", "scene_draft", "scene_draft", "scene_draft"]);
+    expect(requests[3]?.userPrompt).toContain(`GEOMETRY CHECKS (exact; fix each unless the request intends it):\n- ${flag}`);
+    expect(requests[4]?.correctionErrors).toContain(flag);
+    expect(result.preflight?.geometry).toEqual([flag]);
+  });
+});
+
+describe("review escalation", () => {
+  const run = async (replies: unknown[], solReviewEnabled?: boolean) => {
+    const { requests, complete } = recorder(replies);
+    const result = await runSceneAgent(createEmptyScene(), "build it", { ...dependencies([]), complete, ...(solReviewEnabled === undefined ? {} : { solReviewEnabled }) });
+    return { result, tasks: requests.map((request) => request.task) };
+  };
+
+  it("skips the review for a clean draft when escalation is off", async () => {
+    const { result, tasks } = await run([threeCubes], false);
+    expect(result.ok).toBe(true);
+    expect(tasks).toEqual(["scene_draft"]);
+  });
+
+  it("escalates to scene_review for three or more created entities", async () => {
+    expect((await run([threeCubes], true)).tasks).toEqual(["scene_draft", "scene_review"]);
+  });
+
+  it("skips the review for a small clean draft that needed no correction", async () => {
+    expect((await run([clean], true)).tasks).toEqual(["scene_draft"]);
+  });
+
+  it("escalates when the draft needed a correction", async () => {
+    expect((await run([{ summary: "bad", ops: [{ op: "delete", id: "ghost" }] }, clean], true)).tasks).toEqual(["scene_draft", "scene_draft", "scene_review"]);
+  });
+
+  it("reviews an unclean draft on the cheap model when not escalated", async () => {
+    const { result, tasks } = await run([sunken], false);
+    expect(result.ok).toBe(true);
+    expect(tasks).toEqual(["scene_draft", "scene_draft"]);
+  });
+
+  it("caps the review at one correction, then falls back to the validated draft", async () => {
+    const { result, tasks } = await run([sunken, { summary: "bad", ops: [{ op: "delete", id: "ghost" }] }], true);
+    expect(tasks).toEqual(["scene_draft", "scene_draft", "scene_draft"]);
+    expect(result.ok).toBe(true);
+    expect(result.summary).toContain("Applied the validated first draft");
+    const escalated = await run([threeCubes, { summary: "bad", ops: [{ op: "delete", id: "ghost" }] }], true);
+    expect(escalated.tasks).toEqual(["scene_draft", "scene_review", "scene_review"]);
+    expect(escalated.result.summary).toContain("Applied the validated first draft");
+  });
+});
+
+describe("request size budget", () => {
+  it("keeps every draft, correction and review request within the server input cap", async () => {
+    const scene = createEmptyScene();
+    scene.entities = Array.from({ length: 800 }, (_, i) => ({ id: `crate_${i}`, name: `Crate number ${i}`, parent: null,
+      components: { Transform: { position: [(i % 40) * 2, 0.5, Math.floor(i / 40) * 2] }, Mesh: {}, Material: { color: "#8b5a3b", roughness: 0.7 },
+        Script: { source: `when clicked\n  say "crate ${i} ${"detail ".repeat(10)}"` } } }));
+    const ghosts = { summary: "Bad", plan: "p".repeat(1500), ops: Array.from({ length: 60 }, (_, i) => ({ op: "update", id: `ghost_${i}_${"x".repeat(80)}`, components: {} })) };
+    const valid = { summary: "Added a sunken cube.", plan: "q".repeat(1500), ops: [cube("cube", [0, -1, 0]), ...Array.from({ length: 50 }, (_, i) => cube(`extra_${i}`, [i * 2, 0.5, 60]))] };
+    // Pad the system prompt to at least 24k so later growth of the modeling rules/examples stays covered.
+    const system = buildSystemPrompt() + "\n" + "m".repeat(Math.max(0, 24_000 - buildSystemPrompt().length));
+    const { requests, complete } = recorder(["{".repeat(30_000), ghosts, valid, "{".repeat(30_000), valid]);
+    const result = await runSceneAgent(scene, "Add a cube. " + "Make it look good. ".repeat(150), {
+      buildSystemPrompt: () => system, responseSchema: {}, complete, solReviewEnabled: true,
+      previousRequests: Array.from({ length: 6 }, (_, i) => `Earlier request ${i} `.repeat(60)), focusIds: scene.entities.map((entity) => entity.id)
+    });
+    expect(result.ok).toBe(true);
+    expect(requests.map((request) => request.task)).toEqual(["scene_draft", "scene_draft", "scene_draft", "scene_review", "scene_review"]);
+    const sizes = requests.map(requestChars);
+    for (const size of sizes) expect(size).toBeLessThanOrEqual(MAX_SCENE_INPUT_CHARS);
+    expect(requests[1]?.previousReply).toContain("[Rejected response truncated for context budget.]");
+    expect(requests[3]?.userPrompt).toContain("Bounded snapshot");
+    console.info(`system prompt ${buildSystemPrompt().length} chars (test uses ${system.length}); request sizes ${sizes.join(", ")}`);
+  });
+
+  it("fails fast when the request cannot fit even with an empty scene context", async () => {
+    let calls = 0;
+    const result = await runSceneAgent(createEmptyScene(), "x".repeat(11_000), { ...dependencies([]), buildSystemPrompt: () => "s".repeat(25_000), complete: async () => { calls++; return clean; } });
+    expect(result.ok).toBe(false);
+    expect(result.errors.join()).toContain("too large");
+    expect(calls).toBe(0);
   });
 });

@@ -36,6 +36,17 @@ function animatedScene(options: { loop?: boolean; duration?: number; bodyType?: 
 }
 
 describe("timeline animation runtime", () => {
+  it("switches stepped values exactly at interior keyframes", () => {
+    const track: AnimationTrack = { component: "Light", field: "intensity", keys: [
+      { time: 0, value: 1, interpolation: "step" },
+      { time: 1, value: 2, interpolation: "step" },
+      { time: 2, value: 3, interpolation: "step" }
+    ] };
+    expect(evaluateTrack(track, 0.999)).toBe(1);
+    expect(evaluateTrack(track, 1)).toBe(2);
+    expect(evaluateTrack(track, 1.001)).toBe(2);
+    expect(evaluateTrack(track, 2)).toBe(3);
+  });
   it("interpolates float, vec3, and hex colors with each supported easing", () => {
     const linear: AnimationTrack = { component: "Transform", field: "position", keys: [
       { time: 0, value: [0, 0, 0], interpolation: "linear" }, { time: 2, value: [4, 2, -2], interpolation: "linear" }
@@ -72,6 +83,14 @@ describe("timeline animation runtime", () => {
     expect(result.warnings).toHaveLength(1);
     expect(result.warnings[0]).toContain("dynamic rigid body 'Cube'");
     expect(result.scene.entities[0]?.components.Material?.color).toBe("#808080");
+  });
+
+  it("allows explicit Transform animation on anchored bodies", () => {
+    const scene = animatedScene({ bodyType: "dynamic" });
+    scene.entities[0].components.RigidBody.anchored = true;
+    const result = evaluateAnimations(scene, 1);
+    expect(result.scene.entities[0].components.Transform.position).toEqual([2, 1, -1]);
+    expect(result.warnings).toEqual([]);
   });
 
   it("keeps a playback clock and can reset it", () => {
