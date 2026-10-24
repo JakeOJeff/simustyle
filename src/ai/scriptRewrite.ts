@@ -196,7 +196,7 @@ function sentence(text: string): string {
   return !trimmed || /[.!?]$/.test(trimmed) ? trimmed : `${trimmed}.`;
 }
 
-const defaultCompletion: RewriteCompletion = (messages, schema) => requestJson(messages, schema);
+const defaultCompletion: RewriteCompletion = (messages, schema) => requestJson(messages, schema, "parse");
 
 /**
  * Apply a reply one line at a time from the top, keeping each replacement that

@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { requestSceneEdit } from "../src/ai/client";
+import { fetchAiStatus, fetchCredits, requestJson, requestSceneEdit } from "../src/ai/client";
 
 afterEach(() => vi.unstubAllGlobals());
 
@@ -24,6 +24,8 @@ describe("scene AI transport client", () => {
       { role: "user", content: "add a cube" }
     ]);
     expect(request.responseFormat.type).toBe("json_schema");
+    expect((request as { task?: string }).task).toBe("scene_draft");
+    expect(request).not.toHaveProperty("model");
     expect(request.responseFormat.json_schema.strict).toBe(false);
     expect(JSON.stringify(init)).not.toContain("AI_API_KEY");
   });
@@ -60,5 +62,26 @@ describe("scene AI transport client", () => {
       new Response(JSON.stringify({ content: "not json" }), { status: 200 })
     ));
     await expect(requestSceneEdit("system", "request")).rejects.toThrow("The model returned invalid JSON.");
+  });
+
+  it("names the task so the server can pick the model", async () => {
+    const fetchMock = vi.fn().mockImplementation(async () => new Response(JSON.stringify({ content: "{}" }), { status: 200 }));
+    vi.stubGlobal("fetch", fetchMock);
+    await requestSceneEdit("system", "review", [], {}, "", "scene_review");
+    await requestJson([{ role: "system", content: "s" }, { role: "user", content: "u" }], { name: "x", strict: true, schema: {} }, "parse");
+    const tasks = fetchMock.mock.calls.map((call) => (JSON.parse(String((call[1] as RequestInit).body)) as { task: string }).task);
+    expect(tasks).toEqual(["scene_review", "parse"]);
+  });
+
+  it("reads credits and whether the strong review model is on", async () => {
+    const credits = { remaining: 12, limit: 30, resetsAt: "2026-10-13T00:00:00.000Z" };
+    vi.stubGlobal("fetch", vi.fn().mockImplementation(async () => Response.json({ enabled: true, credits, solReview: true })));
+    await expect(fetchAiStatus()).resolves.toEqual({ credits, solReview: true });
+    await expect(fetchCredits()).resolves.toEqual(credits);
+
+    vi.stubGlobal("fetch", vi.fn().mockImplementation(async () => Response.json({ enabled: false })));
+    await expect(fetchAiStatus()).resolves.toEqual({ credits: null, solReview: false });
+    vi.stubGlobal("fetch", vi.fn().mockRejectedValue(new TypeError("offline")));
+    await expect(fetchCredits()).resolves.toBeNull();
   });
 });

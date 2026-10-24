@@ -2,8 +2,12 @@
  * Cloudflare Worker for the hosted site. Static files (landing page at /, editor at /editor/) come from
  * the built `dist/` folder; only /api/* and /download/* reach this code (see `run_worker_first` in wrangler.jsonc).
  */
-import { forwardChat, type ChatCredits, type ChatProxyEnv } from "../src/ai/chatProxy";
-import { creditClientIds, creditCookie, creditLimits, CreditLedger, type CreditLimitEnv, type CreditStatus, type CreditStorage, type SpendResult } from "../src/ai/credits";
+import { forwardChat, isAiConfigured, solReviewEnabled, type ChatCredits, type ChatProxyEnv } from "../src/ai/chatProxy";
+import {
+  adminSpendResult, creditClientIds, creditCookie, creditLimits, CreditLedger,
+  type AdminEnv, type CallCharge, type CreditLimitEnv, type CreditStatus, type CreditStorage, type Reservation, type SpendReport
+} from "../src/ai/credits";
+import { isAiTask } from "../src/ai/tasks";
 
 interface DurableObjectStub { fetch(request: Request): Promise<Response> }
 interface DurableObjectNamespace {
@@ -11,9 +15,9 @@ interface DurableObjectNamespace {
   get(id: unknown): DurableObjectStub;
 }
 
-interface Env extends ChatProxyEnv, CreditLimitEnv {
+interface Env extends ChatProxyEnv, CreditLimitEnv, AdminEnv {
   ASSETS: { fetch(request: Request): Promise<Response> };
-  /** One ledger instance holds every visitor's daily AI credits (see AiCreditLedger below). */
+  /** One ledger instance holds every visitor's daily credits and the month's spend (see AiCreditLedger below). */
   AI_CREDITS: DurableObjectNamespace;
   /** owner/name of the GitHub repository whose releases hold the Windows installer. */
   GITHUB_REPO: string;
@@ -24,6 +28,7 @@ export default {
     const url = new URL(request.url);
     if (url.pathname === "/api/ai/chat") return aiChat(request, env);
     if (url.pathname === "/api/ai/credits") return aiCredits(request, env);
+    if (url.pathname === "/api/ai/spend") return aiSpend(request, env);
     if (url.pathname === "/download/windows") return windowsDownload(env);
     return env.ASSETS.fetch(request);
   }
@@ -37,34 +42,42 @@ async function aiChat(request: Request, env: Env): Promise<Response> {
   return json(result.status, result.body, ledger.headers);
 }
 
-/** Lets the editor show the visitor's balance before they send anything. */
+/** Lets the editor show the visitor's balance, and whether reviews can use the strong model, before they send anything. */
 async function aiCredits(request: Request, env: Env): Promise<Response> {
   if (request.method !== "GET") return json(405, { error: "Use GET /api/ai/credits." }, { Allow: "GET" });
-  if (!env.AI_API_KEY || !env.AI_MODEL) return json(200, { enabled: false });
+  if (!isAiConfigured(env)) return json(200, { enabled: false, solReview: false });
   const ledger = await ledgerFor(request, env);
-  return json(200, { enabled: true, credits: await ledger.status() }, ledger.headers);
+  return json(200, { enabled: true, credits: await ledger.status(), solReview: solReviewEnabled(env) }, ledger.headers);
+}
+
+/** Month-to-date spend for the site owner; needs the X-Admin-Secret header to equal AI_ADMIN_SECRET. */
+async function aiSpend(request: Request, env: Env): Promise<Response> {
+  if (request.method !== "GET") return json(405, { error: "Use GET /api/ai/spend." }, { Allow: "GET" });
+  const result = await adminSpendResult(request.headers.get("X-Admin-Secret"), env, () => ledgerCall<SpendReport>(env, "report", {}));
+  return json(result.status, result.body);
+}
+
+function ledgerCall<T>(env: Env, action: string, body: unknown): Promise<T> {
+  const stub = env.AI_CREDITS.get(env.AI_CREDITS.idFromName("ledger"));
+  return stub.fetch(new Request(`https://ledger/${action}`, { method: "POST", body: JSON.stringify(body) }))
+    .then((response) => response.json() as Promise<T>);
 }
 
 /** The visitor is charged under both their address and a cookie, so neither a refresh nor a new IP refills credits. */
 async function ledgerFor(request: Request, env: Env): Promise<ChatCredits & { status(): Promise<CreditStatus>; headers: Record<string, string> }> {
   const cookie = creditCookie(request.headers.get("Cookie"), new URL(request.url).protocol === "https:");
   const clientIds = await creditClientIds(request.headers.get("CF-Connecting-IP") ?? "unknown", cookie.id);
-  const stub = env.AI_CREDITS.get(env.AI_CREDITS.idFromName("ledger"));
-  const call = async <T>(action: string): Promise<T> => {
-    const response = await stub.fetch(new Request(`https://ledger/${action}`, { method: "POST", body: JSON.stringify({ clientIds }) }));
-    return await response.json() as T;
-  };
   return {
-    spend: () => call<SpendResult>("spend"),
-    refund: () => call<CreditStatus>("refund"),
-    status: () => call<CreditStatus>("status"),
+    reserve: (task) => ledgerCall(env, "reserve", { clientIds, task }),
+    settle: (reservation, charge) => ledgerCall(env, "settle", { clientIds, reservation, charge }),
+    status: () => ledgerCall(env, "status", { clientIds }),
     headers: cookie.setCookie ? { "Set-Cookie": cookie.setCookie } : {}
   };
 }
 
 /**
- * Durable Object that counts AI credits. A single instance keeps the per-visitor and site-wide counts
- * consistent; its storage is wiped at the first request of each UTC day.
+ * Durable Object that counts AI credits and spend. A single instance keeps the per-visitor and site-wide
+ * numbers consistent; visitor counters reset each UTC day, the month's spend each UTC month.
  */
 export class AiCreditLedger {
   private readonly ledger: CreditLedger;
@@ -74,10 +87,15 @@ export class AiCreditLedger {
   }
 
   async fetch(request: Request): Promise<Response> {
-    const { clientIds } = await request.json() as { clientIds: string[] };
+    const body = await request.json() as { clientIds?: string[]; task?: unknown; reservation?: Reservation; charge?: CallCharge | null };
+    const clientIds = body.clientIds ?? [];
     const action = new URL(request.url).pathname.slice(1);
-    if (action === "spend") return Response.json(await this.ledger.spend(clientIds));
-    if (action === "refund") return Response.json(await this.ledger.refund(clientIds));
+    if (action === "reserve") {
+      if (!isAiTask(body.task)) return Response.json({ error: "Unknown task." }, { status: 400 });
+      return Response.json(await this.ledger.reserve(clientIds, body.task));
+    }
+    if (action === "settle" && body.reservation) return Response.json(await this.ledger.settle(clientIds, body.reservation, body.charge ?? null));
+    if (action === "report") return Response.json(await this.ledger.report());
     return Response.json(await this.ledger.status(clientIds));
   }
 }

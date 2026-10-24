@@ -41,7 +41,7 @@ Open the local address printed by Vite. The landing page is at `/` and the edito
 
 ## Optional AI setup
 
-The editor works without AI credentials. To enable AI features, copy `.env.example` to `.env` in the repository root and set `AI_API_KEY` and `AI_MODEL`. `AI_BASE_URL` is optional and defaults to `https://api.openai.com/v1`. Keep credentials in `.env`; do not commit them. AI requests are sent through the development server, which keeps the key out of the browser.
+The editor works without AI credentials. To enable AI features, copy `.env.example` to `.env` in the repository root and set `AI_API_KEY` and `AI_MODEL_LUNA` (the older `AI_MODEL` still works). `AI_BASE_URL` is optional and defaults to `https://api.openai.com/v1`. Keep credentials in `.env`; do not commit them. AI requests are sent through the development server, which keeps the key out of the browser.
 
 The assistant follows a [creation contract](src/ai/designRules.ts) covering silhouettes, proportions, palette, materials, spacing, lighting, camera composition, and meaningful folders. Describe your own style and colors in the request; those take priority over the default cohesive stylized approach. It keeps the last six successful requests as context within the current document and clears that context when you open or create a scene.
 
@@ -75,7 +75,8 @@ npm run preview:cf     # builds and runs the Worker locally
 
 The Worker serves `dist/` and handles two routes itself:
 
-- `POST /api/ai/chat`: the same AI proxy as the dev server. It returns "AI is not configured" until you add secrets with `npx wrangler secret put AI_API_KEY` and `npx wrangler secret put AI_MODEL` (and optionally `AI_BASE_URL`). Each visitor gets `AI_DAILY_CREDITS` model calls per UTC day (default 30) and the whole site stops at `AI_GLOBAL_DAILY_CREDITS` (default 3000); both are set in `wrangler.jsonc` and counted by the `AiCreditLedger` Durable Object. Set a provider spending limit as well.
+- `POST /api/ai/chat`: the same AI proxy as the dev server. The browser sends a `task` (`parse`, `scene_draft` or `scene_review`), never a model. The server maps parse and drafts to `AI_MODEL_LUNA`, and maps reviews to `AI_MODEL_SOL` only when `AI_SOL_ENABLED` is `"true"`. Each task has an input cap (8,000 / 40,000 characters) and a `max_completion_tokens` (800 / 4,000). It returns "AI is not configured" until you add the `AI_API_KEY` secret (`npx wrangler secret put AI_API_KEY`, optionally `AI_BASE_URL`). One credit is $0.00167. Each call is charged from the provider's reported token usage (see `src/ai/pricing.ts`), and a visitor must hold the task's worst case first (2 / 5 / 30 credits). Each visitor gets `AI_DAILY_CREDITS` per UTC day (default 30). The site spends at most `AI_MONTHLY_BUDGET_USD` per month (default 150), spread over the days left and never more than `AI_DAILY_MAX_USD` in a day (default 15). The `AiCreditLedger` Durable Object counts both. Set a provider spending limit as well.
+- `GET /api/ai/spend`: month-to-date spend per task and today's cap. The `X-Admin-Secret` header must match the `AI_ADMIN_SECRET` secret; it answers 404 while that secret is unset.
 - `GET /api/ai/credits`: the visitor's remaining credits for today, shown in the Assistant window.
 - `GET /download/windows`: redirects to the newest GitHub release's `-setup.exe`, or to the releases page if there is none. Change `GITHUB_REPO` in `wrangler.jsonc` if the repository moves.
 

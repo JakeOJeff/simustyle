@@ -4,7 +4,7 @@
   import Hierarchy from "./editor/Hierarchy.svelte";
   import Viewport from "./editor/Viewport.svelte";
   import AIPanel, { type AIPanelMessage } from "./editor/AIPanel.svelte";
-  import { fetchCredits, onCreditsChange, requestSceneEdit, type CreditStatus } from "./ai/client";
+  import { fetchAiStatus, onCreditsChange, requestSceneEdit, type CreditStatus } from "./ai/client";
   import SupportDialog from "./editor/SupportDialog.svelte";
   import { AI_RESPONSE_JSON_SCHEMA, buildSystemPrompt } from "./ai/prompt";
   import { runSceneAgent, type SceneAgentReply } from "./ai/agent";
@@ -104,6 +104,8 @@
   }
   /** Today's free AI credits on the hosted site; null on the desktop app or when AI is off. */
   let aiCredits: CreditStatus | null = $state(null);
+  /** Server lets scene reviews escalate to the stronger model (task "scene_review"). */
+  let solReviewEnabled = false;
   let supportOpen = $state(false);
   let supportOutOfCredits = $state(false);
   let outOfCreditsNoticeShown = false;
@@ -386,7 +388,7 @@
       outOfCreditsNoticeShown = true;
       openSupport(true);
     });
-    void fetchCredits().then((credits) => { if (credits) aiCredits = credits; });
+    void fetchAiStatus().then(({ credits, solReview }) => { if (credits) aiCredits = credits; solReviewEnabled = solReview; });
     restorePanelWorkspace();
     recentScenes = loadRecentScenes();
     if (isDesktopRuntime()) {
@@ -496,8 +498,9 @@
         focusIds: selectedIds.length ? selectedIds : selectedId ? [selectedId] : [],
         responseSchema: AI_RESPONSE_JSON_SCHEMA.schema,
         onProgress: (progress) => aiProgress = progress,
-        complete: ({ systemPrompt, userPrompt, correctionErrors, responseSchema, previousReply }) =>
-          requestSceneEdit(systemPrompt, userPrompt, correctionErrors, responseSchema, previousReply)
+        solReviewEnabled,
+        complete: ({ systemPrompt, userPrompt, correctionErrors, responseSchema, previousReply, task }) =>
+          requestSceneEdit(systemPrompt, userPrompt, correctionErrors, responseSchema, previousReply, task)
       });
       const id = `ai_${nextAIId++}`;
       if (scene !== requestedScene || playState !== "stopped" || playStarting || Object.keys(scriptDrafts).length) {

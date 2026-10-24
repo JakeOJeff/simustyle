@@ -208,7 +208,7 @@ export function validateParseReply(source: string, raw: unknown, entities: Parse
 
 export type ParseCompletion = (messages: ChatMessage[]) => Promise<unknown>;
 
-const defaultCompletion: ParseCompletion = (messages) => requestJson(messages, PARSE_RESPONSE_SCHEMA);
+const defaultCompletion: ParseCompletion = (messages) => requestJson(messages, PARSE_RESPONSE_SCHEMA, "parse");
 
 /** Ask the model for fixes, retrying once with the rejected options if none survive validation. */
 export async function runScriptParse(request: ScriptParseRequest, complete: ParseCompletion = defaultCompletion): Promise<ScriptParseResult> {

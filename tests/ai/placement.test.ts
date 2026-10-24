@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { runSceneAgent } from "../../src/ai/agent";
 import { tidyCreates } from "../../src/ai/placement";
-import { buildSystemPrompt } from "../../src/ai/prompt";
+import { buildSceneUserMessage, buildSystemPrompt } from "../../src/ai/prompt";
 import { freeSpots, sceneText } from "../../src/ai/sceneContext";
 import { applyOps } from "../../src/scene/applyOps";
 import { createEmptyScene, type Scene, type SceneOp } from "../../src/scene/types";
@@ -54,10 +54,11 @@ describe("scene context", () => {
   it("keeps the prompt much smaller than pretty-printed JSON for the same scene", () => {
     const ops = Array.from({ length: 20 }, (_, index): SceneOp => ({ op: "create", id: `box_${index}`, name: `Box${index}`, parent: null, components: { Transform: { position: [index, 0.5, 0] }, Mesh: {}, Material: {} } }));
     const scene = sceneWith(ops);
-    const perObject = (buildSystemPrompt(scene).length - buildSystemPrompt(createEmptyScene()).length) / 20;
+    const perObject = (buildSceneUserMessage(scene, "x").length - buildSceneUserMessage(createEmptyScene(), "x").length) / 20;
     expect(perObject).toBeLessThan(120);
-    // The stable prefix now includes design rules and assembly tools; keep it bounded.
-    expect(buildSystemPrompt(createEmptyScene()).length).toBeLessThan(15000);
+    // The static system prompt (rules, schemas, modeling rules, examples) is sent on every call; it must leave
+    // room in the 40,000-character request cap for the scene, the request and a correction turn.
+    expect(buildSystemPrompt().length).toBeLessThan(26_000);
   });
 });
 

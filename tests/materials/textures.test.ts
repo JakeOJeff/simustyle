@@ -5,7 +5,7 @@ import { SURFACE_TEXTURES, texturePaths, materialTexturePaths, sceneTexturePaths
 import { createEmptyScene } from "../../src/scene/types";
 import { applyOps } from "../../src/scene/applyOps";
 import { deserializeScene, serializeScene } from "../../src/scene/serialize";
-import { buildResponseJsonSchema, buildSystemPrompt } from "../../src/ai/prompt";
+import { buildResponseJsonSchema, buildSceneUserMessage, buildSystemPrompt } from "../../src/ai/prompt";
 import { ScriptRuntime } from "../../src/runtime/scripts";
 import { createThreeScene } from "../../src/export/gltf";
 import { renderStandaloneHtml } from "../../src/export/html-template";
@@ -239,7 +239,7 @@ describe("textures across scenes, agents and exports", () => {
 
   it("gives scene and script agents the catalog, UV/tint rules and existing texture state", () => {
     const scene = texturedScene();
-    const prompt = buildSystemPrompt(scene);
+    const prompt = `${buildSystemPrompt()}\n${buildSceneUserMessage(scene, "texture the floor")}`;
     expect(prompt).toContain(TEXTURE_AGENT_RULES);
     expect(prompt).toContain('"texture":"wood_floor"');
     expect(prompt).toContain('"textureRepeatX":4');

@@ -5,6 +5,7 @@ import { TEXTURE_AGENT_RULES } from "../materials/catalog";
 import { componentSchemaText, sceneText, type SceneContextOptions } from "./sceneContext";
 import { BUILD_TOOL_SPEC, DESIGN_RULES } from "./designRules";
 import { BuildCache } from "./cache";
+import { MODELING_RULES, fewShotText } from "./examples";
 
 /** The script syntax and runtime API available to the scene agent. */
 export const SCRIPT_AGENT_SPEC = `Scripts: one sentence per line, indented under events; optional colons. Store in Script.source. "me"/"I"/"my" mean the owner; "it" means the touched/clicked object.
@@ -37,22 +38,84 @@ Scripts are compiled from this language to a restricted runtime API. Do not put 
 
 const promptPrefixCache = new BuildCache<string>(2);
 
-/** Keep instructions/schema before mutable scene data so provider prefix caching can reuse them. */
-export function buildSystemPrompt(scene: Scene, options: SceneContextOptions = {}): string {
+/**
+ * The scene agent's whole system prompt. It is byte-identical for every scene call (draft, review and
+ * corrections) so provider prompt caching reuses it; everything per-call goes in the user message.
+ */
+export function buildSystemPrompt(): string {
   const registryKey = JSON.stringify(componentSchemas);
-  let prefix = promptPrefixCache.get(registryKey);
-  if (!prefix) {
-    prefix = buildStaticPrompt();
-    promptPrefixCache.set(registryKey, prefix);
+  let prompt = promptPrefixCache.get(registryKey);
+  if (!prompt) {
+    prompt = buildStaticPrompt();
+    promptPrefixCache.set(registryKey, prompt);
   }
-  return `${prefix}\n\n## Current scene\n${sceneText(scene, { ...options, maxChars: 23_000 })}`;
+  return prompt;
 }
 
+export interface SceneUserMessageOptions extends Pick<SceneContextOptions, "focusIds"> {
+  /** Successful earlier requests in this document; trimmed to a small style-context budget. */
+  previousRequests?: readonly string[];
+  /** Budget for the whole message; the scene snapshot gets whatever the other parts leave. */
+  maxChars?: number;
+}
+
+/** Earlier requests kept as style context: the latest six, at most 2,500 JSON characters. */
+export function requestHistory(previousRequests: readonly string[] = []): string[] {
+  const history = previousRequests.slice(-6).map((request) => request.slice(0, 600));
+  while (history.length && JSON.stringify(history).length > 2_500) history.shift();
+  return history;
+}
+
+/** Selected ids as JSON, bounded so a select-all on a big scene cannot crowd out the scene itself. */
+function selectionText(focusIds: readonly string[]): string {
+  const shown: string[] = [];
+  for (const id of focusIds) {
+    if (JSON.stringify([...shown, id]).length > 1_500) break;
+    shown.push(id);
+  }
+  return `${JSON.stringify(shown)}${shown.length < focusIds.length ? ` (+${focusIds.length - shown.length} more selected)` : ""}`;
+}
+
+/**
+ * Per-call user message: "## Current scene" first, then style history, selection and the request. The scene
+ * snapshot shrinks to fit maxChars; the message is longer than maxChars only when the non-scene parts alone
+ * do not fit, which callers treat as "request too large".
+ */
+export function buildSceneUserMessage(scene: Scene, request: string, options: SceneUserMessageOptions = {}): string {
+  const history = requestHistory(options.previousRequests);
+  const focusIds = options.focusIds ?? [];
+  const tail = `${history.length ? `\n\nEarlier successful requests (context only; current request overrides these):\n${JSON.stringify(history)}` : ""}${focusIds.length ? `\n\nSelected object ids (resolve this/these using this selection): ${selectionText(focusIds)}` : ""}\n\n## Request\n${request}`;
+  const head = "## Current scene\n";
+  const sceneBudget = Math.max(0, Math.min(23_000, (options.maxChars ?? Infinity) - head.length - tail.length - 50));
+  return `${head}${sceneText(scene, { maxChars: sceneBudget, query: request, focusIds })}${tail}`;
+}
+
+/** Static rules, then schemas/specs, then modeling guidance and examples, then the output format. Nothing per-call. */
 function buildStaticPrompt(): string {
   return `You are the scene agent inside a 3D simulation and animation editor.
 Build or edit scenes by returning operations that follow the component schemas below. You never write UI code, HTML, or three.js code.
+Each build message starts with "## Current scene" (the scene your operations apply to), may list earlier requests and selected ids, and ends with "## Request". Review messages describe a first build to check instead.
 
 World: Y-up, right-handed; meters, seconds, kilograms, degrees. Ground y=0; gravity [0,-9.81,0]. "collisions" disables object collisions/touch events, keeping the floor solid. Objects need RigidBody or Collider to collide. Default Camera [7,6,9] aims near origin; preserve unless asked. Cameras face local -Z; Play/exports use world transforms.
+
+${DESIGN_RULES}
+
+## Building objects
+- Mesh: box width/depth=2·radius, height=height; sphere diameter=2·radius; cylinder/cone width=2·radius; capsule total height=height; plane is a 2·radius XY square (rotation [-90,0,0] lies flat). Transform.scale multiplies size.
+- Position is center: floor y=half height; stacking y=lower object's top+half height. Use reported y ranges.
+- Place new root objects at free floor spots unless specified; leave 0.3 m gaps. Missing positions are placed automatically.
+- Multi-part objects use a Transform-only parent group with locally positioned children, preferably assemble.
+- Visible parts need Transform/Mesh/Material. RigidBody enables falling/rolling; anchored:true or static for fixed solids.
+- Use unique snake_case ids and readable names; reference existing ids.
+
+## Rules
+1. Respect schema fields, ranges, options and requirements.
+2. Make minimal edits; update existing ids instead of recreating them.
+3. For adjustable/scripted behavior, add 2–5 settings with ranges (setting speed = 3 from 0 to 10) for Inspector controls.
+4. At most 500 dynamic bodies.
+5. Approximate unsupported requests and explain in summary.
+6. Fix reported validation, script and geometry errors and return the full corrected response.
+7. No markdown or prose outside JSON.
 
 ## Component schemas
 Format: field type range =default. Omit fields that stay at their default.
@@ -63,36 +126,22 @@ ${TEXTURE_AGENT_RULES}
 ## Script language
 ${SCRIPT_AGENT_SPEC}
 
-${DESIGN_RULES}
-
 ${BUILD_TOOL_SPEC}
 
-## Building objects
-- Mesh: box width/depth=2·radius, height=height; sphere diameter=2·radius; cylinder/cone width=2·radius; capsule total height=height; plane is a 2·radius XY square (rotation [-90,0,0] lies flat). Transform.scale multiplies size.
-- Position is center: floor y=half height; stacking y=lower object's top+half height. Use reported y ranges.
-- Place new root objects at free floor spots unless specified; leave 0.3 m gaps. Missing positions are placed automatically.
-- Multi-part objects use a Transform-only parent group with locally positioned children, preferably assemble.
-- Visible parts need Transform/Mesh/Material. RigidBody enables falling/rolling; anchored:true or static for fixed solids.
-- Use unique snake_case ids and readable names; reference existing ids.
+${MODELING_RULES}
+
+${fewShotText()}
 
 ## Output format
-Return only JSON:
-{ "summary": "one plain-English sentence describing what you built or changed", "ops": [ ...operations ] }
+Return only JSON with keys in this order:
+{ "plan": "every part you will build with its size and position (at most 1500 characters)", "summary": "one plain-English sentence describing what you built or changed", "ops": [ ...operations ] }
+Write plan first, then build ops that follow it. Keep the whole reply under 12,000 characters: use assemble/repeat for repeated detail.
 Operations:
 - create: { "op": "create", "id": string, "name": string, "parent": string|null, "components": object }
 - update: { "op": "update", "id": string, "components": changed fields (null removes component), optional "parent": string|null, optional "name": string }
 - delete: { "op": "delete", "id": string }
 - settings: { "op": "settings", "settings": object containing changed scene settings }
-High-level assemble/repeat/group operations are also allowed as documented above. Create parents before their children.
-
-## Rules
-1. Respect schema fields, ranges, options and requirements.
-2. Make minimal edits; update existing ids instead of recreating them.
-3. For adjustable/scripted behavior, add 2–5 settings with ranges (setting speed = 3 from 0 to 10) for Inspector controls.
-4. At most 500 dynamic bodies.
-5. Approximate unsupported requests and explain in summary.
-6. Fix reported validation/script errors and return the full corrected response.
-7. No markdown or prose outside JSON.`;
+High-level assemble/repeat/group operations are also allowed as documented above. Create parents before their children.`;
 }
 
 function fieldJsonSchema(field: FieldSchema): Record<string, unknown> {
@@ -150,6 +199,8 @@ export function buildResponseJsonSchema(): Record<string, unknown> {
   return {
     type: "object",
     properties: {
+      // First so the model lays out parts and measurements before it writes any operation.
+      plan: { type: "string", maxLength: 1500, description: "Every part to build with its size and position in meters, and what it rests on or attaches to." },
       summary: { type: "string", minLength: 1, maxLength: 2000 },
       ops: {
         type: "array",
@@ -204,7 +255,7 @@ export function buildResponseJsonSchema(): Record<string, unknown> {
         }
       }
     },
-    required: ["summary", "ops"],
+    required: ["plan", "summary", "ops"],
     additionalProperties: false
   };
 }

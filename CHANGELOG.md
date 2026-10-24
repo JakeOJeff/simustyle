@@ -4,6 +4,13 @@ Record meaningful project changes during the event, newest first.
 
 ## Event build log
 
+### 2026-10-24 — Luna/Sol task routing, money-based credits, cache-friendly prompts, modeling quality
+
+- Changed: The browser now sends a `task` (`parse` / `scene_draft` / `scene_review`) instead of choosing a model. The server maps tasks to `AI_MODEL_LUNA` / `AI_MODEL_SOL` (Sol only behind `AI_SOL_ENABLED`), enforces per-task input caps and `max_completion_tokens`, and sends a stable `prompt_cache_key` per task. Credits are now money: usage-based cost from `src/ai/pricing.ts` (1 credit = $0.00167), a worst-case precheck with reserve-then-settle, and a monthly $150 budget spread per day with a $15 daily ceiling. Month-to-date spend is kept across daily rollovers, every call is logged, and admin `GET /api/ai/spend` is guarded by `AI_ADMIN_SECRET`. The system prompt is now static (scene, history, selection and reviewer instructions moved to the user message) and gained "## Modeling well" rules and three verified few-shot builds (car, chair, character). The response schema has a `plan` field before `ops`, which is ignored when applying. A new geometry checker (`src/ai/geometry.ts`) flags detached parts and objects not resting on y=0 as correction errors. The agent caps draft retries at 2 and review retries at 1. It escalates to the Sol review only for 3+ creates or corrected drafts, and skips review for clean drafts. Reply budget is now 12,000 characters. `AI_GLOBAL_DAILY_CREDITS` is removed.
+- Why: Keep total AI cost under $150/month with gpt-6-luna doing most of the work, make cached input tokens apply, and improve the 3D objects the assistant builds.
+- Validation: `npx tsc --noEmit`, `svelte-check` (0 errors/warnings), all 314 tests in 41 files, and `npm run build` pass. Worst-case draft/review/correction requests are tested to stay ≤ 40,000 characters. The real system prompt is about 22,200 characters.
+- Limitations: Not exercised against a live provider. The gpt-6-sol cached-input price ($0.20/M) is from third-party listings, not the provider's page. With the larger static prompt, the draft's scene snapshot is limited to about 10k characters (large scenes get a bounded snapshot). The geometry checker does not flag a part resting on the floor beside its object, or a floating cluster of mutually touching parts. Setting `AI_MODEL_LUNA` in `wrangler.jsonc` takes priority over any live `AI_MODEL` secret on the next deploy.
+
 ### 2026-10-14 — Camera system
 
 - New editor scenes include an active Camera. Play, camera preview, HTML, video, and GLB now use scene camera transforms and lens parameters.

@@ -20,7 +20,7 @@ describe("bounded session caching", () => {
     expect(cache.get("d")).toBeUndefined();
   });
 
-  it("reuses only reviewed builds with matching scene, style, prompt and schema", async () => {
+  it("reuses only reviewed (or clean, review-free) builds with matching scene, style, prompt and schema", async () => {
     const scene = createEmptyScene();
     const cache = new BuildCache<SceneAgentReply>();
     const reply: SceneAgentReply = { summary: "Built a cube.", ops: [{ op: "create", id: "cube", name: "Cube", parent: null, components: { Transform: {}, Mesh: {}, Material: {} } }] };
@@ -28,11 +28,12 @@ describe("bounded session caching", () => {
     const dependencies = { cache, buildSystemPrompt: () => "prompt", responseSchema: {}, complete, previousRequests: ["Use warm colors"] };
     const first = await runSceneAgent(scene, "build a cube", dependencies);
     expect(first.ok).toBe(true);
-    expect(first.attempts).toBe(2);
+    // A clean draft skips the review, so each uncached build is one call.
+    expect(first.attempts).toBe(1);
     const reused = await runSceneAgent(scene, "build a cube", dependencies);
     expect(reused.cacheHit).toBe(true);
     expect(reused.attempts).toBe(0);
-    expect(complete).toHaveBeenCalledTimes(2);
+    expect(complete).toHaveBeenCalledTimes(1);
     expect(reused.scene).toEqual(first.scene);
     expect(reused.scene).not.toBe(first.scene);
     expect(reused.preflight?.quality).toBeDefined();
@@ -41,7 +42,7 @@ describe("bounded session caching", () => {
     await runSceneAgent(scene, "build a cube", { ...dependencies, responseSchema: { changed: true } });
     await runSceneAgent({ ...scene, settings: { ...scene.settings, background: "#ffffff" } }, "build a cube", dependencies);
     await runSceneAgent(scene, "build a blue cube", dependencies);
-    expect(complete).toHaveBeenCalledTimes(10);
+    expect(complete).toHaveBeenCalledTimes(5);
   });
 
   it("never caches a rejected build or an unreviewed fallback", async () => {
@@ -51,7 +52,8 @@ describe("bounded session caching", () => {
     await runSceneAgent(createEmptyScene(), "build", dependencies);
     await runSceneAgent(createEmptyScene(), "build", dependencies);
     expect(complete).toHaveBeenCalledTimes(2);
-    const valid: SceneAgentReply = { summary: "No change", ops: [] };
+    // Below ground, so the design checks warn and a review runs (and fails) instead of being skipped.
+    const valid: SceneAgentReply = { summary: "Sunken cube", ops: [{ op: "create", id: "cube", name: "Cube", parent: null, components: { Transform: { position: [0, -1, 0] }, Mesh: {}, Material: {} } }] };
     const fallback = vi.fn().mockResolvedValueOnce(valid).mockRejectedValueOnce(new Error("offline"))
       .mockResolvedValueOnce(valid).mockRejectedValueOnce(new Error("offline"));
     const deps = { ...dependencies, complete: fallback };

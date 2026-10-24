@@ -2,8 +2,9 @@
 import { AI_RESPONSE_JSON_SCHEMA } from "./prompt";
 import { desktopChat, isDesktopRuntime } from "../platform/desktop";
 import type { CreditStatus } from "./credits";
+import type { AiTask } from "./tasks";
 
-export type { CreditStatus };
+export type { AiTask, CreditStatus };
 
 let creditListener: ((credits: CreditStatus) => void) | null = null;
 
@@ -14,13 +15,25 @@ export function onCreditsChange(listener: ((credits: CreditStatus) => void) | nu
 
 /** Reads today's AI credits from the hosted proxy; null when AI is off, runs on the desktop, or is unreachable. */
 export async function fetchCredits(): Promise<CreditStatus | null> {
-  if (isDesktopRuntime()) return null;
+  return (await fetchAiStatus()).credits;
+}
+
+export interface AiStatus {
+  credits: CreditStatus | null;
+  /** True when the server will run scene_review on the strong model, so asking for a review is worth it. */
+  solReview: boolean;
+}
+
+/** Reads the visitor's credits and whether the strong review model is on. The desktop app meters nothing. */
+export async function fetchAiStatus(): Promise<AiStatus> {
+  if (isDesktopRuntime()) return { credits: null, solReview: false };
   try {
     const response = await fetch("/api/ai/credits", { cache: "no-store" });
     const payload = await response.json() as unknown;
-    return isRecord(payload) && isCreditStatus(payload.credits) ? payload.credits : null;
+    if (!isRecord(payload)) return { credits: null, solReview: false };
+    return { credits: isCreditStatus(payload.credits) ? payload.credits : null, solReview: payload.solReview === true };
   } catch {
-    return null;
+    return { credits: null, solReview: false };
   }
 }
 
@@ -35,7 +48,8 @@ export async function requestSceneEdit(
   userPrompt: string,
   correctionErrors: string[] = [],
   responseSchema: Record<string, unknown> = AI_RESPONSE_JSON_SCHEMA.schema,
-  previousReply = ""
+  previousReply = "",
+  task: AiTask = "scene_draft"
 ): Promise<unknown> {
   const messages: ChatMessage[] = [
     { role: "system", content: systemPrompt },
@@ -50,13 +64,17 @@ export async function requestSceneEdit(
     });
   }
 
-  return requestJson(messages, { ...AI_RESPONSE_JSON_SCHEMA, schema: responseSchema });
+  return requestJson(messages, { ...AI_RESPONSE_JSON_SCHEMA, schema: responseSchema }, task);
 }
 
-/** Sends chat messages through the proxy (or desktop shell) and returns the model's parsed JSON object. */
+/**
+ * Sends chat messages through the proxy (or desktop shell) and returns the model's parsed JSON object.
+ * The hosted proxy picks the model from `task`; the desktop app always uses the user's own configured model.
+ */
 export async function requestJson(
   messages: ChatMessage[],
-  jsonSchema: { name: string; strict: boolean; schema: Record<string, unknown> }
+  jsonSchema: { name: string; strict: boolean; schema: Record<string, unknown> },
+  task: AiTask
 ): Promise<unknown> {
   const request = { messages, responseFormat: { type: "json_schema", json_schema: jsonSchema } };
   let payload: unknown;
@@ -68,7 +86,7 @@ export async function requestJson(
       response = await fetch("/api/ai/chat", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(request)
+        body: JSON.stringify({ task, ...request })
       });
     } catch {
       throw new Error("Could not reach the local AI endpoint. Check that the development server is running.");
