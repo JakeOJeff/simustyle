@@ -88,6 +88,13 @@ const CORRECTION_WRAPPER_CHARS = 300;
 const DRAFT_ECHO_RESERVE = 4_000;
 const REVIEW_ECHO_RESERVE = 2_000;
 const CORRECTION_RESERVE = CORRECTION_ERROR_CHARS + CORRECTION_WRAPPER_CHARS;
+/** Correction sent when the model's reply was cut off or wasn't JSON; the agent retries instead of giving up. */
+const UNUSABLE_REPLY = (truncated: boolean) => truncated
+  ? `Your previous reply was cut off at the ${AI_TASK_LIMITS.scene_draft.maxCompletionTokens}-token output limit and could not be used. Return a much more compact complete response: a plan under 400 characters, at most 20 parts per object, repeat for repeated parts, and no default-valued fields.`
+  : "Your previous reply was not valid JSON. Return only the JSON object in the required format.";
+/** The model answered but the reply couldn't be used (see UnusableReplyError in client.ts); worth one more try. */
+const unusableReply = (error: unknown): boolean | null =>
+  error instanceof Error && error.name === "UnusableReplyError" ? (error as Error & { truncated?: boolean }).truncated === true : null;
 const TOO_LARGE = "The request or scene instructions are too large. Split the request into smaller edits or select a smaller assembly.";
 
 /** Accepts plan as optional (dropped when applying) so a reply missing it never costs a retry. */
@@ -253,6 +260,8 @@ export async function runSceneAgent(scene: Scene, userPrompt: string, dependenci
     try {
       raw = await ask(draftPrompt, "scene_draft", correctionErrors, previousReply);
     } catch (error) {
+      const truncated = unusableReply(error);
+      if (truncated !== null && attempt <= maxRetries) { correctionErrors = [UNUSABLE_REPLY(truncated)]; previousReply = ""; continue; }
       const reason = error instanceof Error ? error.message : String(error);
       return { ok: false, ops: [], errors: [`AI request failed: ${reason}`], attempts };
     }
@@ -332,6 +341,8 @@ export async function runSceneAgent(scene: Scene, userPrompt: string, dependenci
     try {
       raw = await ask(reviewUserPrompt, reviewTask, correctionErrors, previousReply);
     } catch (error) {
+      const truncated = unusableReply(error);
+      if (truncated !== null && reviewAttempt <= reviewRetries) { correctionErrors = [UNUSABLE_REPLY(truncated)]; previousReply = ""; continue; }
       const reason = error instanceof Error ? error.message : String(error);
       return useDraftAfterReviewFailure(`Second-pass review failed: ${reason}`);
     }

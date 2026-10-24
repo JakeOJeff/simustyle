@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { fetchAiStatus, fetchCredits, requestJson, requestSceneEdit } from "../src/ai/client";
+import { fetchAiStatus, fetchCredits, requestJson, requestSceneEdit, UnusableReplyError } from "../src/ai/client";
 
 afterEach(() => vi.unstubAllGlobals());
 
@@ -83,5 +83,14 @@ describe("scene AI transport client", () => {
     await expect(fetchAiStatus()).resolves.toEqual({ credits: null, solReview: false });
     vi.stubGlobal("fetch", vi.fn().mockRejectedValue(new TypeError("offline")));
     await expect(fetchCredits()).resolves.toBeNull();
+  });
+});
+
+describe("unusable model replies", () => {
+  it("raises a correctable error for truncated or non-JSON replies", async () => {
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValueOnce(new Response(JSON.stringify({ content: "{\"plan\":", truncated: true }), { status: 200 })));
+    await expect(requestSceneEdit("system", "request")).rejects.toMatchObject({ name: "UnusableReplyError", truncated: true });
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValueOnce(new Response(JSON.stringify({ content: "nope" }), { status: 200 })));
+    await expect(requestSceneEdit("system", "request")).rejects.toBeInstanceOf(UnusableReplyError);
   });
 });

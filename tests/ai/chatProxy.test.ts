@@ -150,3 +150,21 @@ describe("chat proxy credits", () => {
     expect((await ledger.report(noon)).totals.calls).toBe(0);
   });
 });
+
+describe("chat proxy truncated replies", () => {
+  it("flags a reply cut off at the token limit and still charges it", async () => {
+    const usage = { prompt_tokens: 9000, completion_tokens: 4000 };
+    stubProvider(() => Response.json({ choices: [{ finish_reason: "length", message: { content: "{\"plan\":\"cut" } }], usage }));
+    const ledger = new CreditLedger(memoryCreditStorage(), { perUser: 30, monthlyBudgetUsd: 150, dailyMaxUsd: 15 });
+    const result = await forwardChat(request("scene_draft"), env, meter(ledger));
+    expect(result.status).toBe(200);
+    expect(result.body).toMatchObject({ content: "{\"plan\":\"cut", truncated: true });
+    expect(result.body.credits?.remaining).toBe(28);
+  });
+
+  it("treats an empty reply that spent its budget as truncated, not missing", async () => {
+    stubProvider(() => Response.json({ choices: [{ finish_reason: "length", message: { content: null } }], usage: { prompt_tokens: 10, completion_tokens: 4000 } }));
+    const result = await forwardChat(request("scene_draft"), env);
+    expect(result).toMatchObject({ status: 200, body: { content: "", truncated: true } });
+  });
+});

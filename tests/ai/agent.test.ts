@@ -365,3 +365,28 @@ describe("request size budget", () => {
     expect(calls).toBe(0);
   });
 });
+
+describe("unusable replies", () => {
+  const unusable = (truncated: boolean) => Object.assign(new Error("unusable"), { name: "UnusableReplyError", truncated });
+
+  it("retries a reply cut off at the output limit with a compactness correction", async () => {
+    const requests: SceneAgentRequest[] = [];
+    const result = await runSceneAgent(createEmptyScene(), "add a cube", { ...dependencies([]), complete: async (request) => {
+      requests.push(request);
+      if (requests.length === 1) throw unusable(true);
+      return clean;
+    } });
+    expect(result.ok).toBe(true);
+    expect(result.attempts).toBe(2);
+    expect(requests[1]?.correctionErrors.join()).toContain("cut off");
+    expect(requests[1]?.previousReply).toBe("");
+  });
+
+  it("still stops after the retry cap when every reply is unusable", async () => {
+    let calls = 0;
+    const result = await runSceneAgent(createEmptyScene(), "add a cube", { ...dependencies([]), complete: async () => { calls++; throw unusable(false); } });
+    expect(result.ok).toBe(false);
+    expect(calls).toBe(3);
+    expect(result.errors.join()).toContain("AI request failed");
+  });
+});

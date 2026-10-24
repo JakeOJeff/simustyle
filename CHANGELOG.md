@@ -4,6 +4,13 @@ Record meaningful project changes during the event, newest first.
 
 ## Event build log
 
+### 2026-10-24 — Retry AI replies cut off at the output limit
+
+- Changed: The proxy now detects `finish_reason: "length"` and returns the billed reply with `truncated: true`, including when all the tokens went to reasoning and no content came back. Before, that case was an error saying the provider returned no message content. The client raises `UnusableReplyError` for truncated or non-JSON replies. The agent treats that error as a correctable attempt: it retries with an instruction to return a much more compact build, within the existing caps of 2 draft retries and 1 review retry. Files: `src/ai/chatProxy.ts`, `src/ai/client.ts`, `src/ai/agent.ts`, and tests.
+- Why: In the browser, a scene request failed with "Could not complete after 1 AI call" and was charged 2 credits, which matches a 4,000-token reply that was cut off. The client raised that as a hard error, so the agent never retried.
+- Validation: tsc, svelte-check (0 errors), and all 319 tests pass. A live `gpt-6-luna` call for "add a red car" through the new proxy and agent succeeded: 2,693 completion tokens (1,021 reasoning), 98% of the prompt cached.
+- Limitations: Reasoning tokens count against the 4,000-token cap, so large builds may still need a retry. If that happens often, consider a higher scene `maxCompletionTokens` or a lower reasoning effort for Luna.
+
 ### 2026-10-24 — Keep AI builds when the scene changed slightly while loading
 
 - Changed: Before, an AI result was discarded whenever the scene object changed during the request: a camera move, a rename, any edit. Now the build's operations are replayed on the current scene and kept if they apply cleanly and add no script errors. It is still discarded when a different scene was opened or created, when Play is running or starting, or when a script has an unsaved draft. File: `src/App.svelte`.

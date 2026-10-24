@@ -26,7 +26,8 @@ export interface ChatProxyEnv {
 
 export interface ChatProxyResult {
   status: number;
-  body: ({ content: string } | { error: string }) & { credits?: CreditStatus };
+  /** `truncated` marks a reply cut off at max_completion_tokens; it was billed but is usually not valid JSON. */
+  body: ({ content: string; truncated?: boolean } | { error: string }) & { credits?: CreditStatus };
 }
 
 /** The calling visitor's credits; omitted when the server does not meter AI. */
@@ -130,13 +131,15 @@ export async function forwardChat(raw: Uint8Array, env: ChatProxyEnv, credits?: 
       const message = extractProviderMessage(result) || `AI provider returned HTTP ${upstream.status}.`;
       return failAndRefund(502, message.slice(0, 500));
     }
-    const content = extractCompletionContent(result);
+    const truncated = finishReason(result) === "length";
+    // A reply that spent its whole token budget (often on reasoning) can arrive with no content at all.
+    const content = extractCompletionContent(result) ?? (truncated ? "" : null);
     const usage = readUsage(result);
     // With no content and no usage there is no sign the call was billed; otherwise it was, so charge it.
     const charge = content === null && !usage ? null : chargeFor(task, model, usage);
     if (content === null) return failAndRefund(502, "AI provider returned no message content.", charge);
     const balance = await settle(charge);
-    return { status: 200, body: { content, ...(balance ? { credits: balance } : {}) } };
+    return { status: 200, body: { content, ...(truncated ? { truncated: true } : {}), ...(balance ? { credits: balance } : {}) } };
   } catch (error) {
     const message = error instanceof Error && error.name === "TimeoutError"
       ? "AI provider request timed out."
@@ -198,6 +201,12 @@ function extractCompletionContent(value: unknown): string | null {
   const first = value.choices[0];
   if (!isRecord(first) || !isRecord(first.message) || typeof first.message.content !== "string") return null;
   return first.message.content;
+}
+
+function finishReason(value: unknown): string | null {
+  if (!isRecord(value) || !Array.isArray(value.choices)) return null;
+  const first = value.choices[0];
+  return isRecord(first) && typeof first.finish_reason === "string" ? first.finish_reason : null;
 }
 
 function extractProviderMessage(value: unknown): string | null {

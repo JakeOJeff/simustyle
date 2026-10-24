@@ -68,6 +68,17 @@ export async function requestSceneEdit(
 }
 
 /**
+ * The model answered (and was billed) but the reply can't be used: cut off at the output limit or not JSON.
+ * Unlike transport errors, callers can ask the model again with a correction.
+ */
+export class UnusableReplyError extends Error {
+  override readonly name = "UnusableReplyError";
+  constructor(readonly truncated: boolean) {
+    super(truncated ? "The model's reply was cut off at the output limit." : "The model returned invalid JSON.");
+  }
+}
+
+/**
  * Sends chat messages through the proxy (or desktop shell) and returns the model's parsed JSON object.
  * The hosted proxy picks the model from `task`; the desktop app always uses the user's own configured model.
  */
@@ -103,10 +114,11 @@ export async function requestJson(
   if (!isRecord(payload) || typeof payload.content !== "string") {
     throw new Error("AI server returned an invalid response.");
   }
+  if (payload.truncated === true) throw new UnusableReplyError(true);
   try {
     return JSON.parse(payload.content) as unknown;
   } catch {
-    throw new Error("The model returned invalid JSON.");
+    throw new UnusableReplyError(false);
   }
 }
 
