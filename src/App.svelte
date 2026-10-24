@@ -488,6 +488,7 @@
     finishGesture();
     commitAllScripts();
     const requestedScene = scene;
+    const requestedDocument = sceneDocument;
     aiProgress = "Building the first pass…";
     panelOpen.ai = true;
     try {
@@ -503,11 +504,16 @@
           requestSceneEdit(systemPrompt, userPrompt, correctionErrors, responseSchema, previousReply, task)
       });
       const id = `ai_${nextAIId++}`;
-      if (scene !== requestedScene || playState !== "stopped" || playStarting || Object.keys(scriptDrafts).length) {
+      // Small edits made while waiting (a camera nudge, a rename) shouldn't waste a paid build: replay its ops on the
+      // current scene and skip it only when they no longer apply cleanly or the document itself was replaced.
+      const rebased = result.ok && scene !== requestedScene && sceneDocument === requestedDocument ? applyOps(scene, result.ops) : null;
+      const rebaseFailed = !!rebased && (rebased.errors.length > 0 || validateScripts(rebased.scene).length > validateScripts(scene).length);
+      if ((scene !== requestedScene && (!rebased || rebaseFailed)) || playState !== "stopped" || playStarting || Object.keys(scriptDrafts).length) {
         pushAIMessage({ id, role: "assistant", content: "The scene changed while this request was loading. Send the request again to use the current scene." });
         message = "AI result skipped because the scene changed.";
         return;
       }
+      if (rebased) { result.scene = rebased.scene; result.inverseOps = rebased.inverseOps; }
       if (!result.ok || !result.scene || !result.inverseOps) {
         if (result.fallbackDraft) aiDraftScenes[id] = requestedScene;
         pushAIMessage({ id, role: "assistant", content: result.errors.join(" · "), summary: `Could not complete after ${result.attempts} AI call${result.attempts === 1 ? "" : "s"}.`, ...(result.preflight ? { preflight: result.preflight } : {}), ...(result.fallbackDraft ? { fallbackDraft: { summary: result.fallbackDraft.summary, operations: result.fallbackDraft.ops } } : {}) });

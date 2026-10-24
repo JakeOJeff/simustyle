@@ -4,6 +4,13 @@ Record meaningful project changes during the event, newest first.
 
 ## Event build log
 
+### 2026-10-24 — Keep AI builds when the scene changed slightly while loading
+
+- Changed: Before, an AI result was discarded whenever the scene object changed during the request: a camera move, a rename, any edit. Now the build's operations are replayed on the current scene and kept if they apply cleanly and add no script errors. It is still discarded when a different scene was opened or created, when Play is running or starting, or when a script has an unsaved draft. File: `src/App.svelte`.
+- Why: With usage-priced credits, throwing away a finished build over an unrelated small edit wasted real money and showed "The scene changed while this request was loading" unexpectedly.
+- Validation: `svelte-check` (0 errors) and all 314 tests pass. The replay path was not exercised in a browser.
+- Limitations: The replay skips the agent's preflight checks on the edited scene; it only checks that the operations apply and add no script compile errors.
+
 ### 2026-10-24 — Luna/Sol task routing, money-based credits, cache-friendly prompts, modeling quality
 
 - Changed: The browser now sends a `task` (`parse` / `scene_draft` / `scene_review`) instead of choosing a model. The server maps tasks to `AI_MODEL_LUNA` / `AI_MODEL_SOL` (Sol only behind `AI_SOL_ENABLED`), enforces per-task input caps and `max_completion_tokens`, and sends a stable `prompt_cache_key` per task. Credits are now money: usage-based cost from `src/ai/pricing.ts` (1 credit = $0.00167), a worst-case precheck with reserve-then-settle, and a monthly $150 budget spread per day with a $15 daily ceiling. Month-to-date spend is kept across daily rollovers, every call is logged, and admin `GET /api/ai/spend` is guarded by `AI_ADMIN_SECRET`. The system prompt is now static (scene, history, selection and reviewer instructions moved to the user message) and gained "## Modeling well" rules and three verified few-shot builds (car, chair, character). The response schema has a `plan` field before `ops`, which is ignored when applying. A new geometry checker (`src/ai/geometry.ts`) flags detached parts and objects not resting on y=0 as correction errors. The agent caps draft retries at 2 and review retries at 1. It escalates to the Sol review only for 3+ creates or corrected drafts, and skips review for clean drafts. Reply budget is now 12,000 characters. `AI_GLOBAL_DAILY_CREDITS` is removed.
