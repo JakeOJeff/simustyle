@@ -4,6 +4,13 @@ Record meaningful project changes during the event, newest first.
 
 ## Event build log
 
+### 2026-10-25 — Turn on Sol scene reviews
+
+- Changed: `AI_SOL_ENABLED` is now `"true"` in `wrangler.jsonc`, so qualifying scene reviews (3+ new objects, or a corrected draft) run on `gpt-6-sol`. Local dev sets it in the git-ignored `.env.local`.
+- Why: Requested, to improve review quality.
+- Validation: Config only; `tests/ai/chatProxy.test.ts` already covers the routing.
+- Limitations: It takes effect on the next deploy. Sol reviews cost more per call (up to 30 credits held), so the daily and monthly caps are reached sooner.
+
 ### 2026-10-25 — Wedges, truncated cylinders/cones, an overlap check and stricter modeling rules
 
 - Changed: Fixes scene quality problems seen in testing.
