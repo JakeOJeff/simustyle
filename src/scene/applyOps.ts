@@ -45,7 +45,7 @@ function normalizedComponent(name: string, fields: Record<string, unknown>): Rec
   if (!schema) return structuredClone(fields);
   for (const [key, value] of Object.entries(fields)) {
     const field = schema.fields[key];
-    if (field && JSON.stringify(value) === JSON.stringify(field.default)) continue;
+    if (field && !("optional" in field && field.optional) && JSON.stringify(value) === JSON.stringify(field.default)) continue;
     if (schema.managedFields?.[key] && Array.isArray(value) && value.length === 0) continue;
     result[key] = structuredClone(value);
   }

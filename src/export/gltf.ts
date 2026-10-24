@@ -4,6 +4,7 @@ import type { Entity, Scene, Vec3 } from "../scene/types";
 import { CameraRig, createSceneCamera } from "../runtime/camera";
 import { SurfaceTextureStore } from "../materials/textures";
 import { applySurfaceMapping } from "../materials/mapping";
+import { meshGeometry } from "../scene/meshGeometry";
 
 /** Builds the scene's renderable objects using the same primitive and material rules as the viewport. */
 export function createThreeScene(scene: Scene, surfaceTextures?: SurfaceTextureStore): THREE.Scene {
@@ -18,7 +19,7 @@ export function createThreeScene(scene: Scene, surfaceTextures?: SurfaceTextureS
     let object: THREE.Object3D | undefined;
 
     if (entity.components.Mesh) {
-      const geometry = geometryFor(meshData);
+      const geometry = meshGeometry(meshData);
       const materialData = component(entity, "Material");
       const material = new THREE.MeshStandardMaterial({
         color: stringField(materialData, "color", "#ffffff"),
@@ -102,20 +103,6 @@ export async function exportSceneGlb(scene: Scene): Promise<Blob> {
     geometries.forEach((geometry) => geometry.dispose());
     materials.forEach((material) => material.dispose());
     surfaceTextures.dispose();
-  }
-}
-
-function geometryFor(mesh: Record<string, unknown>): THREE.BufferGeometry {
-  const shape = mesh.shape ?? "box";
-  const radius = numberField(mesh, "radius", 0.5);
-  const height = numberField(mesh, "height", 1);
-  switch (shape) {
-    case "sphere": return new THREE.SphereGeometry(radius, 24, 16);
-    case "cylinder": return new THREE.CylinderGeometry(radius, radius, height, 24);
-    case "capsule": return new THREE.CapsuleGeometry(radius, Math.max(0.01, height - 2 * radius), 4, 12);
-    case "plane": return new THREE.PlaneGeometry(radius * 2, radius * 2);
-    case "cone": return new THREE.ConeGeometry(radius, height, 24);
-    default: return new THREE.BoxGeometry(radius * 2, height, radius * 2);
   }
 }
 

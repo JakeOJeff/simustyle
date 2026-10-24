@@ -4,6 +4,18 @@ Record meaningful project changes during the event, newest first.
 
 ## Event build log
 
+### 2026-10-25 — Wedges, truncated cylinders/cones, an overlap check and stricter modeling rules
+
+- Changed: Fixes scene quality problems seen in testing.
+  - New mesh shape `wedge`: a triangular prism filling a 2·radius × height × 2·radius box, whose slope rises from the -X bottom edge to a vertical +X face. New optional Mesh field `radiusTop` (0–50) truncates cylinders and cones, for lampshades, pots and buckets. Unset, a cylinder's top equals its radius and a cone stays pointed. The viewport, both exports (GLB/HTML) and physics now share one geometry builder (`src/scene/meshGeometry.ts`). Wedges, truncated shapes and mirrored scales get a convex-hull collider. The Inspector shows `radiusTop` only for cylinders and cones, and the hierarchy has a Wedge icon.
+  - The geometry checker now flags separately built top-level objects whose parts' bounds pass more than 0.03 m into each other ("FloorLamp overlaps SideTable by 0.2 m; move it apart."). Objects resting on or in another (bottom within 0.05 m of a part's top below it) and parts of one object are not flagged.
+  - "Modeling well" rules: up to 60 parts for repeated small items, a defining feature on every part, hanging/floating things attached with a radius 0.01 cylinder, wedge-filled gables, stairs or a ladder for multi-floor buildings, and lampshades as truncated cones, wide end down. The mesh-size line in the system prompt describes `wedge` and `radiusTop`.
+  - A fourth few-shot example, a two-story house with a wedge gable, roof slabs and outside stairs, uses `repeat` to stay compact. It is verified like the others: it must be valid, connected, grounded, 6–20 parts and 2–4 colors.
+  - Files: `src/scene/meshGeometry.ts`, `src/registry/components/mesh.ts`, `src/registry/types.ts`, `src/scene/applyOps.ts`, `src/scene/serialize.ts`, `src/runtime/physics.ts`, `src/runtime/commands.ts`, `src/materials/mapping.ts`, `src/editor/Viewport.svelte`, `src/editor/Inspector.svelte`, `src/editor/Hierarchy.svelte`, `src/export/gltf.ts`, `src/export/standalone-runtime.ts`, `src/ai/geometry.ts`, `src/ai/examples.ts`, `src/ai/prompt.ts`, `src/ai/sceneContext.ts`, `src/ai/quality.ts`, tests.
+- Why: Test builds had square gables, pointed lampshades, furniture passing through other furniture, floating balloons and lamps, and parts that couldn't be recognized alone.
+- Validation: typecheck, svelte-check (0 errors), build, and all 330 tests pass. New tests cover wedge geometry, normals, bounds, export and sloped collider (including mirrored); `radiusTop` defaults, geometry, bounds, export, validation, saving and collider; the overlap check (flagged, apart, snug fit, resting, untouched); and the house example. Not checked visually in a browser.
+- Limitations: The static system prompt grew from about 22,100 to 25,200 characters, which leaves less room for scene context in the 40,000-character request cap and costs more per call (mostly cached input). The overlap check uses axis-aligned bounds, so rotated or L-shaped parts can be reported as overlapping when only their boxes do. A cone's `radiusTop` defaults to 0, not to its radius, so existing cones stay pointed.
+
 ### 2026-10-25 — Apply what works instead of failing an AI build, with Retry and Continue
 
 - Changed: "Could not complete after N AI calls" now only appears when no part of any attempt applies, or when the first call itself fails.

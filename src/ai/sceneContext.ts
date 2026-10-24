@@ -19,7 +19,7 @@ function fieldText(name: string, field: FieldSchema): string {
   switch (field.type) {
     case "float":
     case "int":
-      return `${name} ${field.type} ${field.min}..${field.max} =${fallback}`;
+      return `${name} ${field.type} ${field.min}..${field.max} =${"optional" in field && field.optional ? "unset" : fallback}`;
     case "vec3":
       return `${name} vec3${field.min === undefined ? "" : ` ${field.min}..${field.max}`} =${fallback}`;
     case "enum":

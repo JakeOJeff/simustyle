@@ -78,6 +78,20 @@ describe("geometry checker", () => {
     expect(checkGeometry(build(planets), planets, "two boxes").join("\n")).not.toContain("touches nothing");
   });
 
+  it("flags separate objects that pass through each other, but not ones resting on or apart from each other", () => {
+    const table: SceneOp[] = [group("table", "SideTable"), box("top", "Top", "table", [0, 0.575, 0], [0.6, 0.05, 0.6]), box("cabinet", "Cabinet", "table", [0, 0.275, 0], [0.6, 0.55, 0.6])];
+    const lamp = (x: number, y = 0): SceneOp[] => [group("lamp", "FloorLamp", null, [x, y, 0]), box("pole", "Pole", "lamp", [0, 0.75, 0], [0.4, 1.5, 0.4]), box("shade", "Shade", "lamp", [0, 1.6, 0], [0.5, 0.3, 0.5])];
+    const base = build(table);
+    // The pole spans x 0.1..0.5 against the cabinet's -0.3..0.3: 0.2 m deep.
+    expect(checkGeometry(build(lamp(0.3), base), lamp(0.3), "a floor lamp")).toEqual(["FloorLamp overlaps SideTable by 0.2 m; move it apart."]);
+    expect(checkGeometry(build(lamp(0.52), base), lamp(0.52), "a floor lamp")).toEqual([]);
+    expect(checkGeometry(build(lamp(0.49), base), lamp(0.49), "a floor lamp")).toEqual([]); // 0.01 m snug fit
+    expect(checkGeometry(build(lamp(0, 0.6), base), lamp(0, 0.6), "a lamp on the table")).toEqual([]);
+    // Only built objects are reported, and parts of one object never count.
+    expect(checkGeometry(build(lamp(0.3), base), [], "nothing")).toEqual([]);
+    expect(checkGeometry(base, table, "a table")).toEqual([]);
+  });
+
   it("caps the output", () => {
     const ops: SceneOp[] = Array.from({ length: 20 }, (_, i) => [group(`g${i}`, `G${i}`, null, [i * 3, 2, 0]), box(`m${i}`, `M${i}`, `g${i}`, [0, 0, 0], [1, 1, 1])]).flat();
     const lines = checkGeometry(build(ops), ops, "boxes");

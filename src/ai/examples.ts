@@ -1,9 +1,12 @@
 /** Compact modeling guidance; every character is sent on every call. */
 export const MODELING_RULES = `## Modeling well
 - Real-world sizes in meters (door 2 m tall, chair seat 0.45 m high, car 4.2×1.8×1.4 m, adult 1.7 m). Default box is 1 m, so box scale = its size.
-- Build the 3–6 most recognizable features first, then details; 6–20 parts per object.
+- Build the 3–6 most recognizable features first, then details; 6–20 parts per object (repeated small items like balloons, books, leaves, bricks: up to 60).
+- Every part is recognizable on its own: give it its defining feature (door: knob; fridge: handle + split line; table: legs; bed: pillow + headboard).
 - Every part touches or overlaps a neighbor by ~0.02 m; no floating parts. Position is the center: put the group's lowest point at y=0.
-- Shape with rotation/scale. Cylinders stand along Y: wheels of a car whose length runs along X use rotation [90,0,0] (axle along Z); along Z use [0,0,90]. Cones for roofs, capsules for limbs, squashed spheres (scale [1,0.6,1]) for domes/hair.
+- Shape with rotation/scale. Cylinders stand along Y: wheels of a car whose length runs along X use rotation [90,0,0] (axle along Z); along Z use [0,0,90]. Cones for roofs, capsules for limbs, squashed spheres (scale [1,0.6,1]) for domes/hair. Lampshades are truncated cones (radiusTop < radius), wide end down.
+- Anything that hangs or floats on purpose (balloons, kites, lamps) is attached with a thin cylinder (radius 0.01) to what holds it.
+- Buildings: fill gables with a wedge; multi-floor buildings need stairs or a ladder.
 - Mirror symmetric parts exactly: same y/z, negated x (or negated z for left/right of a car along X).
 - 2–4 related colors per object.
 - Material: metal metalness 0.8 roughness 0.3; glass opacity 0.4 roughness 0.1; lamps emissive color + emissiveIntensity 1–3; gloss paint roughness 0.35; wood/cloth metalness 0, roughness 0.6–0.9.
@@ -35,6 +38,11 @@ const pants = { color: "#2b3a55" };
 const dark = { color: "#2a1d14" };
 const limb = (radius: number, height: number) => ({ shape: "capsule", radius, height });
 const eye = { shape: "sphere", radius: 0.02 };
+const wall = { color: "#e8dcc4" };
+const roof = { color: "#7a2e24", roughness: 0.8 };
+const glass = { color: "#b8c4cc", opacity: 0.4, roughness: 0.1 };
+const metal = { color: "#b8c4cc", metalness: 0.8, roughness: 0.3 };
+const knob = { shape: "sphere", radius: 0.04 };
 
 export const FEW_SHOT_EXAMPLES: readonly FewShotExample[] = [
   {
@@ -88,6 +96,28 @@ export const FEW_SHOT_EXAMPLES: readonly FewShotExample[] = [
         part("char_eye1", "Eye L", eye, [-0.045, 1.53, 0.12], dark),
         part("char_eye2", "Eye R", eye, [0.045, 1.53, 0.12], dark)
       ] }]
+    }
+  },
+  {
+    request: "a small two-story house",
+    reply: {
+      plan: "4x3 m, 2 floors, front +Z: body 4x5x3 y2.5; gable wedge r1 h1.2 x-1 y5.6, mirrored copy x+1; roof slab rot z31 + mirror; door+knob; 2 upper windows; 5 steps up the +X wall to an upper door+knob.",
+      summary: "Built a two-story house with a gabled roof and outside stairs.",
+      ops: [{ op: "assemble", id: "house", name: "House", parent: null, parts: [
+        part("h_body", "Body", box, [0, 2.5, 0], wall, [4, 5, 3]),
+        part("h_gable", "Gable", { shape: "wedge", radius: 1, height: 1.2 }, [-1, 5.6, 0], wall, [1, 1, 1.5]),
+        part("h_roof", "Roof", box, [-1.02, 5.64, 0], roof, [2.45, 0.08, 3.3], [0, 0, 31]),
+        part("h_door", "Door", box, [-0.8, 1, 1.53], wood, [0.9, 2, 0.06]),
+        part("h_knob", "Knob", knob, [-0.45, 1, 1.58], metal),
+        part("h_win", "Window", box, [-0.9, 3.9, 1.52], glass, [0.9, 0.8, 0.05]),
+        part("h_step", "Step", box, [2.4, 0.25, 1.25], wood, [0.8, 0.5, 0.5]),
+        part("h_door2", "Upper Door", box, [2.03, 3.5, -1], wood, [0.06, 2, 0.9]),
+        part("h_knob2", "Upper Knob", knob, [2.09, 3.5, -0.65], metal)
+      ] },
+      { op: "repeat", source: "h_gable", idPrefix: "h_gable", name: "Gable", count: 1, step: [2, 0, 0], rotationStep: [0, 180, 0] },
+      { op: "repeat", source: "h_roof", idPrefix: "h_roof", name: "Roof", count: 1, step: [2.04, 0, 0], rotationStep: [0, 0, -62] },
+      { op: "repeat", source: "h_win", idPrefix: "h_win", name: "Window", count: 1, step: [1.8, 0, 0] },
+      { op: "repeat", source: "h_step", idPrefix: "h_steps", name: "Step", count: 4, step: [0, 0.5, -0.5] }]
     }
   }
 ];

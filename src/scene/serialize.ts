@@ -14,7 +14,7 @@ export function omitDefaultFields(componentName: string, fields: Record<string, 
   if (!schema) return structuredClone(fields);
   return Object.fromEntries(Object.entries(fields).filter(([name, value]) => {
     const field = schema.fields[name];
-    if (field && JSON.stringify(value) === JSON.stringify(field.default)) return false;
+    if (field && !("optional" in field && field.optional) && JSON.stringify(value) === JSON.stringify(field.default)) return false;
     if (schema.managedFields?.[name] === "animationTracks" && Array.isArray(value) && value.length === 0) return false;
     return true;
   }).map(([name, value]) => [name, structuredClone(value)]));

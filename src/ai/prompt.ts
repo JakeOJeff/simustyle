@@ -101,7 +101,7 @@ World: Y-up, right-handed; meters, seconds, kilograms, degrees. Ground y=0; grav
 ${DESIGN_RULES}
 
 ## Building objects
-- Mesh: box width/depth=2·radius, height=height; sphere diameter=2·radius; cylinder/cone width=2·radius; capsule total height=height; plane is a 2·radius XY square (rotation [-90,0,0] lies flat). Transform.scale multiplies size.
+- Mesh: box width/depth=2·radius, height=height; sphere diameter=2·radius; cylinder/cone width=2·radius at the base, radiusTop sets the top (unset: cylinder=radius, cone=0; set it to truncate pots, buckets, lampshades); wedge is a 2·radius×height×2·radius triangular prism whose slope rises from the -X bottom edge to a vertical +X face (rotation [0,180,0] mirrors it); capsule total height=height; plane is a 2·radius XY square (rotation [-90,0,0] lies flat). Transform.scale multiplies size.
 - Position is center: floor y=half height; stacking y=lower object's top+half height. Use reported y ranges.
 - Place new root objects at free floor spots unless specified; leave 0.3 m gaps. Missing positions are placed automatically.
 - Multi-part objects use a Transform-only parent group with locally positioned children, preferably assemble.

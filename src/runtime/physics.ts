@@ -2,6 +2,7 @@ import * as RAPIER from "@dimforge/rapier3d-compat";
 import * as THREE from "three";
 import { applyOps } from "../scene/applyOps";
 import type { Entity, Scene, Vec3 } from "../scene/types";
+import { meshGeometry, meshTopRadius } from "../scene/meshGeometry";
 import { AnimatorRuntime } from "./animator";
 import { ScriptRuntime, scriptOps } from "./scripts";
 import { CameraRig } from "./camera";
@@ -59,39 +60,35 @@ function bodyType(entity: Entity): "static" | "kinematic" | "dynamic" {
 function colliderFor(entity: Entity): RAPIER.ColliderDesc {
   const mesh = record(entity, "Mesh");
   const transform = record(entity, "Transform");
-  const [sx, sy, sz] = vector(transform.scale, [1, 1, 1]).map((value) => Math.max(0.0001, Math.abs(value)));
+  const signed = vector(transform.scale, [1, 1, 1]).map((value) => Math.sign(value || 1) * Math.max(0.0001, Math.abs(value)));
+  const [sx, sy, sz] = signed.map(Math.abs);
   const radius = number(mesh.radius, 0.5);
   const height = number(mesh.height, 1);
+  const top = meshTopRadius(mesh);
   const uniform = Math.abs(sx - sy) < 1e-6 && Math.abs(sx - sz) < 1e-6;
   const roundBase = Math.abs(sx - sz) < 1e-6;
-  let geometry: THREE.BufferGeometry;
   switch (mesh.shape ?? "box") {
     case "sphere":
       if (uniform) return RAPIER.ColliderDesc.ball(radius * sx);
-      geometry = new THREE.SphereGeometry(radius, 24, 16);
       break;
     case "cylinder":
-      if (roundBase) return RAPIER.ColliderDesc.cylinder(height * sy / 2, radius * sx);
-      geometry = new THREE.CylinderGeometry(radius, radius, height, 24);
+      if (roundBase && Math.abs(top - radius) < 1e-6) return RAPIER.ColliderDesc.cylinder(height * sy / 2, radius * sx);
       break;
-    case "capsule": {
-      const length = Math.max(0.01, height - 2 * radius);
-      if (uniform) return RAPIER.ColliderDesc.capsule(length * sy / 2, radius * sx);
-      geometry = new THREE.CapsuleGeometry(radius, length, 4, 12);
+    case "capsule":
+      if (uniform) return RAPIER.ColliderDesc.capsule(Math.max(0.01, height - 2 * radius) * sy / 2, radius * sx);
       break;
-    }
     // Three's PlaneGeometry lies in local XY, with its normal along local Z.
     case "plane": return RAPIER.ColliderDesc.cuboid(radius * sx, radius * sy, 0.01 * sz);
     case "cone":
-      if (roundBase && vector(transform.scale, [1, 1, 1])[1] >= 0) return RAPIER.ColliderDesc.cone(height * sy / 2, radius * sx);
-      geometry = new THREE.ConeGeometry(radius, height, 24);
-      if (vector(transform.scale, [1, 1, 1])[1] < 0) geometry.scale(1, -1, 1);
+      if (roundBase && top === 0 && signed[1]! >= 0) return RAPIER.ColliderDesc.cone(height * sy / 2, radius * sx);
       break;
+    case "wedge": break;
     default: return RAPIER.ColliderDesc.cuboid(radius * sx, height * sy / 2, radius * sz);
   }
-  // Stretched curved primitives need a convex approximation of the visible geometry,
+  // Stretched, truncated, flipped or sloped primitives need a convex hull of the visible geometry,
   // rather than a sphere/cylinder inflated to the largest scale axis.
-  geometry.scale(sx, sy, sz);
+  const geometry = meshGeometry(mesh);
+  geometry.scale(signed[0]!, signed[1]!, signed[2]!);
   const collider = RAPIER.ColliderDesc.convexHull(new Float32Array(geometry.getAttribute("position").array));
   geometry.dispose();
   if (!collider) throw new Error(`Could not build the collider for '${entity.name}'.`);

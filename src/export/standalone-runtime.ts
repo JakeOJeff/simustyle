@@ -10,6 +10,7 @@ import { CameraRig, activeCamera } from "../runtime/camera";
 import { CameraInput } from "../runtime/cameraInput";
 import { SurfaceTextureStore } from "../materials/textures";
 import { applySurfaceMapping } from "../materials/mapping";
+import { meshGeometry } from "../scene/meshGeometry";
 import type { TextureAssets } from "../materials/catalog";
 
 type PlayController = { state: "playing" | "paused" | "stopped"; play(scene: Scene): Promise<string[]>; advance(scene: Scene, elapsed: number): Scene; stop(): Scene | null; setScriptParameter(entityId: string, name: string, value: unknown): boolean; pressKey(key: string): void; releaseKey(key: string): void; readonly initialScene: Scene | null };
@@ -25,17 +26,7 @@ function vector(value: unknown, fallback: Vec3): Vec3 {
 function meshFor(entity: Entity): THREE.Mesh | null {
   const mesh = record(entity, "Mesh");
   if (!entity.components.Mesh) return null;
-  const radius = typeof mesh.radius === "number" ? mesh.radius : 0.5;
-  const height = typeof mesh.height === "number" ? mesh.height : 1;
-  let geometry: THREE.BufferGeometry;
-  switch (mesh.shape) {
-    case "sphere": geometry = new THREE.SphereGeometry(radius, 24, 16); break;
-    case "cylinder": geometry = new THREE.CylinderGeometry(radius, radius, height, 24); break;
-    case "capsule": geometry = new THREE.CapsuleGeometry(radius, Math.max(0.01, height - 2 * radius), 4, 12); break;
-    case "plane": geometry = new THREE.PlaneGeometry(radius * 2, radius * 2); break;
-    case "cone": geometry = new THREE.ConeGeometry(radius, height, 24); break;
-    default: geometry = new THREE.BoxGeometry(radius * 2, height, radius * 2);
-  }
+  const geometry = meshGeometry(mesh);
   const material = record(entity, "Material");
   return new THREE.Mesh(geometry, new THREE.MeshStandardMaterial({
     color: typeof material.color === "string" ? material.color : "#ffffff",

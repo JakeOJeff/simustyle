@@ -9,6 +9,7 @@
   import { CameraInput } from "../runtime/cameraInput";
   import { SurfaceTextureStore } from "../materials/textures";
   import { applySurfaceMapping } from "../materials/mapping";
+  import { meshGeometry } from "../scene/meshGeometry";
   import { emitTutorial } from "./tutorial/tutorialState.svelte";
   import type { Entity, Scene, SceneOp, Vec3 } from "../scene/types";
 
@@ -91,20 +92,6 @@
     return Array.isArray(value) && value.length === 3 && value.every(Number.isFinite)
       ? [value[0], value[1], value[2]] as Vec3
       : fallback;
-  }
-
-  function geometryFor(mesh: Record<string, unknown>): THREE.BufferGeometry {
-    const shape = mesh.shape ?? "box";
-    const radius = typeof mesh.radius === "number" ? mesh.radius : 0.5;
-    const height = typeof mesh.height === "number" ? mesh.height : 1;
-    switch (shape) {
-      case "sphere": return new THREE.SphereGeometry(radius, 24, 16);
-      case "cylinder": return new THREE.CylinderGeometry(radius, radius, height, 24);
-      case "capsule": return new THREE.CapsuleGeometry(radius, Math.max(0.01, height - 2 * radius), 4, 12);
-      case "plane": return new THREE.PlaneGeometry(radius * 2, radius * 2);
-      case "cone": return new THREE.ConeGeometry(radius, height, 24);
-      default: return new THREE.BoxGeometry(radius * 2, height, radius * 2);
-    }
   }
 
   onMount(() => {
@@ -618,19 +605,20 @@
         const materialData = component(entity, "Material");
         let object = entityObjects.get(entity.id) as THREE.Mesh | undefined;
         if (!object) {
-          object = new THREE.Mesh(geometryFor(meshData), new THREE.MeshStandardMaterial());
+          object = new THREE.Mesh(meshGeometry(meshData), new THREE.MeshStandardMaterial());
           object.userData.entityId = entity.id;
           object.castShadow = true;
           object.receiveShadow = true;
           entityObjects.set(entity.id, object);
           world.add(object);
-        } else if (object.userData.shape !== meshData.shape || object.userData.radius !== meshData.radius || object.userData.height !== meshData.height) {
+        } else if (object.userData.shape !== meshData.shape || object.userData.radius !== meshData.radius || object.userData.height !== meshData.height || object.userData.radiusTop !== meshData.radiusTop) {
           object.geometry.dispose();
-          object.geometry = geometryFor(meshData);
+          object.geometry = meshGeometry(meshData);
         }
         object.userData.shape = meshData.shape;
         object.userData.radius = meshData.radius;
         object.userData.height = meshData.height;
+        object.userData.radiusTop = meshData.radiusTop;
         applyTransform(object, entity);
         const material = object.material as THREE.MeshStandardMaterial;
         material.color.set(typeof materialData.color === "string" ? materialData.color : "#ffffff");

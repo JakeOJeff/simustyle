@@ -1,8 +1,10 @@
-import type * as THREE from "three";
+import * as THREE from "three";
 import { meshWorldBounds } from "./quality";
 import type { Entity, Scene, SceneOp } from "../scene/types";
 
 const TOUCH = 0.05;
+/** Separate top-level objects may interpenetrate this much (a deliberate snug fit) before it reads as a mistake. */
+const OVERLAP = 0.03;
 const MAX_LINES = 12;
 /** Requests whose objects may legitimately leave the ground. */
 const AIRBORNE = /\b(float|floating|fly|flying|flies|hover|hovering|levitat|airborne|in the air|in the sky|cloud|balloon|hanging|hang|hung|ceiling|chandelier|orbit|outer space|in space|zero gravity|bird|drone|plane|jet|spaceship|ufo|underwater|submerged|buried)\w*/i;
@@ -36,7 +38,7 @@ function describeOffset(part: THREE.Box3, reference: THREE.Box3, referenceName: 
 
 /**
  * Deterministic post-build geometry review of entities created/updated by `ops` (and their descendants):
- * detached parts and object groups that do not rest on the ground. One correction line per problem.
+ * detached parts, object groups that do not rest on the ground, and top-level objects that overlap. One correction line per problem.
  */
 export function checkGeometry(scene: Scene, ops: SceneOp[], request: string): string[] {
   const byId = new Map(scene.entities.map((entity) => [entity.id, entity]));
@@ -111,6 +113,35 @@ export function checkGeometry(scene: Scene, ops: SceneOp[], request: string): st
       if (other !== part && (!nearest || gap(box, boxes.get(other.id)!) < gap(box, boxes.get(nearest.id)!))) nearest = other;
     }
     lines.push(`${part.name} ${describeOffset(box, boxes.get(nearest!.id)!, nearest!.name)}.`);
+  }
+
+  // Top-level objects that pass through each other. One resting on/in the other (its lowest point within TOUCH of the
+  // top of a part it stands over) is fine; nested objects are parts, not separate objects, and are never compared.
+  const roots = [...scopes.keys()].map((id) => byId.get(id)!);
+  const lowestOf = (scope: Entity[]) => Math.min(...scope.map((mesh) => boxes.get(mesh.id)!.min.y));
+  const restsOn = (upper: Entity[], lower: Entity[]) => {
+    const bottom = lowestOf(upper);
+    const footprint = upper.reduce((box, mesh) => box.union(boxes.get(mesh.id)!), boxes.get(upper[0]!.id)!.clone());
+    return lower.some((mesh) => {
+      const box = boxes.get(mesh.id)!;
+      return Math.abs(bottom - box.max.y) <= TOUCH && box.min.x < footprint.max.x && box.max.x > footprint.min.x && box.min.z < footprint.max.z && box.max.z > footprint.min.z;
+    });
+  };
+  for (const [index, first] of roots.entries()) {
+    for (const second of roots.slice(index + 1)) {
+      const subject = affected(second) && !affected(first) ? second : first;
+      const other = subject === first ? second : first;
+      if (!affected(subject)) continue;
+      const [a, b] = [scopes.get(subject.id)!, scopes.get(other.id)!];
+      if (restsOn(a, b) || restsOn(b, a)) continue;
+      let depth = 0;
+      for (const mesh of a) for (const against of b) {
+        // getSize is 0 for an empty (non-overlapping) intersection.
+        const size = boxes.get(mesh.id)!.clone().intersect(boxes.get(against.id)!).getSize(new THREE.Vector3());
+        depth = Math.max(depth, Math.min(size.x, size.y, size.z));
+      }
+      if (depth > OVERLAP) lines.push(`${subject.name} overlaps ${other.name} by ${meters(depth)} m; move it apart.`);
+    }
   }
   return lines.length > MAX_LINES ? [...lines.slice(0, MAX_LINES - 1), `...and ${lines.length - MAX_LINES + 1} more geometry problems of the same kind.`] : lines;
 }

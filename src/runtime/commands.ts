@@ -4,6 +4,7 @@
 import type { Entity, Scene, SceneOp } from "../scene/types";
 import { ANY_NOUNS, SHAPE_NOUNS, type AnimationSpec, type RelationName } from "../lang/vocabulary";
 import { componentSchemas } from "../registry";
+import { meshTopRadius } from "../scene/meshGeometry";
 
 export interface RuntimeDescription {
   text?: string;
@@ -48,6 +49,7 @@ export function halfExtents(entity: Entity): Vector {
   const base: Vector = shape === "sphere" ? [radius, radius, radius]
     : shape === "plane" ? [radius, 0.01, radius]
     : shape === "capsule" ? [radius, Math.max(height / 2, radius), radius]
+    : shape === "cylinder" || shape === "cone" ? [Math.max(radius, meshTopRadius(mesh)), height / 2, Math.max(radius, meshTopRadius(mesh))]
     : [radius, height / 2, radius];
   return [base[0] * scale[0], base[1] * scale[1], base[2] * scale[2]];
 }

@@ -14,7 +14,7 @@ describe("AI scene prompt construction", () => {
       for (const field of Object.keys(schema.fields)) expect(prompt).toMatch(new RegExp(`[ ;]${field} `));
     }
     expect(prompt).toContain("Material (requires Transform, Mesh)");
-    expect(prompt).toContain('shape box|sphere|cylinder|capsule|plane|cone ="box"');
+    expect(prompt).toContain('shape box|sphere|cylinder|capsule|plane|cone|wedge ="box"');
     expect(buildSceneUserMessage(createEmptyScene(), "add a cube")).toContain("## Current scene\nSettings (only non-default): {}\nObjects: none yet.");
   });
 
@@ -90,7 +90,7 @@ describe("AI response JSON schema", () => {
     for (const op of ["create", "update", "delete", "settings", "assemble", "repeat", "group"]) expect(serialized).toContain(`"const":"${op}"`);
     expect(serialized).toContain('"minimum":0.01');
     expect(serialized).toContain('"maximum":1000');
-    expect(serialized).toContain('"enum":["box","sphere","cylinder","capsule","plane","cone"]');
+    expect(serialized).toContain('"enum":["box","sphere","cylinder","capsule","plane","cone","wedge"]');
     expect(serialized).toContain('"parameters"');
     expect(serialized).toContain('"additionalProperties":false');
   });

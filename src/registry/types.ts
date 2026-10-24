@@ -1,5 +1,5 @@
 export type FieldSchema =
-  | { type: "float"; min: number; max: number; default: number; step?: number }
+  | { type: "float"; min: number; max: number; default: number; step?: number; /** Left unset unless chosen; readers derive the real default. */ optional?: boolean }
   | { type: "int"; min: number; max: number; default: number }
   | { type: "bool"; default: boolean }
   | { type: "color"; default: string }

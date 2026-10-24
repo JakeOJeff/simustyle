@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { Box, Camera, ChevronDown, ChevronRight, Circle, Cone, Cylinder, FileCode, FilePlus, Folder, FolderOpen, Lightbulb, Pill, Plus, ScrollText, Search, Square, X } from "@lucide/svelte";
+  import { Box, Camera, ChevronDown, ChevronRight, Circle, Cone, Cylinder, FileCode, FilePlus, Folder, FolderOpen, Lightbulb, Pill, Plus, ScrollText, Search, Square, Triangle, X } from "@lucide/svelte";
   import type { Entity, Scene } from "../scene/types";
 
   interface Props {
@@ -69,6 +69,7 @@
     if (shape === "sphere") return { icon: Circle, label: "Sphere" };
     if (shape === "cylinder") return { icon: Cylinder, label: "Cylinder" };
     if (shape === "cone") return { icon: Cone, label: "Cone" };
+    if (shape === "wedge") return { icon: Triangle, label: "Wedge" };
     if (shape === "plane") return { icon: Square, label: "Plane" };
     if (shape === "capsule") return { icon: Pill, label: "Capsule" };
     if (shape) return { icon: Box, label: "Cube" };

@@ -50,7 +50,7 @@ export function inspectBuildQuality(scene: Scene, ops: SceneOp[]): BuildQualityR
     combined.union(bounds);
     const matrix = worldMatrix(scene, entity.id);
     const signature = JSON.stringify([entity.components.Mesh.shape ?? "box", entity.components.Mesh.radius ?? 0.5,
-      entity.components.Mesh.height ?? 1, matrix.elements.map((value) => Math.round(value * 1e6))]);
+      entity.components.Mesh.height ?? 1, entity.components.Mesh.radiusTop ?? null, matrix.elements.map((value) => Math.round(value * 1e6))]);
     const previous = poses.get(signature);
     if (previous && (affected(entity.id) || affected(previous))) warn(`'${entity.id}' and '${previous}' have identical geometry and world poses; check for duplicate surfaces.`);
     poses.set(signature, entity.id);

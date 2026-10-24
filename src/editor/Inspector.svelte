@@ -1,6 +1,7 @@
 <script lang="ts">
   import { componentSchemas, type ComponentSchema, type FieldSchema } from "../registry";
   import type { Entity, Scene, SceneSettings, Vec3 } from "../scene/types";
+  import { meshTopRadius } from "../scene/meshGeometry";
   import { settingSchemas } from "../scene/validate";
   import { parseScript } from "../lang/parser";
   import { typecheckScript } from "../lang/checker";
@@ -264,14 +265,14 @@
                 <button class="open-script" onclick={onOpenScript}>Edit script</button>
               {/if}
               {#each Object.entries(schema.fields) as [fieldName, field] (fieldName)}
-                {#if !(component === "Script" && fieldName === "source") && !(component === "RigidBody" && fieldName === "anchored") && !(component === "Material" && (
+                {#if !(component === "Script" && fieldName === "source") && !(component === "RigidBody" && fieldName === "anchored") && !(component === "Mesh" && fieldName === "radiusTop" && fields.shape !== "cylinder" && fields.shape !== "cone") && !(component === "Material" && (
                   ((fieldName === "textureRepeatX" || fieldName === "textureRepeatY") && ((!surfaceTexture(fields.texture) && !normalTexture(fields)) || fields.textureMapping !== "custom")) ||
                   (fieldName === "textureMapping" && !surfaceTexture(fields.texture) && !normalTexture(fields)) ||
                   (fieldName === "normalStrength" && !normalTexture(fields)) ||
                   ((fieldName === "reliefDepth" || fieldName === "occlusionStrength") && !(normalTexture(fields) ?? surfaceTexture(fields.texture))?.normal)
                 ))}
                 <div class="inspector-animatable-field">
-                  {@render fieldControl(fieldName, field, fields[fieldName] ?? field.default, scene, (value, phase) => update(component, fieldName, value, phase))}
+                  {@render fieldControl(fieldName, field, fields[fieldName] ?? (component === "Mesh" && fieldName === "radiusTop" ? meshTopRadius(fields) : field.default), scene, (value, phase) => update(component, fieldName, value, phase))}
                   {#if keyframeable(field)}
                     {@const keyStatus = keyState(component, fieldName)}
                     <button class="keyframe-button key-{keyStatus}" data-tutorial-target="inspector-keyframe" aria-label="{keyStatus === 'keyed' ? 'Update' : 'Add'} keyframe for {component}.{fieldName}" title={keyStatus === "keyed" ? "Keyed at the playhead: click to update it with this value" : keyStatus === "animated" ? "Animated: click to add a key at the playhead" : "Add a keyframe at the playhead"} onclick={() => onKeyframe(component, fieldName)}><Diamond size={11} fill={keyStatus === "keyed" ? "currentColor" : "none"} /></button>

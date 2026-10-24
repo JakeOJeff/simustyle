@@ -37,10 +37,10 @@ describe("few-shot modeling examples", () => {
   it("stays compact and mentions every request", () => {
     const text = fewShotText();
     expect(text.startsWith("## Examples")).toBe(true);
-    expect(text.length).toBeLessThanOrEqual(5500);
-    expect(FEW_SHOT_EXAMPLES).toHaveLength(3);
+    expect(text.length).toBeLessThanOrEqual(8000);
+    expect(FEW_SHOT_EXAMPLES).toHaveLength(4);
     for (const example of FEW_SHOT_EXAMPLES) expect(text).toContain(`Request: "${example.request}"`);
     expect(MODELING_RULES.startsWith("## Modeling well")).toBe(true);
-    expect(MODELING_RULES.length).toBeLessThanOrEqual(1400);
+    expect(MODELING_RULES.length).toBeLessThanOrEqual(1600);
   });
 });
