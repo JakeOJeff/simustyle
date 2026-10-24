@@ -516,14 +516,18 @@
         : rebaseErrors.length ? `the build no longer applies to it (${rebaseErrors.slice(0, 2).join("; ")})` : null;
       if (blocked) {
         const changes = sceneDocument === requestedDocument && scene !== requestedScene ? describeChanges(requestedScene, scene).slice(0, 3) : [];
-        pushAIMessage({ id, role: "assistant", content: `The scene changed while this request was loading: ${blocked}.${changes.length ? ` Changes: ${changes.join("; ")}.` : ""} Send the request again to use the current scene.` });
-        message = "AI result skipped because the scene changed.";
+        // The finished build is kept on the message so it can still be added once the blocker is gone.
+        // A build made for another document is only retried, never added.
+        const sameDocument = sceneDocument === requestedDocument;
+        if (sameDocument) aiDraftScenes[id] = requestedScene;
+        pushAIMessage({ id, role: "assistant", content: `The scene changed while this request was loading: ${blocked}.${changes.length ? ` Changes: ${changes.join("; ")}.` : ""} The build wasn't applied; ${sameDocument ? "add it or retry below" : "retry below to build it for this scene"}.`,
+          ...(sameDocument ? { fallbackDraft: { summary: result.summary ?? "Finished build", operations: result.ops } } : {}), retry: { prompt } });
+        message = "AI result held back because the scene changed.";
         return;
       }
       if (rebased) { result.scene = rebased.scene; result.inverseOps = rebased.inverseOps; }
       if (!result.ok || !result.scene || !result.inverseOps) {
-        if (result.fallbackDraft) aiDraftScenes[id] = requestedScene;
-        pushAIMessage({ id, role: "assistant", content: result.errors.join(" · "), summary: `Could not complete after ${result.attempts} AI call${result.attempts === 1 ? "" : "s"}.`, ...(result.preflight ? { preflight: result.preflight } : {}), ...(result.fallbackDraft ? { fallbackDraft: { summary: result.fallbackDraft.summary, operations: result.fallbackDraft.ops, ...(result.fallbackDraft.partial ? { partial: result.fallbackDraft.partial } : {}) } } : {}) });
+        pushAIMessage({ id, role: "assistant", content: result.errors.join(" · "), summary: `Could not complete after ${result.attempts} AI call${result.attempts === 1 ? "" : "s"}.`, ...(result.preflight ? { preflight: result.preflight } : {}), retry: { prompt } });
         message = result.errors.join(" · ") || "AI changes could not be validated";
         return;
       }
@@ -535,12 +539,15 @@
       const changed = result.ops.find((operation) => operation.op === "create" || operation.op === "update");
       if (changed && (changed.op === "create" || changed.op === "update")) selectEntity(changed.id);
       frameToken += 1;
-      pushAIMessage({ id, role: "assistant", content: result.summary ?? "Scene updated.", summary: result.summary ?? "Scene updated.", operations: result.ops, ...(result.preflight ? { preflight: result.preflight } : {}) });
-      message = result.summary ?? "AI changes applied";
+      const summary = result.summary ?? "Scene updated.";
+      const skipped = result.skipped;
+      pushAIMessage({ id, role: "assistant", content: skipped ? `${summary} Left out: ${skipped.errors.join(" · ")}` : summary, summary, operations: result.ops, ...(result.preflight ? { preflight: result.preflight } : {}),
+        ...(skipped ? { retry: { prompt, continuation: continuationPrompt(prompt, summary, skipped.errors) } } : {}) });
+      message = skipped ? "Added the part of the build that worked; Continue builds the rest." : result.summary ?? "AI changes applied";
       countAISuccess();
     } catch (error) {
       const reason = error instanceof Error ? error.message : String(error);
-      pushAIMessage({ id: `ai_${nextAIId++}`, role: "assistant", content: reason, summary: `AI request failed: ${reason}` });
+      pushAIMessage({ id: `ai_${nextAIId++}`, role: "assistant", content: reason, summary: `AI request failed: ${reason}`, retry: { prompt } });
       message = reason;
     } finally {
       aiLoading = false;
@@ -565,18 +572,23 @@
     emitTutorial("ai-undo");
   }
 
+  /** A follow-up request that builds only what a partial build left out. */
+  function continuationPrompt(prompt: string, done: string, failed: readonly string[]): string {
+    return `Continue my previous request: "${prompt.slice(0, 4000)}"\nAlready added to the scene: ${done.slice(0, 800)}\nThese parts failed and were left out: ${failed.slice(0, 6).map((error) => error.slice(0, 240)).join("; ")}\nAdd only what is still missing. Do not rebuild or duplicate what already exists.`;
+  }
+
   function applyAIFallback(messageId: string) {
     if (playState !== "stopped" || playStarting) { message = "Stop the simulation before applying AI changes."; return; }
     finishGesture();
+    commitAllScripts();
     const messageEntry = aiMessages.find((entry) => entry.id === messageId);
     const operations = messageEntry?.fallbackDraft?.operations;
     if (!operations) return;
-    const partial = messageEntry?.fallbackDraft?.partial;
-    if (aiDraftScenes[messageId] !== scene) { message = "The scene changed after this draft was created. Send a new request to use the current scene."; return; }
+    // New/Open clears aiDraftScenes, so a build is never added to a different scene; small edits are fine.
+    if (!aiDraftScenes[messageId]) { message = "This build was made for a different scene. Send the request again."; return; }
     const result = applyOps(scene, operations);
-    if (result.errors.length) { message = `Could not apply the first draft: ${result.errors.join(" · ")}`; return; }
-    const scriptErrors = validateScripts(result.scene);
-    if (scriptErrors.length) { message = `Could not apply the first draft: ${scriptErrors[0]!.message}`; return; }
+    if (result.errors.length) { message = `Could not add this build to the current scene: ${result.errors.slice(0, 2).join(" · ")}. Use Retry to rebuild it.`; return; }
+    if (validateScripts(result.scene).length > validateScripts(scene).length) { message = "Could not add this build: it would add script errors. Use Retry to rebuild it."; return; }
     scene = result.scene;
     undoStack = [...undoStack, result.inverseOps];
     redoStack = [];
@@ -585,11 +597,9 @@
     if (changed && (changed.op === "create" || changed.op === "update")) selectEntity(changed.id);
     frameToken += 1;
     aiMessages = aiMessages.map((entry) => entry.id === messageId
-      ? partial
-        ? { ...entry, content: `Added the part of the build that applied cleanly (${partial.kept} of ${partial.total} operations). The errors that stopped the rest are listed above.`, summary: "Added a partial build.", operations, fallbackDraft: undefined }
-        : { ...entry, content: "Applied the first validated draft. Review issues remain visible above.", summary: "Applied the first validated draft; review issues remain.", operations, fallbackDraft: undefined }
+      ? { ...entry, content: `Added the build: ${entry.fallbackDraft?.summary ?? ""}`, summary: "Added the held-back build.", operations, fallbackDraft: undefined, retry: undefined }
       : entry);
-    message = partial ? "Added the partial build; send a follow-up request to finish it." : "Applied the first validated draft; inspect the runtime issues in the AI response.";
+    message = "Added the AI build.";
   }
 
   function apply(ops: SceneOp[]) {

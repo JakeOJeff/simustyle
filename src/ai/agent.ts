@@ -73,15 +73,13 @@ export interface SceneAgentResult {
   errors: string[];
   attempts: number;
   preflight?: SceneAgentPreflight;
-  /** A build the user may still apply: the reviewed-out first draft, or (with `partial`) what survived a failed build. */
-  fallbackDraft?: { summary: string; ops: SceneOp[]; preflight: SceneAgentPreflight; partial?: { kept: number; total: number } };
+  /** Set when every draft attempt was rejected and only the ops that still applied were kept. */
+  skipped?: { kept: number; total: number; errors: string[] };
   cacheHit?: boolean;
 }
 
 /** Server-side cap on all message contents of one scene request. */
 export const MAX_SCENE_INPUT_CHARS = Math.min(AI_TASK_LIMITS.scene_draft.maxInputChars, AI_TASK_LIMITS.scene_review.maxInputChars);
-/** maxCompletionTokens 4,000 is roughly 12–14k characters of JSON, plan included. */
-export const MAX_REPLY_CHARS = 12_000;
 /** JSON size of the error list sent with a correction, and the client's wrapper text around it. */
 const CORRECTION_ERROR_CHARS = 3_000;
 const CORRECTION_WRAPPER_CHARS = 300;
@@ -114,7 +112,6 @@ function replyFrom(value: unknown): { plan: string; summary: string; ops: unknow
 function prepareReply(scene: Scene, value: unknown): { reply?: PreparedReply; errors: string[] } {
   const parsed = replyFrom(value);
   if (!parsed) return { errors: ["Response must be a JSON object with a plan string, a nonempty summary (at most 2000 characters) and an ops array."] };
-  if (JSON.stringify(parsed).length > MAX_REPLY_CHARS) return { errors: [`Build response exceeds ${MAX_REPLY_CHARS} characters. Use assemble/repeat to express repeated detail compactly, shorten plan, and return the full corrected build.`] };
   const expanded = expandBuildOperations(scene, parsed.ops);
   if (expanded.errors.length) return { errors: expanded.errors };
   try {
@@ -138,22 +135,43 @@ function rejectedBuild(value: unknown): { summary: string; ops: unknown[] } | nu
 }
 
 /**
- * The part of a rejected build that still applies: each op is kept only if it applies on top of those kept
- * before it and adds no script compile errors. An op whose parent was dropped fails and is dropped too.
+ * Smaller versions of a failing op to try in order: a missing parent detached to the root, then each
+ * non-Transform component removed in turn (a broken Script or bad field costs only that component).
+ */
+function repairs(scene: Scene, op: SceneOp): SceneOp[] {
+  if (op.op !== "create" && op.op !== "update") return [];
+  const variants: SceneOp[] = [];
+  const parent = typeof op.parent === "string" && !scene.entities.some((entity) => entity.id === op.parent) ? { ...op, parent: null } : op;
+  if (parent !== op) variants.push(parent);
+  for (const name of Object.keys(op.components)) {
+    if (name === "Transform") continue;
+    const { [name]: _dropped, ...components } = op.components;
+    variants.push({ ...parent, components } as SceneOp);
+  }
+  return variants;
+}
+
+/**
+ * The part of a rejected build that still applies: each op is kept, or repaired (see repairs), only if it
+ * applies on top of those kept before it and adds no script compile errors.
  */
 function salvageOps(scene: Scene, rawOps: readonly unknown[], newCompileIssues: (candidate: Scene) => string[]): { ops: SceneOp[]; total: number } {
   let current = scene;
   const kept: SceneOp[] = [];
   let total = 0;
+  const tryOp = (op: SceneOp) => {
+    const applied = applyOps(current, [op]);
+    if (applied.errors.length || newCompileIssues(applied.scene).length) return false;
+    current = applied.scene;
+    kept.push(op);
+    return true;
+  };
   for (const raw of rawOps) {
     const expanded = expandBuildOperations(current, [raw]);
     total += Math.max(1, expanded.ops.length);
     if (expanded.errors.length) continue;
     for (const op of expanded.ops) {
-      const applied = applyOps(current, [op]);
-      if (applied.errors.length || newCompileIssues(applied.scene).length) continue;
-      current = applied.scene;
-      kept.push(op);
+      if (!tryOp(op)) repairs(current, op).some(tryOp);
     }
   }
   if (!kept.length) return { ops: kept, total };
@@ -295,21 +313,7 @@ export async function runSceneAgent(scene: Scene, userPrompt: string, dependenci
   let draftGeometry: string[] = [];
   let draftCalls = 0;
   const rejected: { summary: string; ops: unknown[] }[] = [];
-  /** Fails the build but offers the largest part of any rejected attempt that still applies, so paid work isn't lost. */
-  const failWithSalvage = (errors: string[]): SceneAgentResult => {
-    let best: { summary: string; ops: SceneOp[]; total: number } | null = null;
-    for (const build of rejected) {
-      const salvaged = salvageOps(scene, build.ops, newCompileIssues);
-      // Ties go to the later attempt: it had the earlier corrections.
-      if (salvaged.ops.length && (!best || salvaged.ops.length >= best.ops.length)) best = { summary: build.summary, ...salvaged };
-    }
-    if (!best) return { ok: false, ops: [], errors, attempts };
-    const applied = applyOps(scene, best.ops);
-    if (applied.errors.length) return { ok: false, ops: [], errors, attempts };
-    const preflight = inspectCandidate(applied.scene, inspectCandidate(scene).issues);
-    preflight.quality = inspectBuildQuality(applied.scene, best.ops);
-    return { ok: false, ops: [], errors, attempts, fallbackDraft: { summary: best.summary || "Partial build", ops: best.ops, preflight, partial: { kept: best.ops.length, total: best.total } } };
-  };
+  let requestFailure: string | null = null;
   for (let attempt = 1; attempt <= maxRetries + 1; attempt += 1) {
     if (attempt > 1) dependencies.onProgress?.(`Correcting the first pass (${attempt - 1}/${maxRetries})…`);
     draftCalls = attempt;
@@ -320,7 +324,8 @@ export async function runSceneAgent(scene: Scene, userPrompt: string, dependenci
       const truncated = unusableReply(error);
       if (truncated !== null && attempt <= maxRetries) { correctionErrors = [UNUSABLE_REPLY(truncated)]; previousReply = ""; continue; }
       const reason = error instanceof Error ? error.message : String(error);
-      return failWithSalvage([`AI request failed: ${reason}`]);
+      requestFailure = `AI request failed: ${reason}`;
+      break;
     }
     const prepared = prepareReply(scene, raw);
     const reply = prepared.reply;
@@ -344,7 +349,23 @@ export async function runSceneAgent(scene: Scene, userPrompt: string, dependenci
       break;
     }
   }
-  if (!draft) return failWithSalvage(correctionErrors);
+  // Every attempt was rejected: keep the largest part of any attempt that still applies instead of wasting
+  // the paid calls. Ties go to the later attempt, which had the earlier corrections.
+  let skipped: SceneAgentResult["skipped"];
+  if (!draft) {
+    const errors = requestFailure ? [requestFailure] : correctionErrors;
+    let best: { summary: string; ops: SceneOp[]; total: number } | null = null;
+    for (const build of rejected) {
+      const salvaged = salvageOps(scene, build.ops, newCompileIssues);
+      if (salvaged.ops.length && (!best || salvaged.ops.length >= best.ops.length)) best = { summary: build.summary, ...salvaged };
+    }
+    if (!best) return { ok: false, ops: [], errors, attempts };
+    skipped = { kept: best.ops.length, total: best.total, errors: errors.slice(0, 8) };
+    const note = best.ops.length < best.total ? ` (Partial: kept ${best.ops.length} of ${best.total} operations; the rest failed validation.)` : " (Some parts were repaired to pass validation.)";
+    draft = { summary: `${best.summary || "Built part of the request."}${note}`, ops: best.ops, buildPlan: best.ops, plan: "" };
+  }
+  /** A result built from the salvaged draft carries what was skipped; a reviewed replacement does not. */
+  const withSkipped = (result: SceneAgentResult): SceneAgentResult => skipped && result.ops === draft?.ops ? { ...result, skipped } : result;
 
   const firstResult = applyOps(scene, draft.ops);
   if (firstResult.errors.length) return { ok: false, ops: [], errors: firstResult.errors, attempts };
@@ -358,26 +379,19 @@ export async function runSceneAgent(scene: Scene, userPrompt: string, dependenci
   const draftRuntimeErrors = preflight.issues.filter((line) => !baselineIssues.has(line));
   const useDraftAfterReviewFailure = (reason: string): SceneAgentResult => {
     if (!draft || !firstResult.inverseOps) return { ok: false, ops: [], errors: [reason], attempts, preflight: draftPreflight };
-    if (!draftRuntimeErrors.length) {
-      return {
-        ok: true,
-        summary: `${draft.summary} Applied the validated first draft because the independent review could not complete: ${reason}`,
-        ops: draft.ops,
-        scene: firstResult.scene,
-        inverseOps: firstResult.inverseOps,
-        errors: [],
-        attempts,
-        preflight: draftPreflight
-      };
-    }
-    return {
-      ok: false,
-      ops: [],
-      errors: [reason, ...draftRuntimeErrors],
+    // The draft passed scene and compile checks, so apply it (undoable) rather than discard paid work; any
+    // runtime issues it still has stay listed in the preflight details.
+    const issues = draftRuntimeErrors.length ? ` Its Play preview still reports ${draftRuntimeErrors.length} script issue${draftRuntimeErrors.length === 1 ? "" : "s"}; see the check details.` : "";
+    return withSkipped({
+      ok: true,
+      summary: `${draft.summary} Applied the validated first draft because the independent review could not complete: ${reason}${issues}`,
+      ops: draft.ops,
+      scene: firstResult.scene,
+      inverseOps: firstResult.inverseOps,
+      errors: [],
       attempts,
-      preflight: draftPreflight,
-      fallbackDraft: { summary: draft.summary, ops: draft.ops, preflight: draftPreflight }
-    };
+      preflight: draftPreflight
+    });
   };
 
   const creates = draft.ops.filter((op) => op.op === "create").length;
@@ -385,8 +399,9 @@ export async function runSceneAgent(scene: Scene, userPrompt: string, dependenci
   const clean = !draftRuntimeErrors.length && !draftGeometry.length && !preflight.quality.warnings.length;
   if (!escalate && clean) {
     dependencies.onProgress?.("The first build passed every check; applying it without a second pass…");
-    dependencies.cache?.set(cacheKey, { summary: draft.summary, ops: draft.ops });
-    return { ok: true, summary: draft.summary, ops: draft.ops, scene: candidate, inverseOps: firstResult.inverseOps, errors: [], attempts, preflight };
+    // A salvaged partial is never cached, so retrying the same request makes a fresh build.
+    if (!skipped) dependencies.cache?.set(cacheKey, { summary: draft.summary, ops: draft.ops });
+    return withSkipped({ ok: true, summary: draft.summary, ops: draft.ops, scene: candidate, inverseOps: firstResult.inverseOps, errors: [], attempts, preflight });
   }
   const reviewTask: SceneAgentTask = escalate ? "scene_review" : "scene_draft";
   dependencies.onProgress?.(escalate ? "Reviewing the first build with the stronger model…" : "Reviewing the first build and its check results…");

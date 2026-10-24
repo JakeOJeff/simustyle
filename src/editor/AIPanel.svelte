@@ -13,7 +13,10 @@
     summary?: string;
     operations?: SceneOp[];
     preflight?: SceneAgentPreflight;
-    fallbackDraft?: { summary: string; operations: SceneOp[]; partial?: { kept: number; total: number } };
+    /** A finished build that wasn't applied (the scene changed while it loaded); the user can still add it. */
+    fallbackDraft?: { summary: string; operations: SceneOp[] };
+    /** Retry resends `prompt`; Continue sends `continuation`, which asks for only what a partial build left out. */
+    retry?: { prompt: string; continuation?: string };
   }
 
   interface Props {
@@ -116,13 +119,7 @@
           {#if message.fallbackDraft}
             <div class="fallback-draft">
               <span>{message.fallbackDraft.summary}</span>
-              {#if message.fallbackDraft.partial}
-                <span>The full build failed, but {message.fallbackDraft.partial.kept} of its {message.fallbackDraft.partial.total} operations still apply cleanly. Add them to keep what was built.</span>
-                <button class="undo-button" type="button" onclick={() => onApplyDraft(message.id)}>Add what was built ({message.fallbackDraft.partial.kept} of {message.fallbackDraft.partial.total})</button>
-              {:else}
-                <span>First draft passed scene and script checks, but its preview found runtime issues.</span>
-                <button class="undo-button" type="button" onclick={() => onApplyDraft(message.id)}>Apply first draft anyway</button>
-              {/if}
+              <button class="undo-button" type="button" onclick={() => onApplyDraft(message.id)}>Add what was built</button>
               {#if message.fallbackDraft.operations.length}
                 <details class="operation-details">
                   <summary>{message.fallbackDraft.operations.length} draft {message.fallbackDraft.operations.length === 1 ? "operation" : "operations"} <span>View draft</span></summary>
@@ -136,6 +133,15 @@
                   </div>
                 </details>
               {/if}
+            </div>
+          {/if}
+          {#if message.retry}
+            {@const retry = message.retry}
+            <div class="retry-actions">
+              {#if retry.continuation}
+                <button class="undo-button" type="button" disabled={loading || outOfCredits} onclick={() => onSubmit(retry.continuation!)}>Continue</button>
+              {/if}
+              <button class="undo-button" type="button" disabled={loading || outOfCredits} onclick={() => onSubmit(retry.prompt)}>Retry</button>
             </div>
           {/if}
         {/if}
@@ -210,6 +216,7 @@
   .undo-button{margin:2px 0 4px 18px;padding:4px 9px;border:1px solid #ffffff12;border-radius:6px;background:#222226;color:#d4d4d8;font-size:10px;cursor:pointer}
   .undo-button:hover{background:#2d2d33;color:#fff}
   .fallback-draft{grid-column:2;display:grid;gap:5px;color:#d2b98a;font-size:9px;line-height:1.4}
+  .retry-actions{grid-column:2;display:flex;gap:6px;margin-top:5px}
   .prompt-form{padding:10px;border-top:1px solid var(--window-line,#ffffff0d)}
   .composer{display:flex;flex-direction:column;border:1px solid var(--field-border,#ffffff14);border-radius:9px;background:var(--field-bg,#161618);transition:border-color .12s}
   .composer:focus-within{border-color:#a99bff80}

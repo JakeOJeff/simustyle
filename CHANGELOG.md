@@ -4,6 +4,20 @@ Record meaningful project changes during the event, newest first.
 
 ## Event build log
 
+### 2026-10-25 — Apply what works instead of failing an AI build, with Retry and Continue
+
+- Changed: "Could not complete after N AI calls" now only appears when no part of any attempt applies, or when the first call itself fails.
+  - When every draft attempt is rejected, the assistant applies the largest part that still works. Failing ops are repaired first: a missing parent is detached to the root, or only the failing component (for example a broken Script) is dropped. Anything that still fails is skipped. The response lists what was left out.
+  - When the review can't fix a draft's runtime script issues, the draft is applied with those issues listed, instead of failing.
+  - Removed the 12,000-character reply limit. It rejected complete, valid replies, and the review and correction prompts already truncate long builds.
+  - Every failed, held-back or partial response now has **Retry**. Partial builds also have **Continue**, which asks for only the missing parts.
+  - A build held back because the scene changed while it loaded now has **Add what was built**. It applies to the current scene when the document is unchanged.
+  - Salvaged builds are never cached, so Retry makes a fresh build.
+  - Files: `src/ai/agent.ts`, `src/App.svelte`, `src/editor/AIPanel.svelte`, `docs/USER_GUIDE.md`, `tests/ai/agent.test.ts`.
+- Why: Failed builds threw away paid calls and left users with no way forward but retyping the request.
+- Validation: svelte-check (0 errors) and all 323 tests pass, including new tests for salvage, repair and no-cache. The Retry, Continue and Add buttons were not exercised in a browser.
+- Limitations: A partial build is applied without the full review, and a draft can now be applied with runtime script issues (listed in its check details and undoable). The cause of the user's specific failures wasn't confirmed, because the error text wasn't available.
+
 ### 2026-10-25 — Offer the part of a failed AI build that still applies
 
 - Changed: When every draft attempt is rejected ("Could not complete after 3 AI calls") or a later call fails, the assistant now looks at each rejected attempt and keeps the ops that still apply. An op is kept if it applies on top of the ones kept before it and adds no script compile errors. The failed message then shows an "Add what was built (N of M)" button, applied as one undoable edit. Previously the paid calls produced only an error. Files: `src/ai/agent.ts`, `src/editor/AIPanel.svelte`, `src/App.svelte`, `tests/ai/agent.test.ts`.

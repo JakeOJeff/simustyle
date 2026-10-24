@@ -1,8 +1,9 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { MAX_SCENE_INPUT_CHARS, runSceneAgent } from "../../src/ai/agent";
 import { createEmptyScene } from "../../src/scene/types";
-import type { SceneAgentRequest } from "../../src/ai/agent";
+import type { SceneAgentReply, SceneAgentRequest } from "../../src/ai/agent";
 import { buildSystemPrompt } from "../../src/ai/prompt";
+import { BuildCache } from "../../src/ai/cache";
 import { checkGeometry } from "../../src/ai/geometry";
 
 // The geometry checker is built separately; these tests control its lines directly.
@@ -111,8 +112,10 @@ describe("scene agent validation loop", () => {
     const broken = { summary: "Added a broken script.", ops: [{ op: "create", id: "new", name: "New", parent: null,
       components: { Transform: {}, Script: { source: "when game starts\n  move another_missing up 1" } } }] };
     const result = await runSceneAgent(scene, "add script", { ...dependencies([]), complete: async () => broken, maxRetries: 0 });
-    expect(result.ok).toBe(false);
-    expect(result.errors.join()).toContain("another_missing");
+    // The draft is applied when the review can't fix it, but the new issue is still reported.
+    expect(result.ok).toBe(true);
+    expect(result.summary).toContain("script issue");
+    expect(result.preflight?.issues.join()).toContain("another_missing");
   });
 
   it("accepts a valid operation and returns one inverse batch without a review for a clean draft", async () => {
@@ -154,34 +157,46 @@ describe("scene agent validation loop", () => {
     }
   });
 
-  it("offers the part of a failed build that still applies", async () => {
+  it("applies the part of a build that still applies when every attempt is rejected", async () => {
     const mixed = { summary: "Two cubes and a ghost edit.", ops: [cube("a", [-3, 0.5, 0]), { op: "update", id: "ghost", components: {} }, cube("b", [3, 0.5, 0])] };
     const { requests, complete } = recorder([mixed]);
     const result = await runSceneAgent(createEmptyScene(), "add two cubes", { ...dependencies([]), complete });
-    expect(result.ok).toBe(false);
-    expect(requests).toHaveLength(3);
-    expect(result.errors.join(" ")).toContain("ghost");
-    expect(result.fallbackDraft?.partial).toEqual({ kept: 2, total: 3 });
-    expect(result.fallbackDraft?.ops.map((op) => op.op === "create" ? op.id : op.op)).toEqual(["a", "b"]);
-    expect(result.fallbackDraft?.summary).toBe("Two cubes and a ghost edit.");
+    expect(result.ok).toBe(true);
+    expect(requests.filter((request) => request.task === "scene_draft").length).toBeGreaterThanOrEqual(3);
+    expect(result.skipped).toMatchObject({ kept: 2, total: 3 });
+    expect(result.skipped?.errors.join(" ")).toContain("ghost");
+    expect(result.ops.map((op) => op.op === "create" ? op.id : op.op)).toEqual(["a", "b"]);
+    expect(result.summary).toContain("kept 2 of 3");
   });
 
-  it("drops ops that add compile errors or hang off a dropped parent when salvaging", async () => {
+  it("repairs ops by dropping only the component that fails, keeping their children", async () => {
     const broken = { summary: "Broken", ops: [
       cube("keep"),
       { op: "create", id: "bad", name: "Bad", parent: null, components: { Transform: {}, Script: { source: "every frame:\n  self.rigidbdy.mass = 2\n" } } },
       { op: "create", id: "child", name: "Child", parent: "bad", components: { Transform: {} } }
     ] };
     const result = await runSceneAgent(createEmptyScene(), "x", { ...dependencies([]), complete: recorder([broken]).complete });
-    expect(result.ok).toBe(false);
-    expect(result.fallbackDraft?.ops.map((op) => op.op === "create" ? op.id : op.op)).toEqual(["keep"]);
+    expect(result.ok).toBe(true);
+    expect(result.ops.map((op) => op.op === "create" ? op.id : op.op)).toEqual(["keep", "bad", "child"]);
+    expect(result.scene?.entities.find((entity) => entity.id === "bad")?.components.Script).toBeUndefined();
+    expect(result.skipped?.errors.join(" ")).toContain("Did you mean RigidBody?");
   });
 
-  it("offers nothing when no part of a failed build applies", async () => {
+  it("does not cache a salvaged build, so retrying the request rebuilds it", async () => {
+    const mixed = { summary: "Cube and ghost.", ops: [cube("a"), { op: "update", id: "ghost", components: {} }] };
+    const cache = new BuildCache<SceneAgentReply>();
+    const result = await runSceneAgent(createEmptyScene(), "add a cube", { ...dependencies([]), cache, complete: recorder([mixed]).complete });
+    expect(result.skipped).toBeDefined();
+    const again = await runSceneAgent(createEmptyScene(), "add a cube", { ...dependencies([]), cache, complete: recorder([clean]).complete });
+    expect(again.cacheHit).toBeUndefined();
+    expect(again.skipped).toBeUndefined();
+  });
+
+  it("fails only when no part of any attempt applies", async () => {
     const bad = { summary: "Bad", ops: [{ op: "update", id: "ghost", components: {} }] };
     const result = await runSceneAgent(createEmptyScene(), "x", { ...dependencies([]), complete: recorder([bad]).complete });
     expect(result.ok).toBe(false);
-    expect(result.fallbackDraft).toBeUndefined();
+    expect(result.skipped).toBeUndefined();
   });
 
   it("rejects scripts with compile errors before committing ops", async () => {
@@ -190,8 +205,9 @@ describe("scene agent validation loop", () => {
       { summary: "Broken script", ops: [{ op: "create", id: "bad-script", name: "Bad Script", parent: null, components: { Transform: {}, Script: { source: "every frame:\n  self.rigidbdy.mass = 2\n" } } }] }
       ]), maxRetries: 0
     });
-    expect(result.ok).toBe(false);
-    expect(result.errors.join(" ")).toContain("Did you mean RigidBody?");
+    // The object is kept without its broken script, and the compile error is reported as skipped.
+    expect(result.scene?.entities.find((entity) => entity.id === "bad-script")?.components.Script).toBeUndefined();
+    expect(result.skipped?.errors.join(" ")).toContain("Did you mean RigidBody?");
   });
 
   it("uses isolated Console output and runtime issues to improve the second build", async () => {
@@ -221,7 +237,7 @@ describe("scene agent validation loop", () => {
     expect(result.preflight?.issues).toEqual([]);
   });
 
-  it("does not return a scene when the second pass keeps producing runtime errors", async () => {
+  it("applies the draft with its runtime issues listed when the second pass can't fix them", async () => {
     const broken = { summary: "Added a broken player.", ops: [{
       op: "create" as const,
       id: "player",
@@ -231,11 +247,11 @@ describe("scene agent validation loop", () => {
     }] };
     const { requests, complete } = recorder([broken]);
     const result = await runSceneAgent(createEmptyScene(), "add a player", { ...dependencies([]), complete });
-    expect(result.ok).toBe(false);
-    expect(result.scene).toBeUndefined();
-    expect(result.fallbackDraft).toBeDefined();
+    expect(result.ok).toBe(true);
+    expect(result.scene?.entities.some((entity) => entity.id === "player")).toBe(true);
     expect(requests).toHaveLength(3);
-    expect(result.errors.join(" ")).toContain("could not find 'missing'");
+    expect(result.summary).toContain("1 script issue");
+    expect(result.preflight?.issues.join(" ")).toContain("could not find 'missing'");
   });
 
   it("quotes the rejected script line in the correction error", async () => {
@@ -244,8 +260,7 @@ describe("scene agent validation loop", () => {
       { summary: "Kill brick", ops: [{ op: "create", id: "killbrick_1", name: "KillBrick1", parent: null, components: { Transform: {}, Script: { source: "when I touch\n  kill it\n" } } }] }
       ]), maxRetries: 0
     });
-    expect(result.ok).toBe(false);
-    expect(result.errors.join(" ")).toContain(`Entity 'killbrick_1', line 2, column 8 in "kill it"`);
+    expect(result.skipped?.errors.join(" ")).toContain(`Entity 'killbrick_1', line 2, column 8 in "kill it"`);
   });
 
   it("documents the kill-brick reset idiom in the script spec", async () => {
