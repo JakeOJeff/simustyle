@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { componentSchemas } from "../../src/registry";
 import { createEmptyScene } from "../../src/scene/types";
-import { buildResponseJsonSchema, buildSceneUserMessage, buildSystemPrompt, SCRIPT_AGENT_SPEC } from "../../src/ai/prompt";
+import { buildResponseJsonSchema, buildSceneUserMessage, buildSystemPrompt, EMPTY_SCENE_NOTE, SCRIPT_AGENT_SPEC } from "../../src/ai/prompt";
 import { MODELING_RULES, fewShotText } from "../../src/ai/examples";
 
 describe("AI scene prompt construction", () => {
@@ -56,6 +56,17 @@ describe("AI scene prompt construction", () => {
     const positions = ['- room "Room"', "Use warm colors", 'Selected object ids (resolve this/these using this selection): ["room"]', "## Request\npaint it red"].map((part) => message.indexOf(part));
     for (const index of positions) expect(index).toBeGreaterThan(0);
     expect([...positions].sort((a, b) => a - b)).toEqual(positions);
+  });
+
+  it("asks for a full composition only when the scene is empty", () => {
+    const empty = buildSceneUserMessage(createEmptyScene(), "a cozy reading corner");
+    expect(empty).toContain(EMPTY_SCENE_NOTE);
+    expect(empty.indexOf(EMPTY_SCENE_NOTE)).toBeLessThan(empty.indexOf("## Request"));
+    expect(EMPTY_SCENE_NOTE).toMatch(/floor or ground.*walls.*lights.*background and ambientLightIntensity/);
+    const scene = createEmptyScene();
+    scene.entities = [{ id: "box", name: "Box", parent: null, components: { Transform: {}, Mesh: {} } }];
+    expect(buildSceneUserMessage(scene, "add a lamp")).not.toContain(EMPTY_SCENE_NOTE);
+    expect(buildSystemPrompt()).not.toContain(EMPTY_SCENE_NOTE);
   });
 
   it("bounds the scene snapshot and selection to the message budget", () => {

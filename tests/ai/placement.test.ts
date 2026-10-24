@@ -57,8 +57,8 @@ describe("scene context", () => {
     const perObject = (buildSceneUserMessage(scene, "x").length - buildSceneUserMessage(createEmptyScene(), "x").length) / 20;
     expect(perObject).toBeLessThan(120);
     // The static system prompt (rules, schemas, modeling rules, examples) is sent on every call; it must leave
-    // room in the 40,000-character request cap for the scene, the request and a correction turn.
-    expect(buildSystemPrompt().length).toBeLessThan(26_000);
+    // room in the 48,000-character request cap for the scene, the request and a correction turn.
+    expect(buildSystemPrompt().length).toBeLessThan(31_000);
   });
 });
 

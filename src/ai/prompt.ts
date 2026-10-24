@@ -66,6 +66,9 @@ export function requestHistory(previousRequests: readonly string[] = []): string
   return history;
 }
 
+/** Added to the request when the scene has no entities, so a first build is a whole composition. */
+export const EMPTY_SCENE_NOTE = "The scene is empty, so build a full composition, not loose objects on the grid: a floor or ground surface, any walls the request implies, lights that match the mood, and a settings op for background and ambientLightIntensity to match.";
+
 /** Selected ids as JSON, bounded so a select-all on a big scene cannot crowd out the scene itself. */
 function selectionText(focusIds: readonly string[]): string {
   const shown: string[] = [];
@@ -84,7 +87,7 @@ function selectionText(focusIds: readonly string[]): string {
 export function buildSceneUserMessage(scene: Scene, request: string, options: SceneUserMessageOptions = {}): string {
   const history = requestHistory(options.previousRequests);
   const focusIds = options.focusIds ?? [];
-  const tail = `${history.length ? `\n\nEarlier successful requests (context only; current request overrides these):\n${JSON.stringify(history)}` : ""}${focusIds.length ? `\n\nSelected object ids (resolve this/these using this selection): ${selectionText(focusIds)}` : ""}\n\n## Request\n${request}`;
+  const tail = `${history.length ? `\n\nEarlier successful requests (context only; current request overrides these):\n${JSON.stringify(history)}` : ""}${focusIds.length ? `\n\nSelected object ids (resolve this/these using this selection): ${selectionText(focusIds)}` : ""}${scene.entities.length ? "" : `\n\n${EMPTY_SCENE_NOTE}`}\n\n## Request\n${request}`;
   const head = "## Current scene\n";
   const sceneBudget = Math.max(0, Math.min(23_000, (options.maxChars ?? Infinity) - head.length - tail.length - 50));
   return `${head}${sceneText(scene, { maxChars: sceneBudget, query: request, focusIds })}${tail}`;

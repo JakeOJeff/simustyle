@@ -7,6 +7,10 @@ export const MODELING_RULES = `## Modeling well
 - Shape with rotation/scale. Cylinders stand along Y: wheels of a car whose length runs along X use rotation [90,0,0] (axle along Z); along Z use [0,0,90]. Cones for roofs, capsules for limbs, squashed spheres (scale [1,0.6,1]) for domes/hair. Lampshades are truncated cones (radiusTop < radius), wide end down.
 - Anything that hangs or floats on purpose (balloons, kites, lamps) is attached with a thin cylinder (radius 0.01) to what holds it.
 - Buildings: fill gables with a wedge; multi-floor buildings need stairs or a ladder.
+- Shelves, tables and counters are never empty: shelves get rows of 5–8 items varied in height, width and color, some leaning or stacked; tables get 2–4 small props.
+- Light sources (lamps, candles, fireplaces, windows) get a Light child at the bulb or flame; the shade/bulb/flame gets emissive with emissiveIntensity 1–3.
+- Mood sets lighting: "cozy"/"warm" = light color #ffb070–#ffd6a0, ambientLightIntensity ~0.3, dark background; "bright"/"clean" = white light, higher ambient.
+- "Corner", "nook" or "room" means at least two walls meeting; group furniture within 1.5 m of the focal piece instead of spreading it evenly.
 - Mirror symmetric parts exactly: same y/z, negated x (or negated z for left/right of a car along X).
 - 2–4 related colors per object.
 - Material: metal metalness 0.8 roughness 0.3; glass opacity 0.4 roughness 0.1; lamps emissive color + emissiveIntensity 1–3; gloss paint roughness 0.35; wood/cloth metalness 0, roughness 0.6–0.9.
@@ -31,7 +35,6 @@ const lamp = { color: "#fff4d6", emissive: "#fff4d6", emissiveIntensity: 2 };
 const wheel = { shape: "cylinder", radius: 0.35, height: 0.25 };
 const axle: Vec = [90, 0, 0];
 const wood = { color: "#8b5a2b" };
-const leg: Vec = [0.04, 0.45, 0.04];
 const skin = { color: "#e0b48a" };
 const shirt = { color: "#3b6ea5" };
 const pants = { color: "#2b3a55" };
@@ -43,6 +46,13 @@ const roof = { color: "#7a2e24", roughness: 0.8 };
 const glass = { color: "#b8c4cc", opacity: 0.4, roughness: 0.1 };
 const metal = { color: "#b8c4cc", metalness: 0.8, roughness: 0.3 };
 const knob = { shape: "sphere", radius: 0.04 };
+const sage = { color: "#8fa58a" };
+const fabric = { color: "#7d9a78" };
+const cream = { color: "#e8dcc4" };
+const walnut = { color: "#5a3d26" };
+const red = { color: "#9c3b2e" };
+const green = { color: "#4f6b4a" };
+const iron = { color: "#3a2e26", metalness: 0.8, roughness: 0.3 };
 
 export const FEW_SHOT_EXAMPLES: readonly FewShotExample[] = [
   {
@@ -65,18 +75,47 @@ export const FEW_SHOT_EXAMPLES: readonly FewShotExample[] = [
     }
   },
   {
-    request: "a wooden chair",
+    request: "a cozy reading corner",
     reply: {
-      plan: "seat 0.46x0.05x0.46 y0.455; legs 0.04x0.45x0.04 x±0.2 z±0.2 y0.225; backrest 0.44x0.46x0.04 z-0.21 y0.69; cushion on seat.",
-      summary: "Built a wooden chair with a green cushion.",
-      ops: [{ op: "assemble", id: "chair", name: "Chair", parent: null, parts: [
-        part("chair_seat", "Seat", box, [0, 0.455, 0], wood, [0.46, 0.05, 0.46]),
-        part("chair_leg1", "Leg FL", box, [-0.2, 0.225, 0.2], wood, leg),
-        part("chair_leg2", "Leg FR", box, [0.2, 0.225, 0.2], wood, leg),
-        part("chair_leg3", "Leg BL", box, [-0.2, 0.225, -0.2], wood, leg),
-        part("chair_leg4", "Leg BR", box, [0.2, 0.225, -0.2], wood, leg),
-        part("chair_back", "Back", box, [0, 0.69, -0.21], wood, [0.44, 0.46, 0.04]),
-        part("chair_pad", "Cushion", box, [0, 0.48, 0.01], { color: "#2f5d50" }, [0.42, 0.04, 0.42])
+      plan: "Floor 3x3 top y0; walls 0.1 thick meet at back-left (z-1.45, x-1.45). Focal armchair at x-0.55 z-0.85; shelf on back wall x0.6 with 2 rows of 5 varied books (one leaning, one stack); side table x0.1 z-0.6 with mug+book; floor lamp x-1.15 z-1.1, cone shade wide end down, warm point light inside; dark background, ambient 0.3.",
+      summary: "Built a cozy reading corner with an armchair, a filled bookshelf, a side table and a warm floor lamp.",
+      ops: [{ op: "settings", settings: { background: "#1d1712", ambientLightIntensity: 0.3 } },
+      { op: "assemble", id: "corner", name: "Corner", parent: null, parts: [
+        part("floor", "Floor", box, [0, -0.02, 0], { color: "#6b4630" }, [3, 0.04, 3]),
+        part("wall_back", "Back Wall", box, [0, 1.2, -1.45], sage, [3, 2.4, 0.1]),
+        part("wall_left", "Left Wall", box, [-1.45, 1.2, 0], sage, [0.1, 2.4, 3])
+      ] },
+      { op: "assemble", id: "armchair", name: "Armchair", parent: null, transform: { position: [-0.55, 0, -0.85] }, parts: [
+        part("ac_seat", "Seat", box, [0, 0.225, 0], fabric, [0.8, 0.45, 0.75]),
+        part("ac_back", "Back", box, [0, 0.75, -0.3], fabric, [0.8, 0.6, 0.15]),
+        part("ac_arm", "Arm", box, [-0.34, 0.575, 0], fabric, [0.12, 0.25, 0.75]),
+        part("ac_cushion", "Cushion", box, [0, 0.5, 0.07], cream, [0.56, 0.1, 0.55])
+      ] },
+      { op: "repeat", source: "ac_arm", idPrefix: "ac_arm", name: "Arm", count: 1, step: [0.68, 0, 0] },
+      { op: "assemble", id: "shelf", name: "Bookshelf", parent: null, transform: { position: [0.6, 0, -1.22] }, parts: [
+        part("sh_side", "Side", box, [-0.38, 0.8, 0], walnut, [0.04, 1.6, 0.32]),
+        part("sh_board", "Board", box, [0, 0.02, 0], walnut, [0.72, 0.04, 0.32]),
+        { id: "sh_books", name: "Books", components: { Transform: { position: [0, 0.04, 0] } } },
+        ...[[-0.3, 0.06, 0.26, red], [-0.23, 0.07, 0.3, green], [-0.16, 0.05, 0.22, cream],]
+          .map(([x, w, h, color], i) => ({ ...part(`sh_b${i + 1}`, "Book", box, [x as number, (h as number) / 2, 0], color as Fields, [w as number, h as number, 0.22]), parent: "sh_books" })),
+        { ...part("sh_b4", "Leaning Book", box, [-0.07, 0.125, 0], green, [0.05, 0.26, 0.22], [0, 0, -15]), parent: "sh_books" },
+        { ...part("sh_b5", "Book Stack", box, [0.1, 0.025, 0], red, [0.22, 0.05, 0.16]), parent: "sh_books" }
+      ] },
+      { op: "repeat", source: "sh_side", idPrefix: "sh_side", name: "Side", count: 1, step: [0.76, 0, 0] },
+      { op: "repeat", source: "sh_board", idPrefix: "sh_board", name: "Board", count: 2, step: [0, 0.78, 0] },
+      { op: "repeat", source: "sh_books", idPrefix: "sh_books", name: "Books", count: 1, step: [0, 0.78, 0] },
+      { op: "assemble", id: "side_table", name: "Side Table", parent: null, transform: { position: [0.1, 0, -0.6] }, parts: [
+        part("st_top", "Top", { shape: "cylinder", radius: 0.22, height: 0.04 }, [0, 0.56, 0], wood),
+        part("st_stem", "Stem", { shape: "cylinder", radius: 0.03, height: 0.52 }, [0, 0.28, 0], wood),
+        part("st_foot", "Foot", { shape: "cylinder", radius: 0.15, height: 0.03 }, [0, 0.015, 0], wood),
+        part("st_mug", "Mug", { shape: "cylinder", radius: 0.04, height: 0.09 }, [0.09, 0.625, 0.05], cream),
+        part("st_book", "Book", box, [-0.07, 0.6, -0.03], red, [0.16, 0.04, 0.12], [0, 20, 0])
+      ] },
+      { op: "assemble", id: "floor_lamp", name: "Floor Lamp", parent: null, transform: { position: [-1.15, 0, -1.1] }, parts: [
+        part("fl_foot", "Foot", { shape: "cylinder", radius: 0.15, height: 0.03 }, [0, 0.015, 0], iron),
+        part("fl_pole", "Pole", { shape: "cylinder", radius: 0.015, height: 1.4 }, [0, 0.73, 0], iron),
+        part("fl_shade", "Shade", { shape: "cone", radius: 0.2, radiusTop: 0.12, height: 0.25 }, [0, 1.5, 0], { color: "#ffd6a0", emissive: "#ffb070", emissiveIntensity: 1.5 }),
+        { id: "fl_light", name: "Bulb Light", components: { Transform: { position: [0, 1.45, 0] }, Light: { color: "#ffb070", intensity: 3 } } }
       ] }]
     }
   },

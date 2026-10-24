@@ -80,6 +80,9 @@ describe("scene agent validation loop", () => {
     expect(requests[1]?.systemPrompt).toBe(requests[0]?.systemPrompt);
     expect(requests[1]?.userPrompt).toContain("DESIGN AND ORGANIZATION CHECKS");
     expect(requests[1]?.userPrompt).toContain("ORIGINAL scene");
+    expect(requests[1]?.userPrompt).toContain("Keep decorative details that support the request");
+    expect(requests[1]?.userPrompt).toContain("If the first build is sparse, add detail instead of removing it.");
+    expect(requests[1]?.userPrompt).not.toContain("remove unrelated additions");
     expect(requests[1]?.userPrompt).toContain('"op":"assemble"');
     expect(requests[1]?.userPrompt).toContain("Arch: beam 2 m up on two posts.");
     expect(requests[1]?.userPrompt).toContain("Use bright red in my playful style");
@@ -386,8 +389,8 @@ describe("request size budget", () => {
         Script: { source: `when clicked\n  say "crate ${i} ${"detail ".repeat(10)}"` } } }));
     const ghosts = { summary: "Bad", plan: "p".repeat(1500), ops: Array.from({ length: 60 }, (_, i) => ({ op: "update", id: `ghost_${i}_${"x".repeat(80)}`, components: {} })) };
     const valid = { summary: "Added a sunken cube.", plan: "q".repeat(1500), ops: [cube("cube", [0, -1, 0]), ...Array.from({ length: 50 }, (_, i) => cube(`extra_${i}`, [i * 2, 0.5, 60]))] };
-    // Pad the system prompt to at least 24k so later growth of the modeling rules/examples stays covered.
-    const system = buildSystemPrompt() + "\n" + "m".repeat(Math.max(0, 24_000 - buildSystemPrompt().length));
+    // Pad the system prompt to at least 30k so later growth of the modeling rules/examples stays covered.
+    const system = buildSystemPrompt() + "\n" + "m".repeat(Math.max(0, 30_000 - buildSystemPrompt().length));
     const { requests, complete } = recorder(["{".repeat(30_000), ghosts, valid, "{".repeat(30_000), valid]);
     const result = await runSceneAgent(scene, "Add a cube. " + "Make it look good. ".repeat(150), {
       buildSystemPrompt: () => system, responseSchema: {}, complete, solReviewEnabled: true,
@@ -404,7 +407,7 @@ describe("request size budget", () => {
 
   it("fails fast when the request cannot fit even with an empty scene context", async () => {
     let calls = 0;
-    const result = await runSceneAgent(createEmptyScene(), "x".repeat(11_000), { ...dependencies([]), buildSystemPrompt: () => "s".repeat(25_000), complete: async () => { calls++; return clean; } });
+    const result = await runSceneAgent(createEmptyScene(), "x".repeat(11_000), { ...dependencies([]), buildSystemPrompt: () => "s".repeat(33_000), complete: async () => { calls++; return clean; } });
     expect(result.ok).toBe(false);
     expect(result.errors.join()).toContain("too large");
     expect(calls).toBe(0);

@@ -18,8 +18,8 @@ export interface AiTaskLimits {
 
 export const AI_TASK_LIMITS: Record<AiTask, AiTaskLimits> = {
   parse: { maxInputChars: 8_000, maxCompletionTokens: 800, worstCaseCredits: 2 },
-  scene_draft: { maxInputChars: 40_000, maxCompletionTokens: 4_000, worstCaseCredits: 5 },
-  scene_review: { maxInputChars: 40_000, maxCompletionTokens: 4_000, worstCaseCredits: 30 }
+  scene_draft: { maxInputChars: 48_000, maxCompletionTokens: 4_000, worstCaseCredits: 5 },
+  scene_review: { maxInputChars: 48_000, maxCompletionTokens: 4_000, worstCaseCredits: 30 }
 };
 
 export function isAiTask(value: unknown): value is AiTask {

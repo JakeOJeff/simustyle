@@ -4,6 +4,19 @@ Record meaningful project changes during the event, newest first.
 
 ## Event build log
 
+### 2026-10-25 — Fuller first builds: keep props, compose empty scenes, filled shelves, real lamps and mood lighting
+
+- Changed: Scene quality round 3.
+  - The reviewer no longer removes "unrelated additions". It now keeps decorative details that support the request (props, clutter, small objects), removes only what contradicts the request or clearly wasn't wanted, and adds detail when the first build is sparse. The matching design rule ("never add unrelated props") now welcomes supporting props and rules out only unrelated objects and scripts.
+  - When the scene has no entities, the request message asks for a full composition: a floor or ground, any walls the request implies, mood lighting, and a settings op for background and ambient light. The note goes in the per-call message, so the cached system prompt is unchanged for other builds.
+  - New "Modeling well" rules: shelves get rows of 5–8 varied items and tables 2–4 props; light sources get a Light child at the bulb/flame and an emissive shade (intensity 1–3); "cozy"/"warm" and "bright"/"clean" set light color, ambient and background; "corner"/"nook"/"room" means two meeting walls with furniture within 1.5 m of the focal piece.
+  - The chair few-shot example is replaced by a cozy reading corner: two walls, an armchair, a bookshelf with two rows of five varied books (one leaning, one stack), a side table with a mug and a book, a floor lamp with a truncated emissive shade and a warm point light inside, and dark-background, 0.3-ambient settings.
+  - The scene tasks' input cap rises from 40,000 to 48,000 characters. The static system prompt grew from about 25,200 to 30,000 characters, and the higher cap keeps the same ~10,700 characters for scene context and history.
+  - Files: `src/ai/agent.ts`, `src/ai/designRules.ts`, `src/ai/prompt.ts`, `src/ai/examples.ts`, `src/ai/tasks.ts`, `README.md`, `tests/ai/agent.test.ts`, `tests/ai/examples.test.ts`, `tests/ai/prompt.test.ts`, `tests/ai/placement.test.ts`.
+- Why: Test builds were sparse. The reviewer stripped props, empty-scene requests produced loose objects on the grid, shelves were empty and lamps gave no light.
+- Validation: all 336 tests pass. New tests check the reviewer wording, that the empty-scene note appears only for empty scenes and never in the system prompt, and that the new rules are present. The reading corner is checked like the other examples (valid, connected, grounded, at most 20 parts and 2–4 colors per object) plus: two walls meeting, each filled shelf row has 5–8 books varied in height, width and color with one tilted, 2–4 props on the table, a warm Light child inside an emissive, wide-end-down shade, ambient 0.3, a dark background, and furniture within 1.5 m of the armchair.
+- Limitations: Every scene call now sends about 4,800 more characters, mostly cached input. A worst-case Sol review (48,000 characters in, 4,000 tokens out) can cost slightly more than the 30 credits held for it. The real charge is still settled from usage.
+
 ### 2026-10-25 — Turn on Sol scene reviews
 
 - Changed: `AI_SOL_ENABLED` is now `"true"` in `wrangler.jsonc`, so qualifying scene reviews (3+ new objects, or a corrected draft) run on `gpt-6-sol`. Local dev sets it in the git-ignored `.env.local`.
