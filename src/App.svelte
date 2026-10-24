@@ -523,7 +523,7 @@
       if (rebased) { result.scene = rebased.scene; result.inverseOps = rebased.inverseOps; }
       if (!result.ok || !result.scene || !result.inverseOps) {
         if (result.fallbackDraft) aiDraftScenes[id] = requestedScene;
-        pushAIMessage({ id, role: "assistant", content: result.errors.join(" · "), summary: `Could not complete after ${result.attempts} AI call${result.attempts === 1 ? "" : "s"}.`, ...(result.preflight ? { preflight: result.preflight } : {}), ...(result.fallbackDraft ? { fallbackDraft: { summary: result.fallbackDraft.summary, operations: result.fallbackDraft.ops } } : {}) });
+        pushAIMessage({ id, role: "assistant", content: result.errors.join(" · "), summary: `Could not complete after ${result.attempts} AI call${result.attempts === 1 ? "" : "s"}.`, ...(result.preflight ? { preflight: result.preflight } : {}), ...(result.fallbackDraft ? { fallbackDraft: { summary: result.fallbackDraft.summary, operations: result.fallbackDraft.ops, ...(result.fallbackDraft.partial ? { partial: result.fallbackDraft.partial } : {}) } } : {}) });
         message = result.errors.join(" · ") || "AI changes could not be validated";
         return;
       }
@@ -571,6 +571,7 @@
     const messageEntry = aiMessages.find((entry) => entry.id === messageId);
     const operations = messageEntry?.fallbackDraft?.operations;
     if (!operations) return;
+    const partial = messageEntry?.fallbackDraft?.partial;
     if (aiDraftScenes[messageId] !== scene) { message = "The scene changed after this draft was created. Send a new request to use the current scene."; return; }
     const result = applyOps(scene, operations);
     if (result.errors.length) { message = `Could not apply the first draft: ${result.errors.join(" · ")}`; return; }
@@ -584,9 +585,11 @@
     if (changed && (changed.op === "create" || changed.op === "update")) selectEntity(changed.id);
     frameToken += 1;
     aiMessages = aiMessages.map((entry) => entry.id === messageId
-      ? { ...entry, content: "Applied the first validated draft. Review issues remain visible above.", summary: "Applied the first validated draft; review issues remain.", operations, fallbackDraft: undefined }
+      ? partial
+        ? { ...entry, content: `Added the part of the build that applied cleanly (${partial.kept} of ${partial.total} operations). The errors that stopped the rest are listed above.`, summary: "Added a partial build.", operations, fallbackDraft: undefined }
+        : { ...entry, content: "Applied the first validated draft. Review issues remain visible above.", summary: "Applied the first validated draft; review issues remain.", operations, fallbackDraft: undefined }
       : entry);
-    message = "Applied the first validated draft; inspect the runtime issues in the AI response.";
+    message = partial ? "Added the partial build; send a follow-up request to finish it." : "Applied the first validated draft; inspect the runtime issues in the AI response.";
   }
 
   function apply(ops: SceneOp[]) {

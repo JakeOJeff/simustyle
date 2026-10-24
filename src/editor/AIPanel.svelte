@@ -13,7 +13,7 @@
     summary?: string;
     operations?: SceneOp[];
     preflight?: SceneAgentPreflight;
-    fallbackDraft?: { summary: string; operations: SceneOp[] };
+    fallbackDraft?: { summary: string; operations: SceneOp[]; partial?: { kept: number; total: number } };
   }
 
   interface Props {
@@ -116,8 +116,13 @@
           {#if message.fallbackDraft}
             <div class="fallback-draft">
               <span>{message.fallbackDraft.summary}</span>
-              <span>First draft passed scene and script checks, but its preview found runtime issues.</span>
-              <button class="undo-button" type="button" onclick={() => onApplyDraft(message.id)}>Apply first draft anyway</button>
+              {#if message.fallbackDraft.partial}
+                <span>The full build failed, but {message.fallbackDraft.partial.kept} of its {message.fallbackDraft.partial.total} operations still apply cleanly. Add them to keep what was built.</span>
+                <button class="undo-button" type="button" onclick={() => onApplyDraft(message.id)}>Add what was built ({message.fallbackDraft.partial.kept} of {message.fallbackDraft.partial.total})</button>
+              {:else}
+                <span>First draft passed scene and script checks, but its preview found runtime issues.</span>
+                <button class="undo-button" type="button" onclick={() => onApplyDraft(message.id)}>Apply first draft anyway</button>
+              {/if}
               {#if message.fallbackDraft.operations.length}
                 <details class="operation-details">
                   <summary>{message.fallbackDraft.operations.length} draft {message.fallbackDraft.operations.length === 1 ? "operation" : "operations"} <span>View draft</span></summary>

@@ -4,6 +4,13 @@ Record meaningful project changes during the event, newest first.
 
 ## Event build log
 
+### 2026-10-25 — Offer the part of a failed AI build that still applies
+
+- Changed: When every draft attempt is rejected ("Could not complete after 3 AI calls") or a later call fails, the assistant now looks at each rejected attempt and keeps the ops that still apply. An op is kept if it applies on top of the ones kept before it and adds no script compile errors. The failed message then shows an "Add what was built (N of M)" button, applied as one undoable edit. Previously the paid calls produced only an error. Files: `src/ai/agent.ts`, `src/editor/AIPanel.svelte`, `src/App.svelte`, `tests/ai/agent.test.ts`.
+- Why: Users lost all of the work, and the credits, whenever a build failed validation on its last attempt.
+- Validation: svelte-check (0 errors) and all 322 tests pass, including three new salvage tests. Not exercised in a browser.
+- Limitations: Only ops that apply on their own are kept, so a part whose parent was dropped is dropped too. The partial build isn't reviewed and may show runtime issues. As with the existing draft button, it can only be added to the scene the request started from.
+
 ### 2026-10-25 — Describe money-based AI credits correctly in the docs
 
 - Changed: The user guide and the in-app Docs panel said AI used "one credit per model call". They now say one credit is $0.00167 of AI spend, each call is charged for the tokens it used (rounded up), and a typical request costs about two to four credits. Files: `docs/USER_GUIDE.md`, `src/editor/DocsPanel.svelte`.

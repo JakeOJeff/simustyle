@@ -154,6 +154,36 @@ describe("scene agent validation loop", () => {
     }
   });
 
+  it("offers the part of a failed build that still applies", async () => {
+    const mixed = { summary: "Two cubes and a ghost edit.", ops: [cube("a", [-3, 0.5, 0]), { op: "update", id: "ghost", components: {} }, cube("b", [3, 0.5, 0])] };
+    const { requests, complete } = recorder([mixed]);
+    const result = await runSceneAgent(createEmptyScene(), "add two cubes", { ...dependencies([]), complete });
+    expect(result.ok).toBe(false);
+    expect(requests).toHaveLength(3);
+    expect(result.errors.join(" ")).toContain("ghost");
+    expect(result.fallbackDraft?.partial).toEqual({ kept: 2, total: 3 });
+    expect(result.fallbackDraft?.ops.map((op) => op.op === "create" ? op.id : op.op)).toEqual(["a", "b"]);
+    expect(result.fallbackDraft?.summary).toBe("Two cubes and a ghost edit.");
+  });
+
+  it("drops ops that add compile errors or hang off a dropped parent when salvaging", async () => {
+    const broken = { summary: "Broken", ops: [
+      cube("keep"),
+      { op: "create", id: "bad", name: "Bad", parent: null, components: { Transform: {}, Script: { source: "every frame:\n  self.rigidbdy.mass = 2\n" } } },
+      { op: "create", id: "child", name: "Child", parent: "bad", components: { Transform: {} } }
+    ] };
+    const result = await runSceneAgent(createEmptyScene(), "x", { ...dependencies([]), complete: recorder([broken]).complete });
+    expect(result.ok).toBe(false);
+    expect(result.fallbackDraft?.ops.map((op) => op.op === "create" ? op.id : op.op)).toEqual(["keep"]);
+  });
+
+  it("offers nothing when no part of a failed build applies", async () => {
+    const bad = { summary: "Bad", ops: [{ op: "update", id: "ghost", components: {} }] };
+    const result = await runSceneAgent(createEmptyScene(), "x", { ...dependencies([]), complete: recorder([bad]).complete });
+    expect(result.ok).toBe(false);
+    expect(result.fallbackDraft).toBeUndefined();
+  });
+
   it("rejects scripts with compile errors before committing ops", async () => {
     const result = await runSceneAgent(createEmptyScene(), "add a broken script", {
       ...dependencies([

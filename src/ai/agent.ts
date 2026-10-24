@@ -73,7 +73,8 @@ export interface SceneAgentResult {
   errors: string[];
   attempts: number;
   preflight?: SceneAgentPreflight;
-  fallbackDraft?: { summary: string; ops: SceneOp[]; preflight: SceneAgentPreflight };
+  /** A build the user may still apply: the reviewed-out first draft, or (with `partial`) what survived a failed build. */
+  fallbackDraft?: { summary: string; ops: SceneOp[]; preflight: SceneAgentPreflight; partial?: { kept: number; total: number } };
   cacheHit?: boolean;
 }
 
@@ -122,6 +123,46 @@ function prepareReply(scene: Scene, value: unknown): { reply?: PreparedReply; er
   } catch (error) {
     return { errors: [`Malformed build operation: ${error instanceof Error ? error.message : String(error)}`] };
   }
+}
+
+/** The summary and raw ops of any reply that is a JSON object with an ops array, even one prepareReply rejects. */
+function rejectedBuild(value: unknown): { summary: string; ops: unknown[] } | null {
+  let decoded = value;
+  if (typeof value === "string") {
+    try { decoded = JSON.parse(value) as unknown; }
+    catch { return null; }
+  }
+  if (!decoded || typeof decoded !== "object" || !Array.isArray((decoded as Record<string, unknown>).ops)) return null;
+  const { summary, ops } = decoded as { summary?: unknown; ops: unknown[] };
+  return { summary: typeof summary === "string" ? summary.trim().slice(0, 2000) : "", ops };
+}
+
+/**
+ * The part of a rejected build that still applies: each op is kept only if it applies on top of those kept
+ * before it and adds no script compile errors. An op whose parent was dropped fails and is dropped too.
+ */
+function salvageOps(scene: Scene, rawOps: readonly unknown[], newCompileIssues: (candidate: Scene) => string[]): { ops: SceneOp[]; total: number } {
+  let current = scene;
+  const kept: SceneOp[] = [];
+  let total = 0;
+  for (const raw of rawOps) {
+    const expanded = expandBuildOperations(current, [raw]);
+    total += Math.max(1, expanded.ops.length);
+    if (expanded.errors.length) continue;
+    for (const op of expanded.ops) {
+      const applied = applyOps(current, [op]);
+      if (applied.errors.length || newCompileIssues(applied.scene).length) continue;
+      current = applied.scene;
+      kept.push(op);
+    }
+  }
+  if (!kept.length) return { ops: kept, total };
+  // Place unpositioned objects as a normal build would, unless that breaks the kept ops.
+  try {
+    const tidy = tidyCreates(scene, kept, { preserveExplicitPositions: true }).ops;
+    if (!applyOps(scene, tidy).errors.length) return { ops: tidy, total };
+  } catch { /* keep the untidied ops */ }
+  return { ops: kept, total };
 }
 
 /** Errors sent to the model: at most 24, each ≤ 400 characters, ≤ CORRECTION_ERROR_CHARS as JSON. */
@@ -253,6 +294,22 @@ export async function runSceneAgent(scene: Scene, userPrompt: string, dependenci
   let draft: PreparedReply | null = null;
   let draftGeometry: string[] = [];
   let draftCalls = 0;
+  const rejected: { summary: string; ops: unknown[] }[] = [];
+  /** Fails the build but offers the largest part of any rejected attempt that still applies, so paid work isn't lost. */
+  const failWithSalvage = (errors: string[]): SceneAgentResult => {
+    let best: { summary: string; ops: SceneOp[]; total: number } | null = null;
+    for (const build of rejected) {
+      const salvaged = salvageOps(scene, build.ops, newCompileIssues);
+      // Ties go to the later attempt: it had the earlier corrections.
+      if (salvaged.ops.length && (!best || salvaged.ops.length >= best.ops.length)) best = { summary: build.summary, ...salvaged };
+    }
+    if (!best) return { ok: false, ops: [], errors, attempts };
+    const applied = applyOps(scene, best.ops);
+    if (applied.errors.length) return { ok: false, ops: [], errors, attempts };
+    const preflight = inspectCandidate(applied.scene, inspectCandidate(scene).issues);
+    preflight.quality = inspectBuildQuality(applied.scene, best.ops);
+    return { ok: false, ops: [], errors, attempts, fallbackDraft: { summary: best.summary || "Partial build", ops: best.ops, preflight, partial: { kept: best.ops.length, total: best.total } } };
+  };
   for (let attempt = 1; attempt <= maxRetries + 1; attempt += 1) {
     if (attempt > 1) dependencies.onProgress?.(`Correcting the first pass (${attempt - 1}/${maxRetries})…`);
     draftCalls = attempt;
@@ -263,14 +320,21 @@ export async function runSceneAgent(scene: Scene, userPrompt: string, dependenci
       const truncated = unusableReply(error);
       if (truncated !== null && attempt <= maxRetries) { correctionErrors = [UNUSABLE_REPLY(truncated)]; previousReply = ""; continue; }
       const reason = error instanceof Error ? error.message : String(error);
-      return { ok: false, ops: [], errors: [`AI request failed: ${reason}`], attempts };
+      return failWithSalvage([`AI request failed: ${reason}`]);
     }
     const prepared = prepareReply(scene, raw);
     const reply = prepared.reply;
     previousReply = replyText(raw);
-    if (!reply) { correctionErrors = prepared.errors; continue; }
+    if (!reply) {
+      correctionErrors = prepared.errors;
+      const build = rejectedBuild(raw);
+      if (build) rejected.push(build);
+      continue;
+    }
     const result = applyOps(scene, reply.ops);
     const hardErrors = result.errors.length ? result.errors : newCompileIssues(result.scene);
+    // Kept even when only geometry flagged it: a later attempt may fail outright, and this one still applies.
+    rejected.push({ summary: reply.summary, ops: reply.ops });
     const geometry = result.errors.length ? [] : geometryFlags(result.scene, reply.ops, userPrompt);
     correctionErrors = [...hardErrors, ...geometry];
     // Geometry flags are soft: the last allowed attempt is accepted with them and they go on to the review.
@@ -280,7 +344,7 @@ export async function runSceneAgent(scene: Scene, userPrompt: string, dependenci
       break;
     }
   }
-  if (!draft) return { ok: false, ops: [], errors: correctionErrors, attempts };
+  if (!draft) return failWithSalvage(correctionErrors);
 
   const firstResult = applyOps(scene, draft.ops);
   if (firstResult.errors.length) return { ok: false, ops: [], errors: firstResult.errors, attempts };
