@@ -506,10 +506,17 @@
       const id = `ai_${nextAIId++}`;
       // Small edits made while waiting (a camera nudge, a rename) shouldn't waste a paid build: replay its ops on the
       // current scene and skip it only when they no longer apply cleanly or the document itself was replaced.
+      // A failed request applies nothing, so report its real error even if the scene changed meanwhile.
       const rebased = result.ok && scene !== requestedScene && sceneDocument === requestedDocument ? applyOps(scene, result.ops) : null;
-      const rebaseFailed = !!rebased && (rebased.errors.length > 0 || validateScripts(rebased.scene).length > validateScripts(scene).length);
-      if ((scene !== requestedScene && (!rebased || rebaseFailed)) || playState !== "stopped" || playStarting || Object.keys(scriptDrafts).length) {
-        pushAIMessage({ id, role: "assistant", content: "The scene changed while this request was loading. Send the request again to use the current scene." });
+      const rebaseErrors = rebased ? [...rebased.errors, ...(validateScripts(rebased.scene).length > validateScripts(scene).length ? ["it would add script errors"] : [])] : [];
+      const blocked = !result.ok ? null
+        : playState !== "stopped" || playStarting ? "Play started"
+        : Object.keys(scriptDrafts).length ? "a script has unsaved edits"
+        : sceneDocument !== requestedDocument ? "a different scene was opened"
+        : rebaseErrors.length ? `the build no longer applies to it (${rebaseErrors.slice(0, 2).join("; ")})` : null;
+      if (blocked) {
+        const changes = sceneDocument === requestedDocument && scene !== requestedScene ? describeChanges(requestedScene, scene).slice(0, 3) : [];
+        pushAIMessage({ id, role: "assistant", content: `The scene changed while this request was loading: ${blocked}.${changes.length ? ` Changes: ${changes.join("; ")}.` : ""} Send the request again to use the current scene.` });
         message = "AI result skipped because the scene changed.";
         return;
       }

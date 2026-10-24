@@ -4,6 +4,13 @@ Record meaningful project changes during the event, newest first.
 
 ## Event build log
 
+### 2026-10-24 — Show the real AI error, and say what changed when a build is skipped
+
+- Changed: A failed AI request now always shows its own error. Before, it was hidden behind "The scene changed while this request was loading" whenever the scene had changed. When a successful build is skipped, the message now says why (Play started, unsaved script edits, a different scene opened, or the build no longer applies) and lists up to three of the scene changes. File: `src/App.svelte`.
+- Why: Users saw the generic "scene changed" message with no way to tell what changed or what had actually failed.
+- Validation: svelte-check (0 errors) and all 319 tests pass. Not exercised in a browser.
+- Limitations: None known.
+
 ### 2026-10-24 — Retry AI replies cut off at the output limit
 
 - Changed: The proxy now detects `finish_reason: "length"` and returns the billed reply with `truncated: true`, including when all the tokens went to reasoning and no content came back. Before, that case was an error saying the provider returned no message content. The client raises `UnusableReplyError` for truncated or non-JSON replies. The agent treats that error as a correctable attempt: it retries with an instruction to return a much more compact build, within the existing caps of 2 draft retries and 1 review retry. Files: `src/ai/chatProxy.ts`, `src/ai/client.ts`, `src/ai/agent.ts`, and tests.
