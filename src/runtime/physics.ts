@@ -1,4 +1,5 @@
 import * as RAPIER from "@dimforge/rapier3d-compat";
+import * as THREE from "three";
 import { applyOps } from "../scene/applyOps";
 import type { Entity, Scene, Vec3 } from "../scene/types";
 import { AnimatorRuntime } from "./animator";
@@ -29,25 +30,13 @@ function vector(value: unknown, fallback: Vec3): Vec3 {
 }
 
 function eulerToRotation(rotation: Vec3): RAPIER.Rotation {
-  const [x, y, z] = rotation.map((degrees) => degrees * Math.PI / 360) as Vec3;
-  const cx = Math.cos(x), sx = Math.sin(x);
-  const cy = Math.cos(y), sy = Math.sin(y);
-  const cz = Math.cos(z), sz = Math.sin(z);
-  return {
-    x: sx * cy * cz - cx * sy * sz,
-    y: cx * sy * cz + sx * cy * sz,
-    z: cx * cy * sz - sx * sy * cz,
-    w: cx * cy * cz + sx * sy * sz
-  };
+  return new THREE.Quaternion().setFromEuler(new THREE.Euler(...rotation.map(THREE.MathUtils.degToRad) as Vec3, "XYZ"));
 }
 
 function rotationToEuler(rotation: RAPIER.Rotation): Vec3 {
   const { x, y, z, w } = rotation;
-  const roll = Math.atan2(2 * (w * x + y * z), 1 - 2 * (x * x + y * y));
-  const sinPitch = Math.max(-1, Math.min(1, 2 * (w * y - z * x)));
-  const pitch = Math.asin(sinPitch);
-  const yaw = Math.atan2(2 * (w * z + x * y), 1 - 2 * (y * y + z * z));
-  return [roll, pitch, yaw].map((radians) => radians * 180 / Math.PI) as Vec3;
+  const euler = new THREE.Euler().setFromQuaternion(new THREE.Quaternion(x, y, z, w), "XYZ");
+  return [euler.x, euler.y, euler.z].map(THREE.MathUtils.radToDeg) as Vec3;
 }
 
 // Collision groups: the upper 16 bits say what a collider is, the lower 16 what it may touch.
@@ -60,21 +49,53 @@ function isPhysical(entity: Entity): boolean {
   return Boolean(entity.components.RigidBody) || (Boolean(entity.components.Collider) && entity.components.Collider?.enabled !== false);
 }
 
+function bodyType(entity: Entity): "static" | "kinematic" | "dynamic" {
+  const data = entity.components.RigidBody;
+  if (!data) return "kinematic";
+  if (data.anchored === true || data.bodyType === "static") return "static";
+  return data.bodyType === "kinematic" ? "kinematic" : "dynamic";
+}
+
 function colliderFor(entity: Entity): RAPIER.ColliderDesc {
   const mesh = record(entity, "Mesh");
   const transform = record(entity, "Transform");
-  const scale = vector(transform.scale, [1, 1, 1]);
-  const radius = Math.max(0.005, number(mesh.radius, 0.5) * Math.max(Math.abs(scale[0]), Math.abs(scale[2])));
-  const height = Math.max(0.01, number(mesh.height, 1) * Math.abs(scale[1]));
-  switch (mesh.shape) {
-    case "sphere": return RAPIER.ColliderDesc.ball(radius);
-    case "cylinder": return RAPIER.ColliderDesc.cylinder(height / 2, radius);
-    case "capsule": return RAPIER.ColliderDesc.capsule(Math.max(0, height / 2 - radius), radius);
-    case "plane": return RAPIER.ColliderDesc.cuboid(radius, 0.01, radius);
-    case "cone": return RAPIER.ColliderDesc.cone(height / 2, radius);
-    case "box": return RAPIER.ColliderDesc.cuboid(radius, height / 2, radius);
-    default: return RAPIER.ColliderDesc.ball(radius);
+  const [sx, sy, sz] = vector(transform.scale, [1, 1, 1]).map((value) => Math.max(0.0001, Math.abs(value)));
+  const radius = number(mesh.radius, 0.5);
+  const height = number(mesh.height, 1);
+  const uniform = Math.abs(sx - sy) < 1e-6 && Math.abs(sx - sz) < 1e-6;
+  const roundBase = Math.abs(sx - sz) < 1e-6;
+  let geometry: THREE.BufferGeometry;
+  switch (mesh.shape ?? "box") {
+    case "sphere":
+      if (uniform) return RAPIER.ColliderDesc.ball(radius * sx);
+      geometry = new THREE.SphereGeometry(radius, 24, 16);
+      break;
+    case "cylinder":
+      if (roundBase) return RAPIER.ColliderDesc.cylinder(height * sy / 2, radius * sx);
+      geometry = new THREE.CylinderGeometry(radius, radius, height, 24);
+      break;
+    case "capsule": {
+      const length = Math.max(0.01, height - 2 * radius);
+      if (uniform) return RAPIER.ColliderDesc.capsule(length * sy / 2, radius * sx);
+      geometry = new THREE.CapsuleGeometry(radius, length, 4, 12);
+      break;
+    }
+    // Three's PlaneGeometry lies in local XY, with its normal along local Z.
+    case "plane": return RAPIER.ColliderDesc.cuboid(radius * sx, radius * sy, 0.01 * sz);
+    case "cone":
+      if (roundBase && vector(transform.scale, [1, 1, 1])[1] >= 0) return RAPIER.ColliderDesc.cone(height * sy / 2, radius * sx);
+      geometry = new THREE.ConeGeometry(radius, height, 24);
+      if (vector(transform.scale, [1, 1, 1])[1] < 0) geometry.scale(1, -1, 1);
+      break;
+    default: return RAPIER.ColliderDesc.cuboid(radius * sx, height * sy / 2, radius * sz);
   }
+  // Stretched curved primitives need a convex approximation of the visible geometry,
+  // rather than a sphere/cylinder inflated to the largest scale axis.
+  geometry.scale(sx, sy, sz);
+  const collider = RAPIER.ColliderDesc.convexHull(new Float32Array(geometry.getAttribute("position").array));
+  geometry.dispose();
+  if (!collider) throw new Error(`Could not build the collider for '${entity.name}'.`);
+  return collider;
 }
 
 export class PhysicsRuntime {
@@ -116,7 +137,7 @@ export class PhysicsRuntime {
       const position = vector(transform.position, [0, 0, 0]);
       const rotation = eulerToRotation(vector(transform.rotation, [0, 0, 0]));
       // A Collider without a RigidBody follows its Transform (scripts, animation, gizmo) like a kinematic body.
-      const type = !entity.components.RigidBody ? "kinematic" : typeof data.bodyType === "string" ? data.bodyType : "dynamic";
+      const type = bodyType(entity);
       const solid = this.collisions && settings.enabled !== false;
       const descriptor = type === "static"
         ? RAPIER.RigidBodyDesc.fixed()
@@ -126,12 +147,14 @@ export class PhysicsRuntime {
       descriptor.setTranslation(position[0], position[1], position[2]).setRotation(rotation);
       if (type === "dynamic") {
         const velocity = vector(data.initialVelocity, [0, 0, 0]);
-        descriptor.setAdditionalMass(number(data.mass, 1)).setLinvel(velocity[0], velocity[1], velocity[2]);
+        descriptor.setLinvel(velocity[0], velocity[1], velocity[2]);
         descriptor.setLinearDamping(number(data.linearDamping, 0));
+        descriptor.setCcdEnabled(true);
       }
       const body = this.world.createRigidBody(descriptor);
       const collider = colliderFor(entity)
-        .setDensity(0)
+        // Let the collider compute inertia from its shape and the configured total mass.
+        .setMass(number(data.mass, 1))
         .setFriction(number(data.friction, 0.5))
         .setRestitution(number(data.restitution, 0.2))
         .setSensor(settings.trigger === true)
@@ -141,6 +164,7 @@ export class PhysicsRuntime {
         .setActiveCollisionTypes(RAPIER.ActiveCollisionTypes.ALL)
         .setActiveEvents(RAPIER.ActiveEvents.COLLISION_EVENTS);
       const physicsCollider = this.world.createCollider(collider, body);
+      body.recomputeMassPropertiesFromColliders();
       this.bodies.set(entity.id, { entity, body, type, collider: physicsCollider });
       this.colliderEntities.set(physicsCollider.handle, entity.id);
     }
@@ -183,8 +207,9 @@ export class PhysicsRuntime {
   }
 
   applyScriptAction(id: string, method: string, args: number[]): boolean {
-    const body = this.bodies.get(id)?.body;
-    if (!body) return false;
+    const entry = this.bodies.get(id);
+    if (!entry || (entry.type !== "dynamic" && method !== "setTranslation")) return false;
+    const body = entry.body;
     if (method === "applyImpulse" && args.length === 3) body.applyImpulse({ x: args[0]!, y: args[1]!, z: args[2]! }, true);
     else if (method === "setVelocity" && args.length === 3) body.setLinvel({ x: args[0]!, y: args[1]!, z: args[2]! }, true);
     else if (method === "setTranslation" && args.length === 3) {
@@ -199,14 +224,24 @@ export class PhysicsRuntime {
   advance(scene: Scene, elapsedSeconds: number, onCollision?: (firstId: string, secondId: string) => void): Scene {
     this.accumulator += Math.max(0, Math.min(elapsedSeconds, 0.25));
     this.removeMissing(scene);
+    this.syncBodyTypes(scene);
     let changed = false;
     while (this.accumulator >= this.fixedTimestep) {
       for (const [id, entry] of this.bodies) {
-        if (entry.type !== "kinematic") continue;
+        if (entry.type === "dynamic") continue;
         const transform = scene.entities.find((candidate) => candidate.id === id)?.components.Transform;
         const position = vector(transform?.position, [0, 0, 0]);
-        entry.body.setNextKinematicTranslation({ x: position[0], y: position[1], z: position[2] });
-        entry.body.setNextKinematicRotation(eulerToRotation(vector(transform?.rotation, [0, 0, 0])));
+        const translation = { x: position[0], y: position[1], z: position[2] };
+        const rotation = eulerToRotation(vector(transform?.rotation, [0, 0, 0]));
+        if (entry.type === "kinematic") {
+          entry.body.setNextKinematicTranslation(translation);
+          entry.body.setNextKinematicRotation(rotation);
+        } else {
+          // Anchoring prevents forces from moving the body, but explicit scene edits still move it.
+          const previous = entry.body.translation(), orientation = entry.body.rotation();
+          if (Math.hypot(previous.x - translation.x, previous.y - translation.y, previous.z - translation.z) > 1e-6) entry.body.setTranslation(translation, true);
+          if (Math.hypot(orientation.x - rotation.x, orientation.y - rotation.y, orientation.z - rotation.z, orientation.w - rotation.w) > 1e-6) entry.body.setRotation(rotation, true);
+        }
       }
       this.world.step(this.events);
       this.events.drainCollisionEvents((firstHandle, secondHandle, started) => {
@@ -254,9 +289,27 @@ export class PhysicsRuntime {
     }
   }
 
+  /** Anchor can change without replacing the body or losing its joints/collider. */
+  private syncBodyTypes(scene: Scene): void {
+    for (const entity of scene.entities) {
+      const entry = this.bodies.get(entity.id);
+      if (!entry) continue;
+      const type = bodyType(entity);
+      if (entry.type === type) continue;
+      entry.body.setBodyType(type === "static" ? RAPIER.RigidBodyType.Fixed : type === "kinematic" ? RAPIER.RigidBodyType.KinematicPositionBased : RAPIER.RigidBodyType.Dynamic, true);
+      entry.body.setLinvel({ x: 0, y: 0, z: 0 }, true);
+      entry.body.setAngvel({ x: 0, y: 0, z: 0 }, true);
+      entry.body.enableCcd(type === "dynamic");
+      entry.body.setLinearDamping(number(entity.components.RigidBody?.linearDamping, 0));
+      entry.body.recomputeMassPropertiesFromColliders();
+      entry.type = type;
+    }
+  }
+
   /** Keep live rigid bodies aligned when a Console command edits the Play scene. */
   syncSceneEdits(before: Scene, after: Scene): void {
     this.removeMissing(after);
+    this.syncBodyTypes(after);
     const entities = new Map(after.entities.map((entity) => [entity.id, entity]));
     for (const [id, entry] of this.bodies) {
       const entity = entities.get(id)!;

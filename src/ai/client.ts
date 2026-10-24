@@ -43,10 +43,10 @@ export async function requestSceneEdit(
   ];
   if (correctionErrors.length > 0) {
     // Show the rejected reply so the model corrects it instead of starting over.
-    if (previousReply) messages.push({ role: "assistant", content: previousReply });
+    if (previousReply) messages.push({ role: "assistant", content: previousReply.length > 40_000 ? `${previousReply.slice(0, 39_900)}\n[Rejected response truncated for context budget.]` : previousReply });
     messages.push({
       role: "user",
-      content: `Fix only these errors and return the full corrected JSON response: ${JSON.stringify(correctionErrors)}`
+      content: `Fix only these errors and return the full corrected JSON response: ${JSON.stringify(correctionErrors.slice(0, 24).map((error) => error.slice(0, 1000)))}`
     });
   }
 

@@ -54,8 +54,8 @@
   const tools: { mode: ToolMode; label: string; key: string; icon: typeof Move }[] = [
     { mode: "select", label: "Select", key: "Q", icon: MousePointer2 },
     { mode: "translate", label: "Move", key: "W", icon: Move },
-    { mode: "rotate", label: "Rotate", key: "E", icon: RotateCw },
-    { mode: "scale", label: "Scale", key: "R", icon: Scaling }
+    { mode: "rotate", label: "Rotate", key: "R", icon: RotateCw },
+    { mode: "scale", label: "Scale", key: "E", icon: Scaling }
   ];
   const primitives: { shape: PrimitiveShape; label: string; icon: typeof Box }[] = [
     { shape: "box", label: "Cube", icon: Box }, { shape: "sphere", label: "Sphere", icon: Circle },

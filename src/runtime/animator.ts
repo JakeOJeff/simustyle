@@ -154,7 +154,7 @@ export function evaluateAnimations(scene: Scene, timeSeconds: number): AnimatorR
     const time = localTime(entity, timeSeconds);
     const changes: Record<string, Record<string, unknown>> = {};
     for (const track of tracks) {
-      if (track.component === "Transform" && entity.components.RigidBody && entity.components.RigidBody.bodyType !== "static" && entity.components.RigidBody.bodyType !== "kinematic") {
+      if (track.component === "Transform" && entity.components.RigidBody && entity.components.RigidBody.anchored !== true && entity.components.RigidBody.bodyType !== "static" && entity.components.RigidBody.bodyType !== "kinematic") {
         warnings.push(`Animation on dynamic rigid body '${entity.name}' was skipped; Transform animation is supported only for kinematic bodies.`);
         continue;
       }

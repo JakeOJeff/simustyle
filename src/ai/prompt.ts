@@ -2,7 +2,9 @@ import { componentSchemas } from "../registry";
 import type { ComponentSchema, FieldSchema } from "../registry/types";
 import type { Scene } from "../scene/types";
 import { TEXTURE_AGENT_RULES } from "../materials/catalog";
-import { componentSchemaText, sceneText } from "./sceneContext";
+import { componentSchemaText, sceneText, type SceneContextOptions } from "./sceneContext";
+import { BUILD_TOOL_SPEC, DESIGN_RULES } from "./designRules";
+import { BuildCache } from "./cache";
 
 /** The script syntax and runtime API available to the scene agent. */
 export const SCRIPT_AGENT_SPEC = `Scripts: one sentence per line, indented under events; optional colons. Store in Script.source. "me"/"I"/"my" mean the owner; "it" means the touched/clicked object.
@@ -33,8 +35,20 @@ Older syntax (param, let, on start:, every frame:, on collide(other):, self.<com
 Camera calls (any script/Console): camera() returns active handle; camera.create("Name",x,y,z) returns a camera; camera.use(find("Name")) switches it; camera.set("fov",65)/camera.get("fov") write/read fields. camera.position(x,y,z) sets world position; camera.move(dx,dy,dz) moves locally (-Z forward); camera.rotate(pitch,yaw,roll) adds degrees; camera.aim(x,y,z) aims once. camera.lookAt(find("Player")) tracks; camera.follow(find("Player"),0,3,6,5) uses world offset and optional damping (0 snaps; higher catches faster); camera.unfollow() clears tracking. camera.attach(find("Lamp"),0,0,-1)/camera.detach(find("Lamp")) carry/release objects. One active camera; near < far; no target/parent cycles or dynamic physics on rigs. Lens/Transform fields support keyframes.
 Scripts are compiled from this language to a restricted runtime API. Do not put JavaScript, HTML, or any unsupported syntax in source.`;
 
-/** Build the complete system prompt for one turn, including a compact snapshot of the scene. */
-export function buildSystemPrompt(scene: Scene): string {
+const promptPrefixCache = new BuildCache<string>(2);
+
+/** Keep instructions/schema before mutable scene data so provider prefix caching can reuse them. */
+export function buildSystemPrompt(scene: Scene, options: SceneContextOptions = {}): string {
+  const registryKey = JSON.stringify(componentSchemas);
+  let prefix = promptPrefixCache.get(registryKey);
+  if (!prefix) {
+    prefix = buildStaticPrompt();
+    promptPrefixCache.set(registryKey, prefix);
+  }
+  return `${prefix}\n\n## Current scene\n${sceneText(scene, { ...options, maxChars: 23_000 })}`;
+}
+
+function buildStaticPrompt(): string {
   return `You are the scene agent inside a 3D simulation and animation editor.
 Build or edit scenes by returning operations that follow the component schemas below. You never write UI code, HTML, or three.js code.
 
@@ -49,15 +63,16 @@ ${TEXTURE_AGENT_RULES}
 ## Script language
 ${SCRIPT_AGENT_SPEC}
 
-## Current scene
-${sceneText(scene)}
+${DESIGN_RULES}
+
+${BUILD_TOOL_SPEC}
 
 ## Building objects
 - Mesh: box width/depth=2·radius, height=height; sphere diameter=2·radius; cylinder/cone width=2·radius; capsule total height=height; plane is a 2·radius XY square (rotation [-90,0,0] lies flat). Transform.scale multiplies size.
 - Position is center: floor y=half height; stacking y=lower object's top+half height. Use reported y ranges.
 - Place new root objects at free floor spots unless specified; leave 0.3 m gaps. Missing positions are placed automatically.
-- Multi-part objects use a Transform-only parent group with locally positioned children.
-- Visible parts need Transform/Mesh/Material. RigidBody enables falling/pushing/bouncing; static for fixed solids.
+- Multi-part objects use a Transform-only parent group with locally positioned children, preferably assemble.
+- Visible parts need Transform/Mesh/Material. RigidBody enables falling/rolling; anchored:true or static for fixed solids.
 - Use unique snake_case ids and readable names; reference existing ids.
 
 ## Output format
@@ -65,10 +80,10 @@ Return only JSON:
 { "summary": "one plain-English sentence describing what you built or changed", "ops": [ ...operations ] }
 Operations:
 - create: { "op": "create", "id": string, "name": string, "parent": string|null, "components": object }
-- update: { "op": "update", "id": string, "components": changed fields (null removes component), optional "parent": string|null }
+- update: { "op": "update", "id": string, "components": changed fields (null removes component), optional "parent": string|null, optional "name": string }
 - delete: { "op": "delete", "id": string }
 - settings: { "op": "settings", "settings": object containing changed scene settings }
-Create parents before their children.
+High-level assemble/repeat/group operations are also allowed as documented above. Create parents before their children.
 
 ## Rules
 1. Respect schema fields, ranges, options and requirements.
@@ -135,9 +150,10 @@ export function buildResponseJsonSchema(): Record<string, unknown> {
   return {
     type: "object",
     properties: {
-      summary: { type: "string" },
+      summary: { type: "string", minLength: 1, maxLength: 2000 },
       ops: {
         type: "array",
+        maxItems: 1500,
         items: {
           anyOf: [
             {
@@ -148,7 +164,7 @@ export function buildResponseJsonSchema(): Record<string, unknown> {
             },
             {
               type: "object", properties: {
-                op: { const: "update" }, id: { type: "string", minLength: 1 }, components: componentsSchema(true), parent: { type: ["string", "null"] }
+                op: { const: "update" }, id: { type: "string", minLength: 1 }, components: componentsSchema(true), parent: { type: ["string", "null"] }, name: { type: "string", minLength: 1 }
               }, required: ["op", "id", "components"], additionalProperties: false
             },
             {
@@ -158,6 +174,31 @@ export function buildResponseJsonSchema(): Record<string, unknown> {
             {
               type: "object", properties: { op: { const: "settings" }, settings: settingsSchema },
               required: ["op", "settings"], additionalProperties: false
+            },
+            {
+              type: "object", properties: {
+                op: { const: "assemble" }, id: { type: "string", minLength: 1 }, name: { type: "string", minLength: 1 },
+                parent: { type: ["string", "null"] }, transform: componentJsonSchema(componentSchemas.Transform!),
+                parts: { type: "array", minItems: 1, maxItems: 300, items: {
+                  type: "object", properties: { id: { type: "string", minLength: 1 }, name: { type: "string", minLength: 1 },
+                    parent: { type: "string", minLength: 1 }, components: componentsSchema(false) },
+                  required: ["id", "name", "components"], additionalProperties: false
+                } }
+              }, required: ["op", "id", "name", "parent", "parts"], additionalProperties: false
+            },
+            {
+              type: "object", properties: {
+                op: { const: "repeat" }, source: { type: "string", minLength: 1 }, idPrefix: { type: "string", minLength: 1 },
+                name: { type: "string", minLength: 1 }, count: { type: "integer", minimum: 1, maximum: 200 },
+                step: { type: "array", items: { type: "number" }, minItems: 3, maxItems: 3 },
+                rotationStep: { type: "array", items: { type: "number" }, minItems: 3, maxItems: 3 }
+              }, required: ["op", "source", "idPrefix", "name", "count", "step"], additionalProperties: false
+            },
+            {
+              type: "object", properties: {
+                op: { const: "group" }, id: { type: "string", minLength: 1 }, name: { type: "string", minLength: 1 },
+                ids: { type: "array", minItems: 1, maxItems: 1500, items: { type: "string", minLength: 1 } }
+              }, required: ["op", "id", "name", "ids"], additionalProperties: false
             }
           ]
         }

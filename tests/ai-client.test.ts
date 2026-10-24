@@ -40,6 +40,16 @@ describe("scene AI transport client", () => {
     expect(request.messages[2]?.content).toContain("unknown component");
   });
 
+  it("bounds oversized rejected replies and correction feedback for transport", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(new Response(JSON.stringify({ content: "{}" }), { status: 200 }));
+    vi.stubGlobal("fetch", fetchMock);
+    await requestSceneEdit("system", "build", Array.from({ length: 100 }, () => "error".repeat(1000)), {}, "rejected".repeat(10000));
+    const request = JSON.parse(String((fetchMock.mock.calls[0]?.[1] as RequestInit).body)) as { messages: { role: string; content: string }[] };
+    expect(request.messages[2]?.role).toBe("assistant");
+    expect(request.messages[2]?.content).toContain("truncated");
+    request.messages.forEach((message) => expect(message.content.length).toBeLessThan(50_000));
+  });
+
   it("surfaces proxy errors and rejects malformed model JSON", async () => {
     vi.stubGlobal("fetch", vi.fn().mockResolvedValueOnce(
       new Response(JSON.stringify({ error: "AI is not configured." }), { status: 503 })

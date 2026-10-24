@@ -407,7 +407,7 @@ export class ScriptRuntime {
   }
 
   private isDynamic(entity: Entity): boolean {
-    return Boolean(entity.components.RigidBody) && (entity.components.RigidBody?.bodyType ?? "dynamic") === "dynamic";
+    return Boolean(entity.components.RigidBody) && entity.components.RigidBody?.anchored !== true && (entity.components.RigidBody?.bodyType ?? "dynamic") === "dynamic";
   }
 
   private runCommand(command: RuntimeCommand, ownerId: string): void {
@@ -460,7 +460,7 @@ export class ScriptRuntime {
         return;
       case "push":
         if (!this.isDynamic(entity) || !this.physicsActions?.(entity.id, "applyImpulse", command.vector.map(Number))) {
-          this.report(ownerId, line, `push: '${entity.name}' needs a dynamic RigidBody to be pushed.`);
+          this.report(ownerId, line, `push: '${entity.name}' needs a dynamic RigidBody with Anchor off to be pushed.`);
         }
         return;
       case "animate": {

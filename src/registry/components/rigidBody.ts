@@ -6,6 +6,7 @@ export const rigidBodySchema: ComponentSchema = {
   requires: ["Transform"],
   fields: {
     bodyType: { type: "enum", options: ["dynamic", "static", "kinematic"], default: "dynamic" },
+    anchored: { type: "bool", default: false },
     mass: { type: "float", min: 0.01, max: 1000, default: 1 },
     friction: { type: "float", min: 0, max: 2, default: 0.5 },
     restitution: { type: "float", min: 0, max: 1, default: 0.2 },

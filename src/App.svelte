@@ -7,7 +7,8 @@
   import { fetchCredits, onCreditsChange, requestSceneEdit, type CreditStatus } from "./ai/client";
   import SupportDialog from "./editor/SupportDialog.svelte";
   import { AI_RESPONSE_JSON_SCHEMA, buildSystemPrompt } from "./ai/prompt";
-  import { runSceneAgent } from "./ai/agent";
+  import { runSceneAgent, type SceneAgentReply } from "./ai/agent";
+  import { BuildCache } from "./ai/cache";
   import Timeline from "./editor/Timeline.svelte";
   import DocsPanel from "./editor/DocsPanel.svelte";
   import PanelResizeHandles, { type ResizeEdge } from "./editor/PanelResizeHandles.svelte";
@@ -93,7 +94,14 @@
   let aiLoading = $state(false);
   let aiProgress = $state("Building the first pass…");
   let aiMessages: AIPanelMessage[] = $state([]);
+  let aiBuildCache = new BuildCache<SceneAgentReply>();
+  let aiSuccessfulRequests: string[] = [];
 
+  function resetAIBuildCache() {
+    aiBuildCache.clear();
+    // Pending builds retain their old cache instance and cannot refill the new document/provider cache.
+    aiBuildCache = new BuildCache<SceneAgentReply>();
+  }
   /** Today's free AI credits on the hosted site; null on the desktop app or when AI is off. */
   let aiCredits: CreditStatus | null = $state(null);
   let supportOpen = $state(false);
@@ -483,6 +491,9 @@
     try {
       const result = await runSceneAgent(requestedScene, prompt, {
         buildSystemPrompt,
+        cache: aiBuildCache,
+        previousRequests: aiSuccessfulRequests,
+        focusIds: selectedIds.length ? selectedIds : selectedId ? [selectedId] : [],
         responseSchema: AI_RESPONSE_JSON_SCHEMA.schema,
         onProgress: (progress) => aiProgress = progress,
         complete: ({ systemPrompt, userPrompt, correctionErrors, responseSchema, previousReply }) =>
@@ -501,6 +512,7 @@
         return;
       }
       scene = result.scene;
+      aiSuccessfulRequests = [...aiSuccessfulRequests, prompt].slice(-6);
       undoStack = [...undoStack, result.inverseOps];
       redoStack = [];
       aiUndoRecords = { ...aiUndoRecords, [id]: result.inverseOps };
@@ -824,6 +836,8 @@
 
   function installOpenedScene(loadedScene: Scene, path: string | null, fileName: string) {
     sceneDocument += 1;
+    aiSuccessfulRequests = [];
+    resetAIBuildCache();
     const nextScene = loadedScene.name?.trim() ? loadedScene : { ...loadedScene, name: sceneNameFromFile(fileName) };
     stopSimulation();
     scene = nextScene;
@@ -1263,6 +1277,8 @@ when clicked
 
   function newScene() {
     sceneDocument += 1;
+    aiSuccessfulRequests = [];
+    resetAIBuildCache();
     scriptDrafts = {};
     stopSimulation();
     activeGesture = null;
@@ -1388,11 +1404,13 @@ when clicked
 
   async function saveAiSettings(settings: { model: string; baseUrl: string; apiKey: string }): Promise<void> {
     aiSettings = await saveDesktopAiSettings({ model: settings.model, baseUrl: settings.baseUrl, ...(settings.apiKey ? { apiKey: settings.apiKey } : {}) });
+    resetAIBuildCache();
     emitTutorial("ai-settings");
   }
 
   async function removeAiKey(): Promise<void> {
     aiSettings = await saveDesktopAiSettings({ ...aiSettings, apiKey: null });
+    resetAIBuildCache();
   }
 
   function physicsFrame(time: number) {
@@ -1512,8 +1530,8 @@ when clicked
   const railTools: { mode: ToolMode; label: string; key: string; icon: typeof Move }[] = [
     { mode: "select", label: "Select", key: "Q", icon: MousePointer2 },
     { mode: "translate", label: "Move", key: "W", icon: Move },
-    { mode: "rotate", label: "Rotate", key: "E", icon: RotateCw },
-    { mode: "scale", label: "Scale", key: "R", icon: Scaling }
+    { mode: "rotate", label: "Rotate", key: "R", icon: RotateCw },
+    { mode: "scale", label: "Scale", key: "E", icon: Scaling }
   ];
   const shelfPrimitives: { shape: PrimitiveShape; label: string; icon: typeof Box }[] = [
     { shape: "box", label: "Cube", icon: Box }, { shape: "sphere", label: "Sphere", icon: Circle }, { shape: "cylinder", label: "Cylinder", icon: Cylinder },
@@ -1847,7 +1865,7 @@ when clicked
     </div>
   {/if}
   {#if contextMenu}
-    <button class="context-dismiss" type="button" aria-label="Close entity menu" onclick={() => contextMenu = null}></button>
+    <button class="context-dismiss" type="button" aria-label="Close entity menu" onclick={() => contextMenu = null} oncontextmenu={(event) => event.preventDefault()}></button>
     <div class="entity-context-menu" data-tutorial-target="context-menu" style={`left:${contextMenu.x}px;top:${contextMenu.y}px`} role="menu" aria-label="Entity actions" tabindex="-1" oncontextmenu={(event) => event.preventDefault()}>
       <button role="menuitem" data-tutorial-target="context-add" aria-expanded={contextAddOpen} onclick={() => contextAddOpen = !contextAddOpen}><Plus size={13} /> Add <span class="context-chevron">{contextAddOpen ? "−" : "›"}</span></button>
       {#if contextAddOpen}

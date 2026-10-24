@@ -8,6 +8,7 @@ import type { ComponentSchema, FieldSchema } from "../registry/types";
 import { halfExtents, positionOf } from "../runtime/commands";
 import { omitDefaultFields } from "../scene/serialize";
 import { DEFAULT_SCENE_SETTINGS, type Entity, type Scene, type SceneSettings } from "../scene/types";
+import { BuildCache } from "./cache";
 
 function round(value: number): number {
   return Math.round(value * 100) / 100;
@@ -104,8 +105,67 @@ export function freeSpots(entities: Entity[], count: number, radius = 0.5, gap =
   return spots;
 }
 
+const contextCache = new BuildCache<string>(6);
+
+export interface SceneContextOptions {
+  maxChars?: number;
+  focusIds?: readonly string[];
+  query?: string;
+}
+
 /** One line per object, children indented under their parent, with non-default components as compact JSON. */
-export function sceneText(scene: Scene): string {
+export function sceneText(scene: Scene, options: SceneContextOptions = {}): string {
+  // Content keys also invalidate correctly for callers that mutate the same scene object.
+  const key = JSON.stringify([componentSchemas, scene, options]);
+  const cached = contextCache.get(key);
+  if (cached !== undefined) return cached;
+  const full = describeScene(scene);
+  const result = options.maxChars !== undefined && full.length > options.maxChars ? boundedSceneText(scene, options) : full;
+  contextCache.set(key, result);
+  return result;
+}
+
+/** Keep requested/selected assemblies first; explicitly mark omitted details rather than inventing them. */
+function boundedSceneText(scene: Scene, options: SceneContextOptions): string {
+  const budget = Math.max(0, options.maxChars ?? 23_000);
+  const selected = new Set(options.focusIds ?? []);
+  const words = (options.query?.toLowerCase().match(/[a-z0-9_]{3,}/g) ?? []).filter((word) => !["the", "and", "add", "make", "with", "this", "that", "scene", "build", "create"].includes(word));
+  const byId = new Map(scene.entities.map((entity) => [entity.id, entity]));
+  const focus = new Set(selected);
+  for (const entity of scene.entities) {
+    const label = `${entity.name} ${entity.id}`.toLowerCase();
+    if (words.some((word) => label.includes(word))) focus.add(entity.id);
+  }
+  const priority = new Set(focus);
+  for (const id of focus) {
+    let parent = byId.get(id)?.parent;
+    while (parent) { priority.add(parent); parent = byId.get(parent)?.parent; }
+  }
+  const children = new Map<string, number>();
+  for (const entity of scene.entities) if (entity.parent) children.set(entity.parent, (children.get(entity.parent) ?? 0) + 1);
+  const ordered = [...scene.entities].sort((a, b) => {
+    const rank = (entity: Entity) => selected.has(entity.id) ? 0 : focus.has(entity.id) ? 1 : priority.has(entity.id) ? 2 : !entity.parent ? 3 : focus.has(entity.parent) ? 4 : 5;
+    return rank(a) - rank(b);
+  });
+  const header = `Settings: ${JSON.stringify(scene.settings)}\nObjects: ${scene.entities.length} total. Bounded snapshot: selected/requested objects and their folders first. Entries may be out of parent order; parent ids are explicit. Do not assume omitted objects are absent or modify omitted ids.\n`;
+  if (header.length + 100 > budget) return "Scene details omitted for context budget.".slice(0, budget);
+  let result = header;
+  let included = 0;
+  // Reserve space to make omissions visible even when the last object fills the budget.
+  for (const entity of ordered) {
+    const detail = JSON.stringify(Object.fromEntries(Object.entries(entity.components).map(([name, fields]) => [name, omitDefaultFields(name, fields)])));
+    const prefix = `- ${entity.id} ${JSON.stringify(entity.name)} parent=${JSON.stringify(entity.parent)} ${shapeOf(entity)} children=${children.get(entity.id) ?? 0}`;
+    const rich = `${prefix}: ${detail}\n`;
+    const compact = `${prefix} position=${JSON.stringify(positionOf(entity))}${entity.components.Material?.color ? ` color=${entity.components.Material.color}` : ""}\n`;
+    const line = rich.length < 900 && result.length + rich.length <= budget - 100 ? rich : compact;
+    if (result.length + line.length > budget - 100) continue;
+    result += line;
+    included++;
+  }
+  return `${result}Snapshot includes ${included}/${scene.entities.length} objects; omitted component details require conservative edits.`;
+}
+
+function describeScene(scene: Scene): string {
   const changed = Object.fromEntries(Object.entries(scene.settings).filter(([key, value]) =>
     JSON.stringify(value) !== JSON.stringify(DEFAULT_SCENE_SETTINGS[key as keyof SceneSettings])));
   const lines = [`Settings (only non-default): ${JSON.stringify(changed)}`];

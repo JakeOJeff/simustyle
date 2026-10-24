@@ -26,6 +26,18 @@ describe("AI scene prompt construction", () => {
     expect(prompt).toContain("Do not put JavaScript");
   });
 
+  it("keeps a stable cacheable prefix and gives requested style priority", () => {
+    const empty = createEmptyScene();
+    const populated = createEmptyScene();
+    populated.entities.push({ id: "room", name: "Room", parent: null, components: { Transform: {} } });
+    const prefix = (scene: typeof empty) => buildSystemPrompt(scene).split("\n\n## Current scene\n")[0];
+    expect(prefix(empty)).toBe(prefix(populated));
+    expect(prefix(empty)).toContain("The current request is authoritative");
+    expect(prefix(empty)).toContain("Hierarchy groups are the editor's folders");
+    expect(prefix(empty)).toContain("restrained detail");
+    expect(prefix(empty)).toContain("repeat");
+  });
+
   it("describes script parameters as managed data and serializes an existing scene", () => {
     const scene = createEmptyScene();
     scene.entities.push({
@@ -45,7 +57,7 @@ describe("AI response JSON schema", () => {
     const schema = buildResponseJsonSchema();
     const serialized = JSON.stringify(schema);
 
-    for (const op of ["create", "update", "delete", "settings"]) expect(serialized).toContain(`"const":"${op}"`);
+    for (const op of ["create", "update", "delete", "settings", "assemble", "repeat", "group"]) expect(serialized).toContain(`"const":"${op}"`);
     expect(serialized).toContain('"minimum":0.01');
     expect(serialized).toContain('"maximum":1000');
     expect(serialized).toContain('"enum":["box","sphere","cylinder","capsule","plane","cone"]');

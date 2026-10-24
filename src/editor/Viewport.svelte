@@ -125,8 +125,9 @@
     const orbit = new OrbitControls(camera, renderer.domElement);
     orbit.enableDamping = true;
     orbit.target.set(0, 0.8, 0);
+    orbit.mouseButtons.LEFT = null;
     orbit.mouseButtons.MIDDLE = THREE.MOUSE.PAN;
-    orbit.mouseButtons.RIGHT = null;
+    orbit.mouseButtons.RIGHT = THREE.MOUSE.ROTATE;
 
     // Matches the standalone export: the scene's ambient setting plus a fixed base fill.
     const ambient = new THREE.HemisphereLight(0xe8efff, 0x44404b, scene.settings.ambientLightIntensity + 0.7);
@@ -151,6 +152,9 @@
     const pointer = new THREE.Vector2();
     let downX = 0;
     let downY = 0;
+    const rightClickMaxMs = 250;
+    const rightClickSlop = 4;
+    let rightPress: { pointerId: number; x: number; y: number; startedAt: number; moved: boolean } | null = null;
     let marqueeStart: { x: number; y: number; pointerId: number } | null = null;
     let orbitWasEnabled = true;
     let frame = 0;
@@ -223,6 +227,16 @@
       const placement = hit?.point ?? groundHit;
       onContextMenu(entity ?? null, event.clientX, event.clientY, placement ? [placement.x, placement.y, placement.z] : null);
     }
+    function contextMenu(event: MouseEvent) {
+      // Browsers may fire this on press or release. Mouse menus are decided on
+      // pointer-up so a held RMB can orbit without opening a menu mid-gesture.
+      event.preventDefault();
+      if (event.button !== 2 && !rightPress) pickContextMenu(event);
+    }
+    // Viewport controls sit above the canvas, so the canvas listener alone cannot
+    // suppress the browser menu for every right-click in the 3D work area.
+    const preventNativeContextMenu = (event: MouseEvent) => event.preventDefault();
+    host.addEventListener("contextmenu", preventNativeContextMenu, { capture: true });
     function updateMarquee(event: PointerEvent) {
       if (!marqueeStart) return;
       const rect = renderer.domElement.getBoundingClientRect();
@@ -309,10 +323,10 @@
     }
     viewControls = { setView, frame: focusSelected };
     orbit.addEventListener("start", () => { cameraTween = null; activeView = null; cameraGesture = null; });
-    // Report finished camera gestures to the tutorials: left-drag orbits, middle-drag pans, the wheel zooms.
+    // Report finished camera gestures to the tutorials: right-drag orbits, middle-drag pans, the wheel zooms.
     let pointerButton: number | null = null;
     let cameraGesture: string | null = null;
-    orbit.addEventListener("change", () => { cameraGesture ??= pointerButton === 0 ? "camera-orbit" : pointerButton === 1 ? "camera-pan" : pointerButton === null ? "camera-zoom" : null; });
+    orbit.addEventListener("change", () => { cameraGesture ??= pointerButton === 2 ? "camera-orbit" : pointerButton === 1 ? "camera-pan" : pointerButton === null ? "camera-zoom" : null; });
     orbit.addEventListener("end", () => { if (cameraGesture) emitTutorial(cameraGesture); cameraGesture = null; });
     // Roblox-style dragging: press on an object and move the mouse to slide it across the
     // ground and the tops of other objects. A press without movement still just selects.
@@ -429,6 +443,7 @@
       pointerButton = event.button;
       downX = event.clientX;
       downY = event.clientY;
+      rightPress = event.button === 2 ? { pointerId: event.pointerId, x: event.clientX, y: event.clientY, startedAt: performance.now(), moved: false } : null;
       if (sceneView) return;
       if (beginObjectDrag(event)) return;
       if (event.button === 0 && event.ctrlKey && !gizmo.dragging) {
@@ -441,6 +456,10 @@
       }
     };
     const pointerMove = (event: PointerEvent) => {
+      if (rightPress?.pointerId === event.pointerId) {
+        if (!(event.buttons & 2)) rightPress = null;
+        else if (Math.hypot(event.clientX - rightPress.x, event.clientY - rightPress.y) > rightClickSlop) rightPress.moved = true;
+      }
       if (objectDrag?.pointerId === event.pointerId) { moveObjectDrag(event); return; }
       updateMarquee(event);
       lastHover = event;
@@ -448,6 +467,15 @@
     };
     const pointerUp = (event: PointerEvent) => {
       pointerButton = null;
+      const press = rightPress;
+      rightPress = null;
+      if (event.button === 2) {
+        const rect = renderer.domElement.getBoundingClientRect();
+        if (press?.pointerId === event.pointerId && !press.moved && performance.now() - press.startedAt < rightClickMaxMs
+          && Math.hypot(event.clientX - press.x, event.clientY - press.y) <= rightClickSlop
+          && event.clientX >= rect.left && event.clientX < rect.right && event.clientY >= rect.top && event.clientY < rect.bottom) pickContextMenu(event);
+        return;
+      }
       if (objectDrag?.pointerId === event.pointerId && endObjectDrag(true)) return;
       if (marqueeStart?.pointerId === event.pointerId) { finishMarquee(event); return; }
       if (event.button === 0) pick(event);
@@ -455,6 +483,7 @@
     const pointerLeave = () => { lastHover = null; if (!objectDrag) setCursor(""); };
     const pointerCancel = () => {
       pointerButton = null;
+      rightPress = null;
       if (objectDrag) endObjectDrag(true);
       if (!marqueeStart) return;
       marqueeStart = null;
@@ -467,15 +496,18 @@
     renderer.domElement.addEventListener("pointermove", pointerMove);
     renderer.domElement.addEventListener("pointerup", pointerUp);
     renderer.domElement.addEventListener("pointercancel", pointerCancel);
-    renderer.domElement.addEventListener("contextmenu", pickContextMenu);
+    renderer.domElement.addEventListener("contextmenu", contextMenu);
+    const cancelRightPress = () => { rightPress = null; };
+    renderer.domElement.addEventListener("lostpointercapture", cancelRightPress);
+    window.addEventListener("blur", cancelRightPress);
 
     function onKey(event: KeyboardEvent) {
       if (sceneView || event.ctrlKey || event.metaKey || event.altKey || event.defaultPrevented) return;
       if (event.target instanceof HTMLElement && (event.target.isContentEditable || ["INPUT", "TEXTAREA", "SELECT"].includes(event.target.tagName))) return;
       if (event.key.toLowerCase() === "q") onModeChange("select");
       else if (event.key.toLowerCase() === "w") onModeChange("translate");
-      else if (event.key.toLowerCase() === "e") onModeChange("rotate");
-      else if (event.key.toLowerCase() === "r") onModeChange("scale");
+      else if (event.key.toLowerCase() === "e") onModeChange("scale");
+      else if (event.key.toLowerCase() === "r") onModeChange("rotate");
       else if (event.key.toLowerCase() === "f") focusSelected();
     }
     window.addEventListener("keydown", onKey);
@@ -743,7 +775,10 @@
       renderer.domElement.removeEventListener("pointermove", pointerMove);
       renderer.domElement.removeEventListener("pointerup", pointerUp);
       renderer.domElement.removeEventListener("pointercancel", pointerCancel);
-      renderer.domElement.removeEventListener("contextmenu", pickContextMenu);
+      renderer.domElement.removeEventListener("contextmenu", contextMenu);
+      host.removeEventListener("contextmenu", preventNativeContextMenu, { capture: true });
+      renderer.domElement.removeEventListener("lostpointercapture", cancelRightPress);
+      window.removeEventListener("blur", cancelRightPress);
       window.removeEventListener("keydown", onKey);
       gizmo.removeEventListener("objectChange", onObjectChange);
       gizmo.removeEventListener("dragging-changed", onDraggingChanged);

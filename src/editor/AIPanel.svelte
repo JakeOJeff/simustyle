@@ -3,6 +3,7 @@
   import type { SceneOp } from "../scene/types";
   import type { CreditStatus } from "../ai/client";
   import { resetIn } from "./SupportDialog.svelte";
+  import type { SceneAgentPreflight } from "../ai/agent";
 
   export interface AIPanelMessage {
     id: string;
@@ -11,7 +12,7 @@
     /** A short result summary shown on one line above the operation details. */
     summary?: string;
     operations?: SceneOp[];
-    preflight?: { console: string[]; issues: string[]; baselineIssues: string[]; frames: number };
+    preflight?: SceneAgentPreflight;
     fallbackDraft?: { summary: string; operations: SceneOp[] };
   }
 
@@ -40,7 +41,7 @@
     onSubmit(value);
   }
 
-  const suggestions = ["Add a tower of colorful blocks", "Drop 20 balls from above", "Make it night with one lamp"];
+  const suggestions = ["Build a cozy reading corner in warm wood and sage green", "Create a colorful low-poly playground, organized into folders", "Make a precise row of five industrial lamps"];
 
   function operationLabel(operation: SceneOp): string {
     switch (operation.op) {
@@ -56,7 +57,7 @@
   <div class="conversation" aria-live="polite" aria-relevant="additions text">
     {#if messages.length === 0 && !loading}
       <div class="empty-state">
-        <p>Describe a change and I'll make it. You can undo anything.</p>
+        <p>Describe what to build, including your style, colors, and details. I'll organize the parts and check the result. You can undo anything.</p>
         <div class="suggestions">
           {#each suggestions as suggestion (suggestion)}<button type="button" disabled={outOfCredits} onclick={() => onSubmit(suggestion)}>{suggestion}</button>{/each}
         </div>
@@ -73,6 +74,15 @@
             <details class="preflight-details">
               <summary>Checked before apply · {message.preflight.frames} script ticks</summary>
               <div class="preflight-output">
+                {#if message.preflight.quality}
+                  <strong>Design and organization checks</strong>
+                  {#each message.preflight.quality.checks as check}<span>{check}</span>{/each}
+                  <span>{message.preflight.quality.stats.meshes} meshes · {message.preflight.quality.stats.groups} groups · {message.preflight.quality.stats.dynamicBodies} dynamic bodies</span>
+                  {#if message.preflight.quality.warnings.length}
+                    <strong>Items to review</strong>
+                    {#each message.preflight.quality.warnings as warning}<code>{warning}</code>{/each}
+                  {:else}<span>No geometry or organization warnings detected.</span>{/if}
+                {/if}
                 <strong>Console output</strong>
                 {#if message.preflight.console.length}
                   {#each message.preflight.console as line}<code>{line}</code>{/each}

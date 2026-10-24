@@ -85,6 +85,14 @@ describe("timeline animation runtime", () => {
     expect(result.scene.entities[0]?.components.Material?.color).toBe("#808080");
   });
 
+  it("allows explicit Transform animation on anchored bodies", () => {
+    const scene = animatedScene({ bodyType: "dynamic" });
+    scene.entities[0].components.RigidBody.anchored = true;
+    const result = evaluateAnimations(scene, 1);
+    expect(result.scene.entities[0].components.Transform.position).toEqual([2, 1, -1]);
+    expect(result.warnings).toEqual([]);
+  });
+
   it("keeps a playback clock and can reset it", () => {
     const runtime = new AnimatorRuntime();
     const scene = animatedScene({ loop: false, duration: 5 });

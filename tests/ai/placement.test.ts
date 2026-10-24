@@ -15,6 +15,27 @@ function sceneWith(ops: SceneOp[]): Scene {
 const crate: SceneOp = { op: "create", id: "crate", name: "Crate", parent: null, components: { Transform: { position: [0, 0.5, 0] }, Mesh: { shape: "box" }, Material: { color: "#8b5a3b" } } };
 
 describe("scene context", () => {
+  it("invalidates cached context when the same scene object changes", () => {
+    const scene = createEmptyScene();
+    expect(sceneText(scene)).toContain("Objects: none yet");
+    scene.entities.push({ id: "box", name: "Before", parent: null, components: { Transform: {}, Mesh: {} } });
+    expect(sceneText(scene)).toContain('"Before"');
+    scene.entities[0]!.name = "After";
+    expect(sceneText(scene)).toContain('"After"');
+    expect(sceneText(scene)).not.toContain('"Before"');
+  });
+
+  it("prioritizes a selected object and explicitly marks omissions in bounded snapshots", () => {
+    const scene = createEmptyScene();
+    scene.entities = Array.from({ length: 100 }, (_, i) => ({ id: `box_${i}`, name: i === 99 ? "Selected special chair" : `Ordinary box ${i}`,
+      parent: null, components: { Transform: { position: [i, 1, 0] }, Mesh: {}, Material: { color: "#112233" } } }));
+    const snapshot = sceneText(scene, { maxChars: 1200, focusIds: ["box_99"] });
+    expect(snapshot.length).toBeLessThanOrEqual(1200);
+    expect(snapshot).toContain("Selected special chair");
+    expect(snapshot.indexOf("box_99")).toBeLessThan(snapshot.indexOf("box_0"));
+    expect(snapshot).toContain("omitted");
+    expect(snapshot).toContain("/100 objects");
+  });
   it("describes objects compactly with size, floor contact, children, and free spots", () => {
     const scene = sceneWith([
       crate,
@@ -35,7 +56,8 @@ describe("scene context", () => {
     const scene = sceneWith(ops);
     const perObject = (buildSystemPrompt(scene).length - buildSystemPrompt(createEmptyScene()).length) / 20;
     expect(perObject).toBeLessThan(120);
-    expect(buildSystemPrompt(createEmptyScene()).length).toBeLessThan(10000);
+    // The stable prefix now includes design rules and assembly tools; keep it bounded.
+    expect(buildSystemPrompt(createEmptyScene()).length).toBeLessThan(15000);
   });
 });
 
@@ -76,14 +98,16 @@ describe("tidyCreates", () => {
     expect(positions).toEqual([[0, 1.51, 0], [0, 0.5, 0], [0, -2, 0]]);
   });
 
-  it("runs inside the agent and reports adjustments in the summary", async () => {
+  it("reports naming adjustments but preserves explicit placement for intent-aware review", async () => {
     const result = await runSceneAgent(sceneWith([crate]), "add another crate", {
       buildSystemPrompt: () => "prompt",
       responseSchema: {},
       complete: async () => ({ summary: "Added a crate.", ops: [{ op: "create", id: "crate", name: "Crate", parent: null, components: { Transform: { position: [2, -1, 0] }, Mesh: {}, Material: {} } }] })
     });
     expect(result.ok).toBe(true);
-    expect(result.summary).toBe('Added a crate. (Adjusted: named the new Crate "Crate2" because that name was taken; lifted Crate2 onto the floor.)');
+    expect(result.summary).toBe('Added a crate. (Adjusted: named the new Crate "Crate2" because that name was taken.)');
+    expect(result.scene?.entities.find((entity) => entity.id === "crate_2")?.components.Transform?.position).toEqual([2, -1, 0]);
+    expect(result.preflight?.quality?.warnings.join()).toContain("below ground");
   });
 
   it("sends the rejected reply back with the errors on retry", async () => {
