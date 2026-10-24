@@ -4,6 +4,13 @@ Record meaningful project changes during the event, newest first.
 
 ## Event build log
 
+### 2026-10-25 — Describe money-based AI credits correctly in the docs
+
+- Changed: The user guide and the in-app Docs panel said AI used "one credit per model call". They now say one credit is $0.00167 of AI spend, each call is charged for the tokens it used (rounded up), and a typical request costs about two to four credits. Files: `docs/USER_GUIDE.md`, `src/editor/DocsPanel.svelte`.
+- Why: The docs were left over from before the switch to money-based credits.
+- Validation: Docs text only. The two-to-four figure comes from the Luna prices and the task limits, not from measured usage.
+- Limitations: Requests that retry, or reviews on Sol when `AI_SOL_ENABLED` is on, cost more than this.
+
 ### 2026-10-24 — Show the real AI error, and say what changed when a build is skipped
 
 - Changed: A failed AI request now always shows its own error. Before, it was hidden behind "The scene changed while this request was loading" whenever the scene had changed. When a successful build is skipped, the message now says why (Play started, unsaved script edits, a different scene opened, or the build no longer applies) and lists up to three of the scene changes. File: `src/App.svelte`.
