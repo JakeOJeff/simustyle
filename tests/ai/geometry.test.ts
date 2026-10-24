@@ -68,6 +68,14 @@ describe("geometry checker", () => {
     expect(checkGeometry(build(vase(3), table), vase(3), "a vase")).toEqual(["Vase's lowest point is at y=0.75; move it down 0.75 m so it rests on the ground (y=0)."]);
   });
 
+  it("treats a flat ground slab with its top at y=0 as grounding its group", () => {
+    const scene = (thickness: number, top = 0, width = 6): SceneOp[] => [group("display", "Cube Display"),
+      box("ground", "Ground", "display", [0, top - thickness / 2, 0], [width, thickness, 6]), box("cube", "Cube", "display", [0, top + 0.3, 0], [0.6, 0.6, 0.6])];
+    for (const ops of [scene(0.24), scene(0.04)]) expect(checkGeometry(build(ops), ops, "a blue cube")).toEqual([]);
+    // Too thick to be a floor, too small, or sunk below the ground plane: still flagged.
+    for (const ops of [scene(1), scene(0.24, 0, 0.5), scene(0.24, -0.5)]) expect(checkGeometry(build(ops), ops, "a blue cube").join()).toContain("Cube Display's lowest point");
+  });
+
   it("ignores untouched objects and collections of standalone objects", () => {
     const broken: SceneOp[] = [group("old", "Old"), box("a", "A", "old", [0, 3, 0], [1, 1, 1]), box("b", "B", "old", [0, 5, 0], [1, 1, 1]), box("c", "C", "old", [0, 5.5, 0], [1, 0.1, 1])];
     const scene = build(broken);

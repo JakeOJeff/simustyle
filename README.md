@@ -49,6 +49,8 @@ Its [building functions](src/ai/buildTools.ts) include `assemble` for multipart 
 
 Before applying a build, the assistant checks components and script compilation, previews scripts in isolation, measures world bounds and organization, then reviews the request against those results. Expand **Checked before apply** to see diagnostics and remaining design warnings. Geometry checks are advisory and use conservative bounds; they do not replace rendering or Rapier physics. Explicit positions are preserved for review, including intentional underground or underwater geometry.
 
+To measure build quality against the real models, run `npm run ai:eval`. It uses the keys in `.env`/`.env.local` and runs the scene agent on an empty scene for four fixed prompts: a reading corner, the house from Up with furniture, a sports car, and a snowman garden. Pass your own prompts after `--` to run those instead. Each run writes to `eval-output/<timestamp>/`: a screenshot from a fixed 3/4 angle, the scene, and a `result.json` with the ops, correction errors, geometry notes and every call's model, tokens and cost. It ends by printing a summary table. It spends real API credit (about $0.15 for the four prompts with Sol on) and needs Chrome (`CHROME_PATH` overrides the default Windows path).
+
 Caching is bounded and held in memory: static prompt/schema text, scene descriptions, and up to 12 fully reviewed builds for five minutes. Build keys include the exact scene, request, recent request context, system instructions, and output schema. Cached builds are validated and previewed again before use. Rejected builds and unreviewed fallbacks are never cached. Opening/new scenes or changing desktop provider settings clears the build cache.
 
 ## Desktop app

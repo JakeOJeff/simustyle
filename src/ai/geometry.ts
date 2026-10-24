@@ -19,6 +19,9 @@ function separation(a: THREE.Box3, b: THREE.Box3): [number, number, number] {
 }
 const gap = (a: THREE.Box3, b: THREE.Box3) => Math.hypot(...separation(a, b));
 
+/** Flat (at most 0.3 m thick), at least 1×1 m, with its top at the ground plane. */
+const isGroundSlab = (box: THREE.Box3) => Math.abs(box.max.y) <= TOUCH && box.max.y - box.min.y <= 0.3 && box.max.x - box.min.x >= 1 && box.max.z - box.min.z >= 1;
+
 const isGroup = (entity: Entity) => Object.keys(entity.components).every((key) => key === "Transform");
 const isDynamic = (entity: Entity) => {
   const body = entity.components.RigidBody;
@@ -77,6 +80,8 @@ export function checkGeometry(scene: Scene, ops: SceneOp[], request: string): st
       const inside = cluster.flatMap((member) => meshesIn.get(member)!);
       const lowest = Math.min(...inside.map((mesh) => boxes.get(mesh.id)!.min.y));
       if (Math.abs(lowest) <= TOUCH) continue;
+      // A floor or ground slab whose top is the ground plane (it may extend below y=0) grounds its whole group.
+      if (inside.some((mesh) => isGroundSlab(boxes.get(mesh.id)!))) continue;
       const footprint = inside.reduce((box, mesh) => box.union(boxes.get(mesh.id)!), boxes.get(inside[0]!.id)!.clone());
       const resting = meshes.some((mesh) => {
         if (inside.includes(mesh)) return false;

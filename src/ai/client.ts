@@ -51,6 +51,11 @@ export async function requestSceneEdit(
   previousReply = "",
   task: AiTask = "scene_draft"
 ): Promise<unknown> {
+  return requestJson(sceneEditMessages(systemPrompt, userPrompt, correctionErrors, previousReply), { ...AI_RESPONSE_JSON_SCHEMA, schema: responseSchema }, task);
+}
+
+/** The chat messages for one scene-edit call; a correction replays the rejected reply, then the errors to fix. */
+export function sceneEditMessages(systemPrompt: string, userPrompt: string, correctionErrors: string[] = [], previousReply = ""): ChatMessage[] {
   const messages: ChatMessage[] = [
     { role: "system", content: systemPrompt },
     { role: "user", content: userPrompt }
@@ -63,8 +68,7 @@ export async function requestSceneEdit(
       content: `Fix only these errors and return the full corrected JSON response: ${JSON.stringify(correctionErrors.slice(0, 24).map((error) => error.slice(0, 1000)))}`
     });
   }
-
-  return requestJson(messages, { ...AI_RESPONSE_JSON_SCHEMA, schema: responseSchema }, task);
+  return messages;
 }
 
 /**
@@ -111,6 +115,11 @@ export async function requestJson(
       throw new Error(message);
     }
   }
+  return parseChatPayload(payload);
+}
+
+/** The model's JSON object from a successful proxy reply; a cut-off or non-JSON reply is an UnusableReplyError. */
+export function parseChatPayload(payload: unknown): unknown {
   if (!isRecord(payload) || typeof payload.content !== "string") {
     throw new Error("AI server returned an invalid response.");
   }

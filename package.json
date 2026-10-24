@@ -15,7 +15,8 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "typecheck": "tsc --noEmit",
-    "check": "npm run typecheck && svelte-check --tsconfig ./tsconfig.json && npm run test && npm run build"
+    "check": "npm run typecheck && svelte-check --tsconfig ./tsconfig.json && npm run test && npm run build",
+    "ai:eval": "esbuild scripts/ai-eval/run.ts --bundle --platform=node --format=esm --packages=external --outfile=eval-output/.cache/run.mjs --log-level=warning && node eval-output/.cache/run.mjs"
   },
   "engines": {
     "node": ">=20.19"

@@ -4,6 +4,18 @@ Record meaningful project changes during the event, newest first.
 
 ## Event build log
 
+### 2026-10-25 — `npm run ai:eval` quality runs, and floors no longer count as sunk objects
+
+- Changed:
+  - New `npm run ai:eval` (`scripts/ai-eval/`). It runs the real scene agent through the same proxy code, prompts and Luna/Sol routing as the editor, using keys from `.env`/`.env.local`. It starts from an empty scene for: "Build a cozy reading corner in warm wood and sage green", "Create the house from Up and decorate its insides with furniture", "A red sports car" and "A snowman in a snowy garden". Prompts passed after `--` replace the list. Each prompt gets a folder in `eval-output/<timestamp>/`: `screenshot.png` (1280×800, fixed 3/4 angle framed to the build, rendered in headless Chrome with the editor's own geometry, materials and lights), `scene.json`, and `result.json` (summary, ops, correction errors per call, geometry and design notes, and each call's model, tokens and cost). The run ends with a summary table, also saved as `summary.txt` and `summary.json`. `eval-output/` is git-ignored.
+  - `src/ai/client.ts` now exports `sceneEditMessages` and `parseChatPayload`, so the eval builds and parses calls exactly as the editor does.
+  - Geometry checker: a group containing a flat ground slab (at most 0.3 m thick, at least 1×1 m, top within 0.05 m of y=0) counts as resting on the ground, even though the slab extends below y=0.
+  - `scripts/**/*.ts` is now type-checked.
+  - Files: `scripts/ai-eval/run.ts`, `scripts/ai-eval/render.ts`, `scripts/ai-eval/report.ts`, `src/ai/client.ts`, `src/ai/geometry.ts`, `package.json`, `tsconfig.json`, `.gitignore`, `README.md`, `tests/scripts/aiEval.test.ts`, `tests/ai/geometry.test.ts`.
+- Why: Scene quality needed a repeatable, real-model check. The first smoke run showed that the empty-scene note makes the model add a ground slab, and the checker then flagged the whole composition as sunk, which wasted two paid correction calls.
+- Validation: all 339 tests pass, including tests for the 3/4 framing, usage totals, the summary table and the ground-slab rule. One real run of the four prompts cost $0.14: three built (35, 23 and 47 parts) and screenshots were checked by eye.
+- Limitations: Surface textures aren't drawn in screenshots. In that run, three of four first drafts were cut off at the 4,000-token output limit and needed a retry. The Up house failed after three cut-off replies. Fuller compositions need a higher `max_completion_tokens` or more compact replies.
+
 ### 2026-10-25 — Fuller first builds: keep props, compose empty scenes, filled shelves, real lamps and mood lighting
 
 - Changed: Scene quality round 3.
