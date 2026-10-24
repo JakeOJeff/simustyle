@@ -20,7 +20,7 @@
     // Cheap model for every task; the strong one reviews scenes only when AI_SOL_ENABLED is "true".
     "AI_MODEL_LUNA": "gpt-6-luna",
     "AI_MODEL_SOL": "gpt-6-sol",
-    "AI_SOL_ENABLED": "false"
+    "AI_SOL_ENABLED": "true"
   },
   // Holds visitors' daily credits and the month's spend (see AiCreditLedger in worker/index.ts).
   "durable_objects": {
