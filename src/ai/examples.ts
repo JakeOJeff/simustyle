@@ -8,7 +8,7 @@ export const MODELING_RULES = `## Modeling well
 - Every held floating object (balloons, kites) MUST have a thin cylinder (radius 0.01) to its anchor; the checker flags any without one. Hanging lamps/signs hang from a cord.
 - Buildings: fill gables with a wedge; multi-floor buildings need stairs or a ladder.
 - Y must hold existing objects ("put X inside Y", "build Y around X"): size Y to their combined bounds + ≥0.5 m clearance on every side and above the tallest, centered on them; move each in with {"op":"update","id":…,"parent":Y,"components":{}} (no Transform keeps world position).
-- Surfaces and containers meant to hold things are never empty: fill them with items varied in size, color and angle, some leaning or stacked (e.g. 5–8 books on a shelf, 2–4 props on a table).
+- Surfaces and containers meant to hold things are never empty: fill them with items varied in size, color and angle, some leaning or stacked (e.g. 5–8 books on a shelf, 2–4 props on a table). Every shelf level gets items, including the top one.
 - Anything that gives off light (lamp, candle, fire, screen, window, sign) gets a Light child at its glowing point, and the glowing part gets emissive with emissiveIntensity 1–3. Every point/spot Light belongs to such a visible source, never floating bare (daylight: one directional sun).
 - The mood of the request sets the lighting: warm/cozy/night = warm light (#ffb070–#ffd6a0), low ambient (~0.3), dark background; bright/clean/day = white light, ambient 0.6–1, light background; eerie = cold dim light.
 - Spaces: an interior (room, corner, nook, kitchen, shop) has a floor and at least two walls that meet; an exterior has a ground surface. Floor/ground = the content's footprint + about 1 m; furniture fills it, never a big empty room around one object. Cluster pieces around a focal piece (within ~1.5 m).
@@ -163,7 +163,7 @@ export const EXAMPLE_LIBRARY: readonly LibraryExample[] = [
     tags: ["room", "corner", "nook", "interior", "insid", "indoor", "living", "bedroom", "kitchen", "library", "study", "office", "furni", "decorat", "shelf", "shelv", "lamp", "cozy", "cosy"],
     focal: "armchair",
     reply: {
-      plan: "Floor 3 wide x 2.4 deep (z -1.5..0.9, the furniture + ~1 m) top y0; walls 0.1 thick meet at back-left (z-1.45, x-1.45). Focal armchair x-0.55 z-0.85; shelf on back wall x0.6: 2 rows of 5 varied books (one leaning, one stack), plant+box on top; side table x0.1 z-0.6 with mug+book; floor lamp x-1.15 z-1.1, shade wide end down, warm point light inside; dark background, ambient 0.3.",
+      plan: "Floor 3 wide x 2.4 deep (z -1.5..0.9, the furniture + ~1 m) top y0; walls 0.1 thick meet at back-left (z-1.45, x-1.45). Focal armchair x-0.55 z-0.85; shelf on back wall x0.6: 2 rows of 5 varied books (one leaning, one stack), plant+box on top; side table x0.1 z-0.6 with hollow mug (coffee disc, torus handle)+book; floor lamp x-1.15 z-1.1, shade wide end down, warm point light inside; dark background, ambient 0.3.",
       summary: "Built a cozy reading corner with an armchair, a filled bookshelf, a side table and a warm floor lamp.",
       ops: [{ op: "settings", settings: { background: "#1d1712", ambientLightIntensity: 0.3 } },
       { op: "assemble", id: "corner", name: "Corner", parent: null, parts: [
@@ -175,7 +175,7 @@ export const EXAMPLE_LIBRARY: readonly LibraryExample[] = [
         part("ac_seat", "Seat", box, [0, 0.225, 0], fabric, [0.8, 0.45, 0.75]),
         part("ac_back", "Back", box, [0, 0.75, -0.3], fabric, [0.8, 0.6, 0.15]),
         part("ac_arm", "Arm", box, [-0.34, 0.575, 0], fabric, [0.12, 0.25, 0.75]),
-        part("ac_cushion", "Cushion", box, [0, 0.5, 0.07], cream, [0.56, 0.1, 0.55])
+        part("ac_cushion", "Cushion", { radius: 0.28, height: 0.1, bevel: 0.04 }, [0, 0.5, 0.07], cream)
       ] },
       { op: "repeat", source: "ac_arm", idPrefix: "ac_arm", name: "Arm", count: 1, step: [0.68, 0, 0] },
       { op: "assemble", id: "shelf", name: "Bookshelf", parent: null, transform: { position: [0.6, 0, -1.22] }, parts: [
@@ -197,7 +197,9 @@ export const EXAMPLE_LIBRARY: readonly LibraryExample[] = [
         part("st_top", "Top", { shape: "cylinder", radius: 0.22, height: 0.04 }, [0, 0.56, 0], wood),
         part("st_stem", "Stem", { shape: "cylinder", radius: 0.03, height: 0.52 }, [0, 0.28, 0], wood),
         part("st_foot", "Foot", { shape: "cylinder", radius: 0.15, height: 0.03 }, [0, 0.015, 0], wood),
-        part("st_mug", "Mug", { shape: "cylinder", radius: 0.04, height: 0.09 }, [0.09, 0.625, 0.05], cream),
+        part("st_mug", "Mug", { shape: "cylinder", radius: 0.04, height: 0.09, hollow: 0.85 }, [0.09, 0.625, 0.05], cream),
+        part("st_coffee", "Coffee", { shape: "cylinder", radius: 0.035, height: 0.01 }, [0.09, 0.64, 0.05], dark),
+        part("st_handle", "Handle", { shape: "torus", radius: 0.025, height: 0.012 }, [0.15, 0.625, 0.05], cream),
         part("st_book", "Book", box, [-0.07, 0.6, -0.03], red, [0.16, 0.04, 0.12], [0, 20, 0])
       ] },
       { op: "assemble", id: "floor_lamp", name: "Floor Lamp", parent: null, transform: { position: [-1.15, 0, -1.1] }, parts: [

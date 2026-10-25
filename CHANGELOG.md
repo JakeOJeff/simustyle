@@ -4,6 +4,28 @@ Record meaningful project changes during the event, newest first.
 
 ## Event build log
 
+### 2026-10-25 — More shapes: bevel, sides, arc, hollow, torus and text
+
+- Added: Five new Mesh fields and two new shapes. Old scenes load as before, because each new field defaults to the old look and default values are not saved.
+  - `bevel` (box, 0–0.5 m): rounded edges, for cushions, sofas, phones and fridges. Uses three's `RoundedBoxGeometry`. The collider is Rapier's exact rounded cuboid.
+  - `sides` (cylinder and cone, 3–64, default 32): 4 makes pyramids and roofs, 3 a triangular prism, 6 or 8 a nut, pencil or gazebo. At 12 sides or fewer the shape is faceted and flat-shaded, `radius` measures to the faces (a 4-sided pyramid of radius 1 has a 2×2 base), and a face points +Z.
+  - `arc` (sphere, cylinder, cone, torus; 1–360°, default 360): 180 makes a dome or bowl (a sphere cap drawn on both sides), a half-pipe, or an arch (the torus ends stand flat on y=0). A partial cylinder is closed by flat cut faces.
+  - `hollow` (cylinder, 0–0.95): the inner radius as a fraction of the outer one, for mugs, cups, pots, pipes and chimneys. The tube is open at both ends.
+  - `torus`: `radius` is the ring radius (to the tube's center), `height` is the tube thickness. It is a ring in the XY plane, for handles, wheels, tires, donuts and rings.
+  - `text` (string, at most 40 characters, default "Text"): `height` is the letter height, depth is 2·radius, and the text reads along +X facing +Z. It uses a bundled font: Droid Sans Bold (Apache-2.0), cut down to printable ASCII (43 KB), so nothing is fetched over the network. Other characters show as "?".
+  - Colliders: Rapier's exact primitives where one fits (rounded cuboid; ball, cylinder and cone only when whole, round and solid). Otherwise a convex hull of the drawn geometry. Concave shapes (tubes, rings, text, sphere caps, cylinder arcs over 180°) get a triangle mesh when they don't move on their own (static, anchored, or a Collider without a RigidBody). A dynamic body uses the hull.
+  - Bounds: domes, arches, prisms, rings and text use exact bounds from their geometry, so the AI checker sees a dome resting on the ground, not buried. The bounds are cached.
+  - Editor: each field shows in the Inspector only for the shapes that use it. The text box allows at most 40 characters. The Hierarchy has torus and text icons. The viewport rebuilds a mesh's geometry whenever any shape field changes.
+  - Export: GLB and HTML exports use the same geometry. The HTML runtime bundles the font.
+  - Prompt: the mesh-size line describes the torus and text sizes, plus one short line per field saying what it is for. Bevel is sized with radius/height, because scale squashes it. The system prompt grew by about 360 characters (about 100 tokens, including the generated schema line). The response JSON schema now carries `maxLength` for strings.
+  - Few-shot: the reading corner's armchair cushion has a bevel. Its mug is a hollow cylinder with a coffee disc and a torus handle.
+- Added: Geometry checker: a flat part (at most 0.1 m thick, and at most a quarter of its other sides) that sits on a sibling in the same group, with its face inside the sibling's, is flagged when it comes out of both sides by more than 0.02 m: "<part> pokes through <sibling> by X m."
+- Changed: Rule: "Every shelf level gets items, including the top one."
+- Added: Two `npm run ai:eval` prompts: "A coffee shop counter with a sign, mugs and a pastry case" and "A playground with a slide, swings and a dome climber".
+- Files: `src/scene/meshGeometry.ts`, `src/scene/fonts/`, `src/registry/components/mesh.ts`, `src/registry/types.ts`, `src/scene/validate.ts`, `src/runtime/physics.ts`, `src/runtime/commands.ts`, `src/materials/mapping.ts`, `src/editor/Viewport.svelte`, `src/editor/Inspector.svelte`, `src/editor/Hierarchy.svelte`, `src/ai/prompt.ts`, `src/ai/sceneContext.ts`, `src/ai/quality.ts`, `src/ai/geometry.ts`, `src/ai/examples.ts`, `scripts/ai-eval/run.ts`, `tsconfig.json`, tests.
+- Validation: `npm run check` passes: typecheck, svelte-check (0 errors), all 433 tests and the build. For each field and shape, the new tests check that the geometry builds (bounds, facets, normals, wall thickness, letter height), that the right collider type is created and holds the right points, that the field survives save and load, that a GLB export has the same vertex count, and that old scenes load unchanged. Further tests cover the pokes-through check (flagged, sitting on the face, within tolerance, thick parts) and the example's cushion, mug and handle. Not checked visually in a browser. `npm run ai:eval` was not run.
+- Limitations: Round cylinders and cones now default to 32 segments (was 24), so existing ones look slightly smoother. Bevel is in unscaled units, so a box sized with a non-uniform scale gets squashed rounding. A faceted triangle's bounds aren't centered: its corner points -Z. Torus and sphere-cap ends are open, not capped. The pokes-through check uses axis-aligned bounds, so it can miss or misjudge rotated decor.
+
 ### 2026-10-25 — A detail budget instead of "10x more detailed"
 
 - Changed: The prompts now say what detail to spend on and in what order, instead of asking for as many sub-parts as possible.

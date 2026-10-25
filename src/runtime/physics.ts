@@ -2,7 +2,7 @@ import * as RAPIER from "@dimforge/rapier3d-compat";
 import * as THREE from "three";
 import { applyOps } from "../scene/applyOps";
 import type { Entity, Scene, Vec3 } from "../scene/types";
-import { meshGeometry, meshTopRadius } from "../scene/meshGeometry";
+import { isConcave, isFaceted, meshArc, meshBevel, meshGeometry, meshHollow, meshTopRadius } from "../scene/meshGeometry";
 import { AnimatorRuntime } from "./animator";
 import { ScriptRuntime, scriptOps } from "./scripts";
 import { CameraRig } from "./camera";
@@ -67,12 +67,14 @@ function colliderFor(entity: Entity): RAPIER.ColliderDesc {
   const top = meshTopRadius(mesh);
   const uniform = Math.abs(sx - sy) < 1e-6 && Math.abs(sx - sz) < 1e-6;
   const roundBase = Math.abs(sx - sz) < 1e-6;
+  // Round, whole, solid cylinders and cones match Rapier's primitives.
+  const round = !isFaceted(mesh) && meshArc(mesh) >= 360 && meshHollow(mesh) === 0;
   switch (mesh.shape ?? "box") {
     case "sphere":
-      if (uniform) return RAPIER.ColliderDesc.ball(radius * sx);
+      if (uniform && meshArc(mesh) >= 360) return RAPIER.ColliderDesc.ball(radius * sx);
       break;
     case "cylinder":
-      if (roundBase && Math.abs(top - radius) < 1e-6) return RAPIER.ColliderDesc.cylinder(height * sy / 2, radius * sx);
+      if (round && roundBase && Math.abs(top - radius) < 1e-6) return RAPIER.ColliderDesc.cylinder(height * sy / 2, radius * sx);
       break;
     case "capsule":
       if (uniform) return RAPIER.ColliderDesc.capsule(Math.max(0.01, height - 2 * radius) * sy / 2, radius * sx);
@@ -80,17 +82,29 @@ function colliderFor(entity: Entity): RAPIER.ColliderDesc {
     // Three's PlaneGeometry lies in local XY, with its normal along local Z.
     case "plane": return RAPIER.ColliderDesc.cuboid(radius * sx, radius * sy, 0.01 * sz);
     case "cone":
-      if (roundBase && top === 0 && signed[1]! >= 0) return RAPIER.ColliderDesc.cone(height * sy / 2, radius * sx);
+      if (round && roundBase && top === 0 && signed[1]! >= 0) return RAPIER.ColliderDesc.cone(height * sy / 2, radius * sx);
       break;
-    case "wedge": break;
-    default: return RAPIER.ColliderDesc.cuboid(radius * sx, height * sy / 2, radius * sz);
+    case "wedge":
+    case "torus":
+    case "text": break;
+    default: {
+      const [hx, hy, hz] = [radius * sx, height * sy / 2, radius * sz];
+      const bevel = Math.min(meshBevel(mesh) * Math.min(sx, sy, sz), hx, hy, hz) * 0.999;
+      if (bevel > 0) return RAPIER.ColliderDesc.roundCuboid(hx - bevel, hy - bevel, hz - bevel, bevel);
+      return RAPIER.ColliderDesc.cuboid(hx, hy, hz);
+    }
   }
-  // Stretched, truncated, flipped or sloped primitives need a convex hull of the visible geometry,
-  // rather than a sphere/cylinder inflated to the largest scale axis.
+  // Stretched, truncated, flipped, faceted or sloped primitives need a convex hull of the visible geometry,
+  // rather than a sphere/cylinder inflated to the largest scale axis. Concave shapes (rings, tubes, bowls, text)
+  // get their exact triangles when they never move on their own; a dynamic body falls back to the hull.
   const geometry = meshGeometry(mesh);
   geometry.scale(signed[0]!, signed[1]!, signed[2]!);
-  const collider = RAPIER.ColliderDesc.convexHull(new Float32Array(geometry.getAttribute("position").array));
+  const positions = new Float32Array(geometry.getAttribute("position").array);
+  const index = geometry.index ? new Uint32Array(geometry.index.array) : Uint32Array.from({ length: positions.length / 3 }, (_, i) => i);
   geometry.dispose();
+  const collider = isConcave(mesh) && bodyType(entity) !== "dynamic"
+    ? RAPIER.ColliderDesc.trimesh(positions, index)
+    : RAPIER.ColliderDesc.convexHull(positions);
   if (!collider) throw new Error(`Could not build the collider for '${entity.name}'.`);
   return collider;
 }

@@ -5,7 +5,7 @@ export type FieldSchema =
   | { type: "color"; default: string }
   | { type: "vec3"; default: [number, number, number]; min?: number; max?: number }
   | { type: "enum"; options: string[]; default: string }
-  | { type: "string"; default: string; multiline?: boolean }
+  | { type: "string"; default: string; multiline?: boolean; maxLength?: number }
   | { type: "entityRef"; default: string | null };
 
 export interface ComponentSchema {

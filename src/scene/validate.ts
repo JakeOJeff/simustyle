@@ -109,7 +109,8 @@ export function validateFieldValue(field: FieldSchema, value: unknown): string |
         ? undefined
         : `must be one of: ${field.options.join(", ")}`;
     case "string":
-      return typeof value === "string" ? undefined : "must be a string";
+      if (typeof value !== "string") return "must be a string";
+      return field.maxLength !== undefined && value.length > field.maxLength ? `must be at most ${field.maxLength} characters` : undefined;
     case "entityRef":
       return value === null || typeof value === "string" ? undefined : "must be an entity id or null";
   }

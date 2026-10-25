@@ -1,5 +1,6 @@
 import type * as THREE from "three";
 import { surfaceTexture, normalTexture } from "./catalog";
+import { meshGeometryKey } from "../scene/meshGeometry";
 
 type UVState = { original: Float32Array; key: string };
 const uvStates = new WeakMap<THREE.BufferGeometry, UVState>();
@@ -28,7 +29,7 @@ export function applySurfaceMapping(mesh: THREE.Mesh, shape: Record<string, unkn
   const radius = typeof shape.radius === "number" ? shape.radius : 0.5;
   const height = typeof shape.height === "number" ? shape.height : 1;
   const kind = String(shape.shape ?? "box");
-  const key = [kind, radius, height, shape.radiusTop ?? "", sx, sy, sz].map((part) => typeof part === "number" ? part.toFixed(6) : part).join(":");
+  const key = [meshGeometryKey(shape), sx, sy, sz].map((part) => typeof part === "number" ? part.toFixed(6) : part).join(":");
   if (state?.key === key) return;
   if (!state) {
     const original = new Float32Array(uv.count * 2);
@@ -42,7 +43,7 @@ export function applySurfaceMapping(mesh: THREE.Mesh, shape: Record<string, unkn
   const radial = radius * Math.hypot(sx, sz) / Math.SQRT2;
   for (let i = 0; i < uv.count; i++) {
     let u = width, v = tall;
-    if (kind === "box" || kind === "wedge") {
+    if (kind === "box" || kind === "wedge" || kind === "text") {
       if (Math.abs(normal.getX(i)) > 0.5) u = depth;
       else if (Math.abs(normal.getY(i)) > 0.5) v = depth;
     } else if (kind === "plane") v = 2 * radius * sy;

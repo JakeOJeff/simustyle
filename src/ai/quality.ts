@@ -1,6 +1,7 @@
 import * as THREE from "three";
 import { halfExtents } from "../runtime/commands";
 import { worldMatrix } from "../scene/hierarchy";
+import { meshFeatureBounds, meshGeometryKey } from "../scene/meshGeometry";
 import { activeCamera, createSceneCamera } from "../runtime/camera";
 import type { Scene, SceneOp, Vec3 } from "../scene/types";
 
@@ -17,6 +18,8 @@ const rounded = (point: THREE.Vector3): Vec3 => point.toArray().map((value) => M
 export function meshWorldBounds(scene: Scene, id: string): THREE.Box3 | null {
   const entity = scene.entities.find((candidate) => candidate.id === id);
   if (!entity?.components.Mesh) return null;
+  const exact = meshFeatureBounds(entity.components.Mesh);
+  if (exact) return exact.applyMatrix4(worldMatrix(scene, id));
   const half = halfExtents({ ...entity, components: { ...entity.components, Transform: {} } });
   if (entity.components.Mesh.shape === "plane") {
     const radius = Number(entity.components.Mesh.radius ?? 0.5);
@@ -49,8 +52,7 @@ export function inspectBuildQuality(scene: Scene, ops: SceneOp[]): BuildQualityR
     const bounds = boxes.get(entity.id)!;
     combined.union(bounds);
     const matrix = worldMatrix(scene, entity.id);
-    const signature = JSON.stringify([entity.components.Mesh.shape ?? "box", entity.components.Mesh.radius ?? 0.5,
-      entity.components.Mesh.height ?? 1, entity.components.Mesh.radiusTop ?? null, matrix.elements.map((value) => Math.round(value * 1e6))]);
+    const signature = JSON.stringify([meshGeometryKey(entity.components.Mesh), matrix.elements.map((value) => Math.round(value * 1e6))]);
     const previous = poses.get(signature);
     if (previous && (affected(entity.id) || affected(previous))) warn(`'${entity.id}' and '${previous}' have identical geometry and world poses; check for duplicate surfaces.`);
     poses.set(signature, entity.id);

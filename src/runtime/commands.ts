@@ -4,7 +4,7 @@
 import type { Entity, Scene, SceneOp } from "../scene/types";
 import { ANY_NOUNS, SHAPE_NOUNS, type AnimationSpec, type RelationName } from "../lang/vocabulary";
 import { componentSchemas } from "../registry";
-import { meshTopRadius } from "../scene/meshGeometry";
+import { meshFeatureBounds, meshTopRadius } from "../scene/meshGeometry";
 
 export interface RuntimeDescription {
   text?: string;
@@ -46,7 +46,10 @@ export function halfExtents(entity: Entity): Vector {
   const radius = Number(field(entity, "Mesh", "radius") ?? 0.5);
   const height = Number(field(entity, "Mesh", "height") ?? 1);
   const shape = field(entity, "Mesh", "shape");
-  const base: Vector = shape === "sphere" ? [radius, radius, radius]
+  // Domes, arches, prisms, rings and text: the larger side of their exact bounds, so the box stays centered.
+  const exact = meshFeatureBounds(mesh);
+  const base: Vector = exact ? [0, 1, 2].map((axis) => Math.max(-exact.min.getComponent(axis), exact.max.getComponent(axis))) as Vector
+    : shape === "sphere" ? [radius, radius, radius]
     : shape === "plane" ? [radius, 0.01, radius]
     : shape === "capsule" ? [radius, Math.max(height / 2, radius), radius]
     : shape === "cylinder" || shape === "cone" ? [Math.max(radius, meshTopRadius(mesh)), height / 2, Math.max(radius, meshTopRadius(mesh))]

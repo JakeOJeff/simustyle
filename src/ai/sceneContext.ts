@@ -29,7 +29,7 @@ function fieldText(name: string, field: FieldSchema): string {
     case "entityRef":
       return `${name} entity id|null =null`;
     case "string":
-      return `${name} ${field.multiline ? "text" : "string"} =${fallback}`;
+      return `${name} ${field.multiline ? "text" : "string"}${field.maxLength ? ` max ${field.maxLength}` : ""} =${fallback}`;
     default:
       return `${name} ${field.type} =${fallback}`;
   }

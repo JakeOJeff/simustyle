@@ -165,4 +165,20 @@ describe("geometry checker", () => {
     expect(lines).toHaveLength(12);
     expect(lines[11]).toBe("...and 9 more geometry problems of the same kind.");
   });
+
+  it("flags flat decor that pokes out through the far side of the sibling it sits on", () => {
+    const wall = (windowZ: number, windowDepth: number): SceneOp[] => [
+      group("wall", "Wall Panel"),
+      box("panel", "Wall", "wall", [0, 1, 0], [2, 2, 0.04]),
+      box("window", "Window", "wall", [0.3, 1.2, windowZ], [0.6, 0.6, windowDepth])
+    ];
+    // 0.1 deep through a 0.04 wall: 0.03 out of each side.
+    const through = wall(0, 0.1);
+    expect(checkGeometry(build(through), through, "a wall with a window")).toEqual(["Window pokes through Wall by 0.03 m."]);
+    // Set into the front face, or a hair past the back (within 0.02 m), it is fine.
+    for (const ops of [wall(0.04, 0.04), wall(0.005, 0.06)]) expect(checkGeometry(build(ops), ops, "a wall with a window")).toEqual([]);
+    // Thick parts are not decor, and parts in different groups are not siblings.
+    const beam = [group("wall", "Wall Panel"), box("panel", "Wall", "wall", [0, 1, 0], [2, 2, 0.1]), box("beam", "Beam", "wall", [0, 1, 0], [0.3, 0.3, 0.3])];
+    expect(checkGeometry(build(beam), beam, "a wall")).toEqual([]);
+  });
 });

@@ -33,6 +33,9 @@ const CASES: EvalCase[] = [
   { steps: ["Create the house from Up and decorate its insides with furniture"] },
   { steps: ["A red sports car"] },
   { steps: ["A snowman in a snowy garden"] },
+  // Shape variety: text sign, hollow mugs with torus handles, bevelled case; slide, swings, dome (arc) climber.
+  { steps: ["A coffee shop counter with a sign, mugs and a pastry case"] },
+  { steps: ["A playground with a slide, swings and a dome climber"] },
   // Containment: the corner must end up inside the house, and the balloons must be tethered to its roof.
   { steps: ["Build a cozy reading corner", "Create the house from Up and put this inside"], check: containedAndTethered }
 ];

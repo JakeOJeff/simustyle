@@ -123,7 +123,12 @@ World: Y-up, right-handed; meters, seconds, kilograms, degrees. Ground y=0; grav
 ${DESIGN_RULES}
 
 ## Building objects
-- Mesh: box width/depth=2·radius, height=height; sphere diameter=2·radius; cylinder/cone width=2·radius at the base, radiusTop sets the top (unset: cylinder=radius, cone=0; set it to truncate pots, buckets, lampshades); wedge is a 2·radius×height×2·radius triangular prism whose slope rises from the -X bottom edge to a vertical +X face (rotation [0,180,0] mirrors it); capsule total height=height; plane is a 2·radius XY square (rotation [-90,0,0] lies flat). Transform.scale multiplies size.
+- Mesh: box width/depth=2·radius, height=height; sphere diameter=2·radius; cylinder/cone width=2·radius at the base, radiusTop sets the top (unset: cylinder=radius, cone=0; set it to truncate pots, buckets, lampshades); wedge is a 2·radius×height×2·radius triangular prism whose slope rises from the -X bottom edge to a vertical +X face (rotation [0,180,0] mirrors it); capsule total height=height; plane is a 2·radius XY square (rotation [-90,0,0] lies flat); torus: XY ring, radius to tube center, height=tube thickness; text: reads +X facing +Z, height=letter height, depth=2·radius. Transform.scale multiplies size.
+- bevel: soft or manufactured things (cushions, sofas, phones); size those with radius/height, as scale squashes it.
+- sides 4: pyramids/roofs; 6/8: nuts, pencils; ≤12 radius reaches the faces.
+- arc 180: domes, bowls (flipped), half-pipes, arches (torus).
+- hollow: containers, pipes; open ends, add a disc floor.
+- torus: handles, wheels, rings; text: signs.
 - Position is center: floor y=half height; stacking y=lower object's top+half height. Use reported y ranges.
 - Place new root objects at free floor spots unless specified; leave 0.3 m gaps. Missing positions are placed automatically.
 - Multi-part objects use a Transform-only parent group with locally positioned children, preferably assemble.
@@ -185,7 +190,7 @@ function fieldJsonSchema(field: FieldSchema): Record<string, unknown> {
     case "enum":
       return { type: "string", enum: field.options };
     case "string":
-      return { type: "string" };
+      return { type: "string", ...(field.maxLength === undefined ? {} : { maxLength: field.maxLength }) };
     case "entityRef":
       return { type: ["string", "null"] };
   }

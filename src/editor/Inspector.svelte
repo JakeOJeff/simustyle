@@ -1,7 +1,7 @@
 <script lang="ts">
   import { componentSchemas, type ComponentSchema, type FieldSchema } from "../registry";
   import type { Entity, Scene, SceneSettings, Vec3 } from "../scene/types";
-  import { meshTopRadius } from "../scene/meshGeometry";
+  import { MESH_FIELD_SHAPES, meshTopRadius } from "../scene/meshGeometry";
   import { settingSchemas } from "../scene/validate";
   import { parseScript } from "../lang/parser";
   import { typecheckScript } from "../lang/checker";
@@ -265,7 +265,7 @@
                 <button class="open-script" onclick={onOpenScript}>Edit script</button>
               {/if}
               {#each Object.entries(schema.fields) as [fieldName, field] (fieldName)}
-                {#if !(component === "Script" && fieldName === "source") && !(component === "RigidBody" && fieldName === "anchored") && !(component === "Mesh" && fieldName === "radiusTop" && fields.shape !== "cylinder" && fields.shape !== "cone") && !(component === "Material" && (
+                {#if !(component === "Script" && fieldName === "source") && !(component === "RigidBody" && fieldName === "anchored") && !(component === "Mesh" && MESH_FIELD_SHAPES[fieldName] && !MESH_FIELD_SHAPES[fieldName]!.includes(String(fields.shape ?? "box"))) && !(component === "Material" && (
                   ((fieldName === "textureRepeatX" || fieldName === "textureRepeatY") && ((!surfaceTexture(fields.texture) && !normalTexture(fields)) || fields.textureMapping !== "custom")) ||
                   (fieldName === "textureMapping" && !surfaceTexture(fields.texture) && !normalTexture(fields)) ||
                   (fieldName === "normalStrength" && !normalTexture(fields)) ||
@@ -419,7 +419,7 @@
     {:else if schema.type === "entityRef"}
       <select id="field-{name}" class="field-select" value={value === null ? "__world__" : String(value)} onchange={(event) => onchange(event.currentTarget.value === "__world__" ? null : event.currentTarget.value)}><option value="__world__">{name === "followTarget" || name === "lookAtTarget" ? "None" : "World"}</option>{#each scene.entities.filter((option) => !(name === "followTarget" || name === "lookAtTarget") || option.id !== entity?.id) as option}<option value={option.id}>{option.name}</option>{/each}</select>
     {:else}
-      {#if schema.multiline}<textarea id="field-{name}" value={String(value)} oninput={(event) => onchange(event.currentTarget.value)}></textarea>{:else}<input id="field-{name}" class="text-input" type="text" value={String(value)} oninput={(event) => onchange(event.currentTarget.value)} />{/if}
+      {#if schema.multiline}<textarea id="field-{name}" value={String(value)} oninput={(event) => onchange(event.currentTarget.value)}></textarea>{:else}<input id="field-{name}" class="text-input" type="text" maxlength={schema.maxLength} value={String(value)} oninput={(event) => onchange(event.currentTarget.value)} />{/if}
     {/if}
   </div>
 {/snippet}

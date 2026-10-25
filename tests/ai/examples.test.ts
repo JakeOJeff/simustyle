@@ -176,6 +176,17 @@ describe("examples", () => {
     for (const principle of ["never empty", "gives off light", "Light child", "mood of the request sets the lighting", "at least two walls that meet", "ground surface", "focal piece"]) expect(MODELING_RULES).toContain(principle);
     // A few library examples together must still leave room for the scene in one request.
     for (const example of EXAMPLE_LIBRARY) expect(examplesText([example]).length, example.request).toBeLessThanOrEqual(6_500);
+    expect(MODELING_RULES).toContain("Every shelf level gets items, including the top one.");
+  });
+
+  it("shows the newer shape fields: a bevelled cushion, and a hollow mug with a torus handle touching it", () => {
+    const { scene } = built(ALL.find((example) => example.request === "a cozy reading corner")!);
+    const mesh = (id: string) => scene.entities.find((entity) => entity.id === id)!;
+    expect(mesh("ac_cushion").components.Mesh!.bevel).toBeGreaterThan(0);
+    expect(mesh("st_mug").components.Mesh!.hollow).toBeGreaterThan(0);
+    expect(mesh("st_handle").components.Mesh!.shape).toBe("torus");
+    const [mug, handle] = ["st_mug", "st_handle"].map((id) => meshWorldBounds(scene, id)!);
+    expect(gap(mug!, handle!)).toBe(0);
   });
 });
 

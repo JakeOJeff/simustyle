@@ -9,7 +9,7 @@
   import { CameraInput } from "../runtime/cameraInput";
   import { SurfaceTextureStore } from "../materials/textures";
   import { applySurfaceMapping } from "../materials/mapping";
-  import { meshGeometry } from "../scene/meshGeometry";
+  import { meshGeometry, meshGeometryKey } from "../scene/meshGeometry";
   import { emitTutorial } from "./tutorial/tutorialState.svelte";
   import type { Entity, Scene, SceneOp, Vec3 } from "../scene/types";
 
@@ -611,14 +611,11 @@
           object.receiveShadow = true;
           entityObjects.set(entity.id, object);
           world.add(object);
-        } else if (object.userData.shape !== meshData.shape || object.userData.radius !== meshData.radius || object.userData.height !== meshData.height || object.userData.radiusTop !== meshData.radiusTop) {
+        } else if (object.userData.geometryKey !== meshGeometryKey(meshData)) {
           object.geometry.dispose();
           object.geometry = meshGeometry(meshData);
         }
-        object.userData.shape = meshData.shape;
-        object.userData.radius = meshData.radius;
-        object.userData.height = meshData.height;
-        object.userData.radiusTop = meshData.radiusTop;
+        object.userData.geometryKey = meshGeometryKey(meshData);
         applyTransform(object, entity);
         const material = object.material as THREE.MeshStandardMaterial;
         material.color.set(typeof materialData.color === "string" ? materialData.color : "#ffffff");

@@ -7,6 +7,10 @@ const TOUCH = 0.05;
 /** Separate top-level objects may interpenetrate this much (a deliberate snug fit) before it reads as a mistake. */
 const OVERLAP = 0.03;
 const MAX_LINES = 12;
+/** Decor (a patch, inset or panel) is at most this thick, and at most a quarter of its other sides. */
+const FLAT = 0.1;
+/** How far decor may come out of the far side of the surface it sits on. */
+const POKE = 0.02;
 /** A part under this size on every axis can't be seen from the default camera. */
 const SPECK = 0.05;
 /** Requests whose objects may legitimately leave the ground. */
@@ -112,7 +116,7 @@ function describeOffset(part: THREE.Box3, reference: THREE.Box3, referenceName: 
  * Deterministic post-build geometry review of entities created/updated by `ops` (and their descendants):
  * detached parts, object groups that do not rest on the ground, top-level objects that overlap (one sitting wholly
  * inside the other's interior is contained, not overlapping), held floating objects with no string to an anchor,
- * objects moved inside a container they do not fit in, and stray specks (parts under 5 cm on every axis outside an
+ * objects moved inside a container they do not fit in, flat decor poking out the far side of the sibling it sits on, and stray specks (parts under 5 cm on every axis outside an
  * object group). One correction line per problem.
  */
 export function checkGeometry(scene: Scene, ops: SceneOp[], request: string): string[] {
@@ -190,6 +194,27 @@ export function checkGeometry(scene: Scene, ops: SceneOp[], request: string): st
       if (other !== part && (!nearest || gap(box, boxes.get(other.id)!) < gap(box, boxes.get(nearest.id)!))) nearest = other;
     }
     lines.push(`${part.name} ${describeOffset(box, boxes.get(nearest!.id)!, nearest!.name)}.`);
+  }
+
+  // Decor that sits on a sibling's surface (a patch, inset or panel: flat along one axis, its face within the
+  // sibling's) must not come out of the sibling's far side. The smaller protrusion is the unintended one.
+  const axes = ["x", "y", "z"] as const;
+  for (const part of meshes) {
+    if (part.parent === null || !affected(part)) continue;
+    const box = boxes.get(part.id)!;
+    const size = box.getSize(new THREE.Vector3()).toArray();
+    const thin = size.indexOf(Math.min(...size));
+    if (size[thin]! > FLAT || size[thin]! * 4 > Math.min(...size.filter((_, axis) => axis !== thin))) continue;
+    const t = axes[thin]!;
+    for (const sibling of meshes) {
+      if (sibling === part || sibling.parent !== part.parent) continue;
+      const surface = boxes.get(sibling.id)!;
+      if (axes.some((axis) => axis !== t && (box.min[axis] < surface.min[axis] - OVERLAP || box.max[axis] > surface.max[axis] + OVERLAP))) continue;
+      const through = Math.min(surface.min[t] - box.min[t], box.max[t] - surface.max[t]);
+      if (through <= POKE) continue;
+      lines.push(`${part.name} pokes through ${sibling.name} by ${meters(through)} m.`);
+      break;
+    }
   }
 
   // Stray specks: a part too small to see from the default camera that no object group holds.
