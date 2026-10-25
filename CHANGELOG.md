@@ -4,6 +4,20 @@ Record meaningful project changes during the event, newest first.
 
 ## Event build log
 
+### 2026-10-25 — General modeling principles and a library of worked examples
+
+- Changed: The round-3 rules and the reading corner were illustrations of the kind of guidance wanted, not fixed content. They are now general principles, with an example library chosen per request.
+  - "Modeling well" states principles with a few e.g.s. Surfaces and containers are never empty (varied items, some leaning or stacked). Anything that gives off light (lamp, candle, fire, screen, window, sign) gets a Light child at its glowing point plus an emissive part. The request's mood sets light color, ambient and background (warm/cozy/night, bright/clean/day, eerie). Interiors have a floor and two meeting walls, exteriors a ground, and furniture clusters around a focal piece.
+  - The cached system prompt keeps only the two object examples (car, character). The house, the reading corner (now with a plant and a box on the shelf's top board) and two new compositions form `EXAMPLE_LIBRARY` in `src/ai/examples.ts`. The new ones are a sunny fruit stall (stocked counter, stacked orange, white sun, bright sky) and a campfire at night (glowing flame with a warm light, crossed logs, log bench, pines).
+  - `selectExamples` picks up to two library examples by tag (word starts, so "insides" matches "insid"), most matches first. They go at the start of the request message under a heading that calls them illustrations, not templates. An empty-scene request with no match gets the fallback composition (the market stall). An edit with no match gets none. Examples are dropped, least relevant first, if they would leave less than 4,000 characters for the scene.
+  - The static system prompt fell from about 30,000 to 22,400 characters. Matching examples add 2,400–6,000 characters each, only to requests they fit.
+  - Example tests now check the principles on every example: valid, connected, grounded; at most 20 parts and 4 colors per top-level object; every raised flat surface holds 2+ items, and 5+ items vary in height and color with one leaning or stacked; every glowing part in a composition has a light within 0.3 m and intensity 1–3; mood words match ambient, background and light color; compositions have a floor or ground; interiors have meeting walls with furniture within 1.5 m of the focal piece. Removing the shelf's top items makes the surface test fail, as it should.
+  - `npm run ai:eval` uses "Build a cozy kitchen nook in warm wood and sage green" in place of the reading-corner prompt, warns if an eval prompt matches an example, and records which examples each prompt got.
+  - Files: `src/ai/examples.ts`, `src/ai/prompt.ts`, `scripts/ai-eval/run.ts`, `README.md`, `tests/ai/examples.test.ts`, `tests/ai/agent.test.ts`.
+- Why: The user clarified that their specs illustrate how the model should think and asked for multiple examples rather than a replacement.
+- Validation: all 378 tests pass, svelte-check reports 0 errors and the build passes. In a real eval run ($0.25), the kitchen nook built a scene that generalized rather than copied: sink with tap, wall cabinets, a hanging lamp on a cord, and props on the table and counter (37 parts). The car (25 parts) and the snowman garden (41 parts) also built.
+- Limitations: The Up house failed again after three replies were cut off at the 4,000-token output limit. In the nook, the lamp hangs correctly but its shade doesn't glow.
+
 ### 2026-10-25 — AI builds appear in the viewport while they are written
 
 - Changed: The first pass of an AI build now streams into the viewport instead of appearing all at once.

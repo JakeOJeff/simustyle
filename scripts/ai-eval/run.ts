@@ -13,12 +13,14 @@ import { forwardChat, isAiConfigured, lunaModel, solReviewEnabled, type ChatCred
 import { parseChatPayload, sceneEditMessages } from "../../src/ai/client";
 import type { CallCharge, CreditStatus } from "../../src/ai/credits";
 import { AI_RESPONSE_JSON_SCHEMA, buildSystemPrompt } from "../../src/ai/prompt";
+import { EXAMPLE_LIBRARY, FEW_SHOT_EXAMPLES, selectExamples } from "../../src/ai/examples";
 import { serializeScene } from "../../src/scene/serialize";
 import { createEmptyScene, type Scene } from "../../src/scene/types";
 import { summaryTable, usageTotals, type EvalRow } from "./report";
 
+/** Kept different from the few-shot and library examples, so a run measures how well the rules generalize. */
 const PROMPTS = [
-  "Build a cozy reading corner in warm wood and sage green",
+  "Build a cozy kitchen nook in warm wood and sage green",
   "Create the house from Up and decorate its insides with furniture",
   "A red sports car",
   "A snowman in a snowy garden"
@@ -35,6 +37,10 @@ if (!isAiConfigured(env)) {
 // npm on Windows can hand arguments through cmd.exe with ^ escapes left in.
 const args = process.argv.slice(2).map((arg) => arg.replaceAll("^", "")).filter(Boolean);
 const prompts = args.length ? args : PROMPTS;
+for (const prompt of prompts) {
+  const copied = [...FEW_SHOT_EXAMPLES, ...EXAMPLE_LIBRARY].find((example) => example.request.toLowerCase() === prompt.toLowerCase());
+  if (copied) console.warn(`Note: "${prompt}" is one of the examples, so it measures copying rather than generalizing.`);
+}
 const outDir = path.resolve("eval-output", new Date().toISOString().replace(/[:.]/g, "-"));
 await mkdir(outDir, { recursive: true });
 console.log(`Draft model ${lunaModel(env)}; Sol reviews ${solReviewEnabled(env) ? `on (${env.AI_MODEL_SOL})` : "off"}. Writing to ${outDir}`);
@@ -76,7 +82,7 @@ async function runPrompt(prompt: string): Promise<{ scene?: Scene; row: EvalRow;
     });
     const row: EvalRow = { prompt, ok: result.ok, ops: result.ops.length, parts: result.scene?.entities.filter((entity) => entity.components.Mesh).length ?? 0,
       ...usageTotals(charges), seconds: (Date.now() - started) / 1000, ...(result.ok ? {} : { error: result.errors.join(" | ") }) };
-    const detail = { prompt, ok: result.ok, summary: result.summary, errors: result.errors, attempts: result.attempts, requests, skipped: result.skipped,
+    const detail = { prompt, ok: result.ok, examples: selectExamples(prompt, true).map((example) => example.request), summary: result.summary, errors: result.errors, attempts: result.attempts, requests, skipped: result.skipped,
       geometry: result.preflight?.geometry, quality: result.preflight?.quality?.warnings, charges, ops: result.ops };
     return { scene: result.scene, row, detail };
   } catch (error) {

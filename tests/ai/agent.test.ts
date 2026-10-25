@@ -2,7 +2,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { MAX_SCENE_INPUT_CHARS, runSceneAgent } from "../../src/ai/agent";
 import { createEmptyScene } from "../../src/scene/types";
 import type { SceneAgentReply, SceneAgentRequest } from "../../src/ai/agent";
-import { buildSystemPrompt } from "../../src/ai/prompt";
+import { buildSystemPrompt, EXAMPLES_HEADING } from "../../src/ai/prompt";
 import { BuildCache } from "../../src/ai/cache";
 import { checkGeometry } from "../../src/ai/geometry";
 
@@ -293,8 +293,10 @@ describe("prompt caching layout", () => {
     expect(second).toHaveLength(1);
     expect(prompts.size).toBe(1);
     expect([...prompts][0]).toBe(buildSystemPrompt());
-    expect(first[0]?.userPrompt.startsWith("## Current scene\n")).toBe(true);
-    expect(second[0]?.userPrompt.startsWith("## Current scene\n")).toBe(true);
+    // Matching library examples come first (an empty scene always gets one), then the scene.
+    for (const sent of [first[0], second[0]]) expect(sent?.userPrompt.startsWith(EXAMPLES_HEADING)).toBe(true);
+    expect(first[0]?.userPrompt).toContain("\n\n## Current scene\n");
+    expect(second[0]?.userPrompt).toContain('Request: "a cozy reading corner"');
     expect(second[0]?.userPrompt).toContain('- room "Room"');
     expect(second[0]?.userPrompt).toContain('Selected object ids (resolve this/these using this selection): ["room"]');
     expect(second[0]?.userPrompt).toContain("before paint the room");

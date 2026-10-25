@@ -5,7 +5,7 @@ import { TEXTURE_AGENT_RULES } from "../materials/catalog";
 import { componentSchemaText, sceneText, type SceneContextOptions } from "./sceneContext";
 import { BUILD_TOOL_SPEC, DESIGN_RULES } from "./designRules";
 import { BuildCache } from "./cache";
-import { MODELING_RULES, fewShotText } from "./examples";
+import { MODELING_RULES, examplesText, fewShotText, selectExamples } from "./examples";
 
 /** The script syntax and runtime API available to the scene agent. */
 export const SCRIPT_AGENT_SPEC = `Scripts: one sentence per line, indented under events; optional colons. Store in Script.source. "me"/"I"/"my" mean the owner; "it" means the touched/clicked object.
@@ -66,6 +66,11 @@ export function requestHistory(previousRequests: readonly string[] = []): string
   return history;
 }
 
+/** Heading for the library examples chosen for one request (see selectExamples). */
+export const EXAMPLES_HEADING = "## Examples close to this request (illustrations of the rules, not templates to copy)";
+/** Scene snapshot room kept before any library example is added to a build message. */
+const MIN_SCENE_CHARS = 4_000;
+
 /** Added to the request when the scene has no entities, so a first build is a whole composition. */
 export const EMPTY_SCENE_NOTE = "The scene is empty, so build a full composition, not loose objects on the grid: a floor or ground surface, any walls the request implies, lights that match the mood, and a settings op for background and ambientLightIntensity to match.";
 
@@ -88,7 +93,12 @@ export function buildSceneUserMessage(scene: Scene, request: string, options: Sc
   const history = requestHistory(options.previousRequests);
   const focusIds = options.focusIds ?? [];
   const tail = `${history.length ? `\n\nEarlier successful requests (context only; current request overrides these):\n${JSON.stringify(history)}` : ""}${focusIds.length ? `\n\nSelected object ids (resolve this/these using this selection): ${selectionText(focusIds)}` : ""}${scene.entities.length ? "" : `\n\n${EMPTY_SCENE_NOTE}`}\n\n## Request\n${request}`;
-  const head = "## Current scene\n";
+  // Relevant worked examples go first: a repeated example extends the provider's cached prefix. Each is dropped
+  // (least relevant first) when keeping it would leave the scene snapshot less than MIN_SCENE_CHARS.
+  const examples = selectExamples(request, scene.entities.length === 0);
+  const room = (options.maxChars ?? Infinity) - tail.length - 70;
+  while (examples.length && room - examplesText(examples, EXAMPLES_HEADING).length < MIN_SCENE_CHARS) examples.pop();
+  const head = `${examples.length ? `${examplesText(examples, EXAMPLES_HEADING)}\n\n` : ""}## Current scene\n`;
   const sceneBudget = Math.max(0, Math.min(23_000, (options.maxChars ?? Infinity) - head.length - tail.length - 50));
   return `${head}${sceneText(scene, { maxChars: sceneBudget, query: request, focusIds })}${tail}`;
 }
