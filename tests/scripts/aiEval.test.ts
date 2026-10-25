@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { frameThreeQuarter, summaryTable, usageTotals, type EvalRow } from "../../scripts/ai-eval/report";
-import { containedAndTethered } from "../../scripts/ai-eval/checks";
+import { containedAndTethered, mugOnDeskThenRed } from "../../scripts/ai-eval/checks";
 import type { CallCharge } from "../../src/ai/credits";
 import { applyOps } from "../../src/scene/applyOps";
 import { createEmptyScene, type Scene, type SceneOp, type Vec3 } from "../../src/scene/types";
@@ -80,5 +80,34 @@ describe("ai:eval containment check", () => {
     const after = build([...house(3, 0), { op: "update", id: "corner", components: { Transform: { position: [10, 0, 0] } } }], before);
     expect(containedAndTethered(before, after)).toEqual(["Corner is not inside House.", "Balloon is not tethered to the roof of House."]);
     expect(containedAndTethered(before, before)).toEqual(["No new building was created."]);
+  });
+});
+
+describe("ai:eval follow-up reference check", () => {
+  const part = (id: string, name: string, parent: string | null, position: Vec3, scale: Vec3, color = "#dddddd"): SceneOp =>
+    ({ op: "create", id, name, parent, components: { Transform: { position, scale }, Mesh: {}, Material: { color } } });
+  /** A desk group (top at y 0.75, 1.4×0.7 m) with a monitor, a chair, and a 0.1 m mug whose bottom is at mugY. */
+  const office = (mugY: number) => {
+    const result = applyOps(createEmptyScene(), [
+      { op: "create", id: "desk", name: "Desk", parent: null, components: { Transform: { position: [0, 0, -1] } } },
+      part("desk_top", "Desk Top", "desk", [0, 0.73, 0], [1.4, 0.04, 0.7]),
+      part("desk_leg", "Desk Leg", "desk", [0.6, 0.355, 0], [0.05, 0.71, 0.05]),
+      part("monitor", "Monitor", "desk", [-0.3, 1, -0.2], [0.6, 0.4, 0.05], "#111111"),
+      part("chair", "Office Chair", null, [0, 0.45, 0.3], [0.5, 0.9, 0.5], "#333333"),
+      { op: "create", id: "mug", name: "Coffee Mug", parent: "desk", components: { Transform: { position: [0.2, mugY, -0.1] } } },
+      part("mug_body", "Mug Body", "mug", [0, 0.05, 0], [0.08, 0.1, 0.08], "#f4f1ea")
+    ]);
+    expect(result.errors).toEqual([]);
+    return result.scene;
+  };
+  const recolor = (scene: Scene, id: string, color: string) => applyOps(scene, [{ op: "update", id, components: { Material: { color } } }]).scene;
+
+  it("passes when the mug stands on the desk and only the mug turned red", () => {
+    expect(mugOnDeskThenRed(office(0.75), recolor(office(0.75), "mug_body", "#c0392b"))).toEqual([]);
+  });
+
+  it("reports a floating mug, a mug that stayed white, and other objects recolored", () => {
+    expect(mugOnDeskThenRed(office(0.9), recolor(office(0.9), "chair", "#c0392b"))).toEqual([
+      "Coffee Mug bottom is at y 0.90, not on the desk top at y 0.75.", "Coffee Mug did not turn red.", "Also recolored: Office Chair."]);
   });
 });

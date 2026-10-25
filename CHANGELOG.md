@@ -4,6 +4,15 @@ Record meaningful project changes during the event, newest first.
 
 ## Event build log
 
+### 2026-10-25 — Eval: a follow-up reference case
+
+- Added: `npm run ai:eval` case 8, "A home office with a desk, a computer monitor and an office chair" → "Put a coffee mug on the desk next to the monitor" → "Make it red". Its check (`mugOnDeskThenRed`, `scripts/ai-eval/checks.ts`) passes when the mug stands on the desk top (within 5 cm), sits over it, turned red, and nothing else changed color. It takes the largest "desk", and a "mug" before any other "cup".
+- Added: eval arguments can be a case number (`npm run ai:eval -- 7 8` runs those built-in cases with their checks) or steps joined by ` >> ` (`"a desk >> make it oak"`).
+- Eval run 2026-10-25T15-16 (cases 7 and 8, Sol on, critique off; $0.098 in 6.8 min):
+  - Case 8: in step 2 the reference step read "the desk" and "the monitor" as `office_desk` and `office_monitor`, expanded only the desk, and gave measured facts (desk top at y 0.78, the monitor's and accessories' extents). The mug was built on the desk beside the monitor. In step 3 it read "it" as `desk_coffee_mug`, and the build recolored only the mug's cup, base and handle. The run reported FAIL because the first version of the check matched a "Pencil Cup" from step 1; with the corrected check, replaying the saved ops passes.
+  - Case 7: the reference step resolved "this" as the five reading-corner objects, and the corner was moved inside the house. The balloons are still not tied to the roof (the same failure as earlier runs).
+- Validation: `tests/scripts/aiEval.test.ts` covers the check passing and failing (floating mug, mug not red, chair recolored); all 467 tests pass.
+
 ### 2026-10-25 — Follow-up builds see a scene outline and a resolved request
 
 - Changed: A request on a non-empty scene no longer sends every entity in full. The build message holds an outline (`sceneText` with `expand`, `src/ai/sceneContext.ts`):

@@ -48,3 +48,38 @@ export function containedAndTethered(before: Scene, after: Scene): string[] {
   for (const name of loose) failures.push(`${name} is not tethered to the roof of ${building.name}.`);
   return failures;
 }
+
+const isRed = (hex: unknown) => {
+  const color = typeof hex === "string" && /^#[0-9a-f]{6}$/i.test(hex) ? new THREE.Color(hex) : null;
+  return !!color && color.r >= 0.45 && color.g <= color.r * 0.6 && color.b <= color.r * 0.6;
+};
+
+/**
+ * "Put a mug on the desk next to the monitor", then "make it red": the mug stands on the desk top, and "it" was
+ * read as the mug, so the mug turned red and nothing else changed color.
+ */
+export function mugOnDeskThenRed(before: Scene, after: Scene): string[] {
+  const outermost = (scene: Scene, pattern: RegExp) => scene.entities.filter((entity) => pattern.test(entity.name)
+    && !scene.entities.some((other) => other !== entity && pattern.test(other.name) && descendantsOf(scene, other.id).has(entity.id)));
+  // The largest "desk" (not "Desk Accessories" inside it); a "mug" before any other "cup" (a pencil cup is not it).
+  const size = (entity: Entity) => subtreeBounds(after, [entity.id])?.getSize(new THREE.Vector3()).lengthSq() ?? 0;
+  const desk = outermost(after, /\bdesk\b/i).sort((a, b) => size(b) - size(a))[0];
+  const mug = outermost(after, /\bmugs?\b/i)[0] ?? outermost(after, /\bcups?\b/i)[0];
+  if (!desk) return ["No desk was found."];
+  if (!mug) return ["No mug was found."];
+  const failures: string[] = [];
+  const deskMeshes = [...descendantsOf(after, desk.id)].filter((id) => !descendantsOf(after, mug.id).has(id)).map((id) => meshWorldBounds(after, id)).filter((box): box is THREE.Box3 => !!box);
+  const area = (box: THREE.Box3) => (box.max.x - box.min.x) * (box.max.z - box.min.z);
+  const top = deskMeshes.sort((a, b) => area(b) - area(a))[0];
+  const mugBox = subtreeBounds(after, [mug.id]);
+  if (!top || !mugBox) return ["The desk or the mug has no parts."];
+  const center = mugBox.getCenter(new THREE.Vector3());
+  if (Math.abs(mugBox.min.y - top.max.y) > TOLERANCE) failures.push(`${mug.name} bottom is at y ${mugBox.min.y.toFixed(2)}, not on the desk top at y ${top.max.y.toFixed(2)}.`);
+  if (center.x < top.min.x || center.x > top.max.x || center.z < top.min.z || center.z > top.max.z) failures.push(`${mug.name} is not over the desk top.`);
+  const mugIds = descendantsOf(after, mug.id);
+  const colorOf = (scene: Scene, id: string) => scene.entities.find((entity) => entity.id === id)?.components.Material?.color;
+  if (![...mugIds].some((id) => isRed(colorOf(after, id)) && !isRed(colorOf(before, id)))) failures.push(`${mug.name} did not turn red.`);
+  const recolored = after.entities.filter((entity) => !mugIds.has(entity.id) && before.entities.some((old) => old.id === entity.id) && colorOf(before, entity.id) !== colorOf(after, entity.id));
+  if (recolored.length) failures.push(`Also recolored: ${recolored.slice(0, 4).map((entity) => entity.name).join(", ")}.`);
+  return failures;
+}

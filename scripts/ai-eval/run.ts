@@ -4,7 +4,8 @@
 // A case may take several steps on the same scene and end with a pass check (see checks.ts).
 // With AI_CRITIQUE_ENABLED=true, builds are also critiqued from the editor's own offscreen renders, and the summary
 // shows each prompt's critique score.
-// Pass prompts as arguments to run those instead: npm run ai:eval -- "a blue bicycle"
+// Pass prompts as arguments to run those instead: npm run ai:eval -- "a blue bicycle" "a desk >> make it oak" 8
+// ("a >> b" runs requests as steps on one scene; a number runs that built-in case with its check).
 import { spawn } from "node:child_process";
 import { mkdir, writeFile } from "node:fs/promises";
 import path from "node:path";
@@ -22,7 +23,7 @@ import { AI_RESPONSE_JSON_SCHEMA, buildSystemPrompt } from "../../src/ai/prompt"
 import { EXAMPLE_LIBRARY, FEW_SHOT_EXAMPLES, selectExamples } from "../../src/ai/examples";
 import { serializeScene } from "../../src/scene/serialize";
 import { createEmptyScene, type Scene } from "../../src/scene/types";
-import { containedAndTethered } from "./checks";
+import { containedAndTethered, mugOnDeskThenRed } from "./checks";
 import { summaryTable, usageTotals, type EvalRow } from "./report";
 
 interface EvalCase {
@@ -42,7 +43,9 @@ const CASES: EvalCase[] = [
   { steps: ["A coffee shop counter with a sign, mugs and a pastry case"] },
   { steps: ["A playground with a slide, swings and a dome climber"] },
   // Containment: the corner must end up inside the house, and the balloons must be tethered to its roof.
-  { steps: ["Build a cozy reading corner", "Create the house from Up and put this inside"], check: containedAndTethered }
+  { steps: ["Build a cozy reading corner", "Create the house from Up and put this inside"], check: containedAndTethered },
+  // Follow-up references: the mug goes on a grouped desk next to its monitor, then "it" must mean the mug.
+  { steps: ["A home office with a desk, a computer monitor and an office chair", "Put a coffee mug on the desk next to the monitor", "Make it red"], check: mugOnDeskThenRed }
 ];
 const WIDTH = 1280;
 const HEIGHT = 800;
@@ -55,7 +58,8 @@ if (!isAiConfigured(env)) {
 }
 // npm on Windows can hand arguments through cmd.exe with ^ escapes left in.
 const args = process.argv.slice(2).map((arg) => arg.replaceAll("^", "")).filter(Boolean);
-const cases: EvalCase[] = args.length ? args.map((prompt) => ({ steps: [prompt] })) : CASES;
+// A number picks a built-in case (1-based, with its check); "first >> second" runs the requests as steps of one case.
+const cases: EvalCase[] = args.length ? args.map((arg) => /^\d+$/.test(arg) && CASES[Number(arg) - 1] ? CASES[Number(arg) - 1]! : { steps: arg.split(" >> ").map((step) => step.trim()).filter(Boolean) }) : CASES;
 for (const prompt of cases.flatMap((item) => item.steps)) {
   const copied = [...FEW_SHOT_EXAMPLES, ...EXAMPLE_LIBRARY].find((example) => example.request.toLowerCase() === prompt.toLowerCase());
   if (copied) console.warn(`Note: "${prompt}" is one of the examples, so it measures copying rather than generalizing.`);
