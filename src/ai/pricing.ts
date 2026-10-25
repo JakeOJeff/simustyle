@@ -16,7 +16,10 @@ export const MODEL_PRICES: Record<string, ModelPrice> = {
   "gpt-6-luna": { input: 0.10, cachedInput: 0.01, output: 0.50 },
   // Cached input $0.20/M per third-party listings (eesel.ai, devtk.ai, Oct 2026), i.e. 10% of input;
   // not confirmed on OpenAI's own pricing page — verify there. Long-context (>=272K input) rates are higher.
-  "gpt-6-sol": { input: 2.00, cachedInput: 0.20, output: 10.00 }
+  "gpt-6-sol": { input: 2.00, cachedInput: 0.20, output: 10.00 },
+  // Image model for reference images (task scene_image); output is image tokens. Per developersdigest.tech's read of
+  // OpenAI's pricing page (Oct 18, 2026) — verify there.
+  "gpt-image-2.5-sunburst": { input: 8.00, cachedInput: 2.00, output: 30.00 }
 };
 
 /** Unknown models are priced like the most expensive one so spending is never under-counted. */
@@ -57,10 +60,16 @@ export function worstCaseUsd(task: AiTask): number {
   return AI_TASK_LIMITS[task].worstCaseCredits * CREDIT_USD;
 }
 
-/** Reads an OpenAI-style `usage` block; null when the provider did not report one. */
+/**
+ * Reads an OpenAI-style `usage` block (chat completions' prompt/completion tokens, or the images API's
+ * input/output tokens); null when the provider did not report one.
+ */
 export function readUsage(response: unknown): TokenUsage | null {
   if (!isRecord(response) || !isRecord(response.usage)) return null;
-  const { prompt_tokens: prompt, completion_tokens: completion, prompt_tokens_details: details } = response.usage;
+  const usage = response.usage;
+  const prompt = usage.prompt_tokens ?? usage.input_tokens;
+  const completion = usage.completion_tokens ?? usage.output_tokens;
+  const details = usage.prompt_tokens_details ?? usage.input_tokens_details;
   if (!isCount(prompt) || !isCount(completion)) return null;
   const cached = isRecord(details) && isCount(details.cached_tokens) ? details.cached_tokens : 0;
   return { promptTokens: prompt, cachedTokens: cached, completionTokens: completion };

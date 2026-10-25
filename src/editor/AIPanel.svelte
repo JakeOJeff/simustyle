@@ -75,7 +75,7 @@
           <p class="summary" title={message.summary ?? message.content}>{message.summary ?? message.content}</p>
           {#if message.preflight}
             <details class="preflight-details">
-              <summary>Checked before apply · {message.preflight.frames} script ticks{#if message.preflight.critique?.score !== undefined} · visual critique {message.preflight.critique.score}/10{/if}</summary>
+              <summary>Checked before apply · {message.preflight.frames} script ticks{#if message.preflight.critique?.score !== undefined} · visual inspection {message.preflight.critique.score}/10{/if}</summary>
               <div class="preflight-output">
                 {#if message.preflight.context}
                   {@const context = message.preflight.context}
@@ -84,10 +84,21 @@
                   {#if context.resolvedRequest}<code>Read as: {context.resolvedRequest}</code>{/if}
                   {#each context.facts as fact}<code>{fact}</code>{/each}
                 {/if}
+                {#if message.preflight.reference}
+                  {@const reference = message.preflight.reference}
+                  <strong>Reference image{reference.complexity !== undefined ? ` · complexity ${reference.complexity}/10` : ""}</strong>
+                  <span>{reference.outcome === "used" ? `Drawn and modeled from${reference.subject ? `: ${reference.subject}` : ""}.` : reference.note ?? (reference.outcome === "failed" ? "The reference step failed." : "Not needed.")}{reference.outcome === "used" && reference.note ? ` ${reference.note}` : ""}</span>
+                  {#if reference.image}<img class="reference-image" src={reference.image} alt={reference.subject ?? "Reference concept"} />{/if}
+                {/if}
                 {#if message.preflight.critique}
                   {@const critique = message.preflight.critique}
-                  <strong>Visual critique{critique.score !== undefined ? ` · ${critique.score}/10` : ""}</strong>
-                  <span>{critique.outcome === "passed" ? "Passed; no fix pass needed." : critique.outcome === "fixed" ? "One fix pass applied for these issues." : critique.outcome === "kept" ? `The fix pass was not applied, so this is the critiqued build. ${critique.note ?? ""}` : `The critique could not run: ${critique.note ?? "unknown error"}`}</span>
+                  <strong>Visual inspection{critique.score !== undefined ? ` · lowest ${critique.score}/10` : ""}</strong>
+                  <span>{critique.outcome === "passed" ? "The whole scene and every chunk passed from every side; no fixes needed." : critique.outcome === "fixed" ? `Fixed and checked again over ${critique.rounds?.length ?? 1} round${critique.rounds?.length === 1 ? "" : "s"}.` : critique.outcome === "kept" ? `No fix could be applied, so this is the inspected build. ${critique.note ?? ""}` : `The inspection could not run: ${critique.note ?? "unknown error"}`}</span>
+                  {#each critique.rounds ?? [] as round}
+                    <code>Round {round.round}: {round.checks.map((check) => `${check.target} ${check.score !== undefined ? `${check.score}/10` : "not checked"}`).join(" · ")}{round.fixed.length ? ` → fixed ${round.fixed.join(", ")}` : ""}</code>
+                    {#each round.notes as note}<code>{note}</code>{/each}
+                  {/each}
+                  {#if critique.issues.length}<span>Still open:</span>{/if}
                   {#each critique.issues as issue}<code>{issue.entityId ? `[${issue.entityId}] ` : ""}{issue.problem} Fix: {issue.fix}</code>{/each}
                 {/if}
                 {#if message.preflight.quality}
@@ -217,7 +228,7 @@
   .operation-details{grid-column:2;color:#92929c;font-size:9px}
   .preflight-details{grid-column:2;color:#92929c;font-size:9px}
   .preflight-details>summary{cursor:pointer;list-style:none;min-height:19px;color:#aaa3d8}.preflight-details>summary::-webkit-details-marker{display:none}.preflight-details>summary:before{content:'›';display:inline-block;margin-right:6px;color:#8b7cf6;font-size:14px}.preflight-details[open]>summary:before{transform:rotate(90deg)}
-  .preflight-output{display:grid;gap:4px;margin:2px 0 5px 5px;padding-left:8px;border-left:1px solid #ffffff14}.preflight-output strong{margin-top:3px;color:#c8c8ce;font-size:8px}.preflight-output code{overflow-wrap:anywhere;color:#bfbfc6;font:8px/1.4 'DM Mono',monospace}.preflight-output span{color:#767682;font-size:8px}
+  .preflight-output{display:grid;gap:4px;margin:2px 0 5px 5px;padding-left:8px;border-left:1px solid #ffffff14}.preflight-output strong{margin-top:3px;color:#c8c8ce;font-size:8px}.preflight-output code{overflow-wrap:anywhere;color:#bfbfc6;font:8px/1.4 'DM Mono',monospace}.preflight-output span{color:#767682;font-size:8px}.reference-image{width:100%;max-width:220px;border-radius:4px;border:1px solid #ffffff14}
   .operation-details>summary,.operation>summary{cursor:pointer;list-style:none;display:flex;align-items:center;gap:7px;min-height:19px}
   .operation-details>summary::-webkit-details-marker,.operation>summary::-webkit-details-marker{display:none}
   .operation-details>summary:before,.operation>summary:before{content:'›';display:inline-block;color:#8b7cf6;font-size:14px;transition:transform .12s}

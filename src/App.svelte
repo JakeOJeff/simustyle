@@ -4,10 +4,9 @@
   import Hierarchy from "./editor/Hierarchy.svelte";
   import Viewport from "./editor/Viewport.svelte";
   import AIPanel, { type AIPanelMessage } from "./editor/AIPanel.svelte";
-  import { fetchAiStatus, onCreditsChange, requestCritique, requestReferences, requestSceneEdit, type CreditStatus } from "./ai/client";
-  import { sceneText } from "./ai/sceneContext";
+  import { fetchAiStatus, onCreditsChange, requestConcept, requestImage, requestReferences, requestSceneEdit, requestVision, type CreditStatus, type VisionChatMessage } from "./ai/client";
   import { AI_TASK_LIMITS } from "./ai/tasks";
-  import type { SceneCritique } from "./ai/critique";
+  import type { ViewName } from "./ai/framing";
   import SupportDialog from "./editor/SupportDialog.svelte";
   import { AI_RESPONSE_JSON_SCHEMA, buildSystemPrompt } from "./ai/prompt";
   import { runSceneAgent, type LiveBuild, type SceneAgentReply } from "./ai/agent";
@@ -112,6 +111,8 @@
   let solReviewEnabled = false;
   /** The server accepts scene_critique (AI_CRITIQUE_ENABLED). */
   let critiqueEnabled = false;
+  /** The server draws reference images for complex requests (AI_REFERENCE_IMAGE_ENABLED). */
+  let referenceImageEnabled = false;
   let supportOpen = $state(false);
   let supportOutOfCredits = $state(false);
   let outOfCreditsNoticeShown = false;
@@ -394,7 +395,7 @@
       outOfCreditsNoticeShown = true;
       openSupport(true);
     });
-    void fetchAiStatus().then(({ credits, solReview, critique }) => { if (credits) aiCredits = credits; solReviewEnabled = solReview; critiqueEnabled = critique; });
+    void fetchAiStatus().then(({ credits, solReview, critique, referenceImage }) => { if (credits) aiCredits = credits; solReviewEnabled = solReview; critiqueEnabled = critique; referenceImageEnabled = referenceImage; });
     restorePanelWorkspace();
     recentScenes = loadRecentScenes();
     if (isDesktopRuntime()) {
@@ -511,14 +512,32 @@
     else if (build.plan) aiProgress = `Planning: …${build.plan.slice(-90)}`;
   }
 
+  /** Offscreen renders of a build or one chunk of it for the visual inspection; the live viewport is untouched. */
+  async function renderViews(built: Scene, ids: readonly string[] | null, views: readonly ViewName[]) {
+    const snapshot = await import("./ai/snapshot");
+    return snapshot.renderViews(built, ids, views);
+  }
+
   /**
-   * Renders a finished build offscreen (the live viewport is untouched) and asks the vision model to score it.
-   * Skipped (null) unless the visitor holds the worst case of the critique plus its fix pass.
+   * A vision call: a critique is skipped (null) unless the visitor holds its worst case plus a fix pass; reading a
+   * reference image, unless they hold it plus the draft.
    */
-  async function critiqueBuild({ userPrompt, scene: built }: { userPrompt: string; scene: Scene }): Promise<SceneCritique | null> {
-    if (aiCredits && aiCredits.remaining < AI_TASK_LIMITS.scene_critique.worstCaseCredits + AI_TASK_LIMITS.scene_draft.worstCaseCredits) return null;
-    const { renderCritiqueImages } = await import("./ai/snapshot");
-    return requestCritique(userPrompt, sceneText(built), await renderCritiqueImages(built));
+  async function see({ task, messages }: { task: "scene_critique" | "scene_reference"; messages: VisionChatMessage[] }): Promise<unknown> {
+    const after = task === "scene_critique" ? AI_TASK_LIMITS.scene_fix.worstCaseCredits : AI_TASK_LIMITS.scene_draft.worstCaseCredits;
+    if (aiCredits && aiCredits.remaining < AI_TASK_LIMITS[task].worstCaseCredits + after) return null;
+    return requestVision(task, messages);
+  }
+
+  /** The concept step; skipped (null) unless the visitor could also afford the image, reading it and the draft. */
+  async function planConcept({ systemPrompt, userPrompt }: { systemPrompt: string; userPrompt: string }): Promise<unknown> {
+    const needed = (["scene_concept", "scene_image", "scene_reference", "scene_draft"] as const).reduce((sum, task) => sum + AI_TASK_LIMITS[task].worstCaseCredits, 0);
+    if (aiCredits && aiCredits.remaining < needed) return null;
+    return requestConcept(systemPrompt, userPrompt);
+  }
+
+  async function generateImage(prompt: string): Promise<string | null> {
+    if (aiCredits && aiCredits.remaining < AI_TASK_LIMITS.scene_image.worstCaseCredits + AI_TASK_LIMITS.scene_draft.worstCaseCredits) return null;
+    return requestImage(prompt);
   }
 
   /** The reference step for a follow-up (see references.ts). Skipped (null) when it would leave too few credits for the draft. */
@@ -551,7 +570,8 @@
         onLiveBuild: showLiveBuild,
         solReviewEnabled,
         resolveReferences,
-        ...(critiqueEnabled ? { critique: critiqueBuild } : {}),
+        ...(critiqueEnabled ? { renderViews, see } : {}),
+        ...(referenceImageEnabled ? { planConcept, generateImage, see } : {}),
         complete: ({ systemPrompt, userPrompt, correctionErrors, responseSchema, previousReply, task, onText }) =>
           requestSceneEdit(systemPrompt, userPrompt, correctionErrors, responseSchema, previousReply, task, onText)
       });

@@ -55,14 +55,14 @@ export function parseDetailItems(value: unknown): { items: DetailItem[]; errors:
 }
 
 /** The user message for one object's detail pass. */
-export function detailPrompt(request: string, plan: string, items: readonly DetailItem[], item: DetailItem): string {
+export function detailPrompt(request: string, plan: string, items: readonly DetailItem[], item: DetailItem, reference?: string): string {
   const others = items.filter((other) => other !== item).map((other) => `${other.name} (${other.size.join("×")} m)`).join(", ");
   return `## Detail pass
 The scene for this request was laid out; you now build ONE object of it in high detail.
 Request: ${request.slice(0, 2000)}
 Layout plan: ${plan.slice(0, 1500) || "(none)"}
 Other objects in the scene (built separately; match their style, do not build them): ${others || "none"}
-
+${reference ? `\n${reference}\nBuild only the parts of this concept that belong to the object below.\n` : ""}
 ## Build only this object
 id: ${item.id}
 name: ${item.name}

@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { critiqueEnabled, forwardChat, promptCacheKeyEnabled, resolveModel, solReviewEnabled, type ChatCredits, type ChatProxyEnv } from "../../src/ai/chatProxy";
+import { DEFAULT_IMAGE_MODEL, critiqueEnabled, forwardChat, promptCacheKeyEnabled, referenceImageEnabled, resolveModel, solReviewEnabled, type ChatCredits, type ChatProxyEnv } from "../../src/ai/chatProxy";
 import { CreditLedger, memoryCreditStorage } from "../../src/ai/credits";
 import type { AiTask } from "../../src/ai/tasks";
 
@@ -249,28 +249,92 @@ describe("visual critique requests", () => {
     expect(fetchMock).not.toHaveBeenCalled();
     expect((await forwardChat(critique([jpeg(1000), jpeg(1000)]), critiqueEnv)).status).toBe(200);
     expect(sent(0).model).toBe("gpt-6-sol");
-    expect(sent(0).max_completion_tokens).toBe(2_000);
+    expect(sent(0).max_completion_tokens).toBe(3_000);
     expect((sent(0).messages as { content: unknown }[])[1]!.content).toEqual([{ type: "text", text: "request and scene" },
       { type: "image_url", image_url: { url: jpeg(1000) } }, { type: "image_url", image_url: { url: jpeg(1000) } }]);
   });
 
-  it("allows at most two inline images of at most 300 KB, and images on no other task", async () => {
+  it("allows at most eight inline images of at most 400 KB, and images on no other task", async () => {
     const { fetchMock } = stubProvider();
-    expect((await forwardChat(critique([jpeg(1000), jpeg(1000), jpeg(1000)]), critiqueEnv)).status).toBe(413);
-    expect((await forwardChat(critique([jpeg(300 * 1024 + 3)]), critiqueEnv)).status).toBe(413);
-    expect((await forwardChat(critique([jpeg(300 * 1024)]), critiqueEnv)).status).toBe(200);
+    expect((await forwardChat(critique(Array.from({ length: 9 }, () => jpeg(1000))), critiqueEnv)).status).toBe(413);
+    expect((await forwardChat(critique([jpeg(400 * 1024 + 3)]), critiqueEnv)).status).toBe(413);
+    expect((await forwardChat(critique([jpeg(400 * 1024 - 1)]), critiqueEnv)).status).toBe(200);
+    // A reference image and seven views of a chunk fit one request.
+    expect((await forwardChat(critique(Array.from({ length: 8 }, () => jpeg(300 * 1024))), critiqueEnv)).status).toBe(200);
     expect((await forwardChat(critique([jpeg(1000)], "scene_draft"), critiqueEnv)).status).toBe(400);
     expect((await forwardChat(critique(["https://example.com/a.jpg"]), critiqueEnv)).status).toBe(400);
-    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(fetchMock).toHaveBeenCalledTimes(2);
   });
 
   it("counts only text toward the input cap, and charges the critique from usage", async () => {
     stubProvider(() => reply({ prompt_tokens: 4_000, completion_tokens: 500 }));
     expect((await forwardChat(critique([jpeg(200_000)], "scene_critique", "x".repeat(24_001)), critiqueEnv)).status).toBe(413);
-    const ledger = new CreditLedger(memoryCreditStorage(), { perUser: 30, monthlyBudgetUsd: 150, dailyMaxUsd: 15 });
+    const ledger = new CreditLedger(memoryCreditStorage(), { perUser: 40, monthlyBudgetUsd: 150, dailyMaxUsd: 15 });
     const result = await forwardChat(critique([jpeg(200_000), jpeg(200_000)]), critiqueEnv, meter(ledger));
     expect(result.status).toBe(200);
     // Sol: 4,000 × $2/M + 500 × $10/M = $0.013 → 8 credits.
-    expect(result.body?.credits?.remaining).toBe(22);
+    expect(result.body?.credits?.remaining).toBe(32);
+  });
+});
+
+describe("reference image requests", () => {
+  const imageEnv: ChatProxyEnv = { ...env, AI_REFERENCE_IMAGE_ENABLED: "true" };
+  const image = (usage?: unknown) => Response.json({ data: [{ b64_json: "SU1H" }], output_format: "jpeg", ...(usage ? { usage } : {}) });
+
+  it("routes the concept step to Sol, and the image and its reading only when reference images are on", () => {
+    expect(resolveModel("scene_concept", { ...env, AI_SOL_ENABLED: "true" })).toBe("gpt-6-sol");
+    expect(resolveModel("scene_concept", env)).toBe("gpt-6-luna");
+    expect(resolveModel("scene_image", env)).toBeUndefined();
+    expect(resolveModel("scene_reference", env)).toBeUndefined();
+    expect(resolveModel("scene_image", imageEnv)).toBe(DEFAULT_IMAGE_MODEL);
+    expect(resolveModel("scene_image", { ...imageEnv, AI_MODEL_IMAGE: "gpt-image-2" })).toBe("gpt-image-2");
+    expect(resolveModel("scene_reference", imageEnv)).toBe("gpt-6-sol");
+    expect(referenceImageEnabled({ ...imageEnv, AI_MODEL_SOL: "" })).toBe(false);
+  });
+
+  it("draws the image on the images endpoint, returns it as a data URL and charges it from usage", async () => {
+    const { fetchMock, sent } = stubProvider(() => image({ input_tokens: 100, output_tokens: 1_800 }));
+    expect((await forwardChat(encode({ task: "scene_image", prompt: "a red chair" }), env)).status).toBe(403);
+    expect((await forwardChat(encode({ task: "scene_image", prompt: " " }), imageEnv)).status).toBe(400);
+    expect(fetchMock).not.toHaveBeenCalled();
+    const ledger = new CreditLedger(memoryCreditStorage(), { perUser: 200, monthlyBudgetUsd: 150, dailyMaxUsd: 15 });
+    const result = await forwardChat(encode({ task: "scene_image", prompt: "a red chair" }), imageEnv, meter(ledger));
+    expect(String(fetchMock.mock.calls[0]?.[0])).toBe("https://api.openai.com/v1/images/generations");
+    expect(sent(0)).toMatchObject({ model: DEFAULT_IMAGE_MODEL, prompt: "a red chair", size: "1024x1024", quality: "high", output_format: "jpeg" });
+    expect(result.body).toMatchObject({ content: "data:image/jpeg;base64,SU1H" });
+    // gpt-image-2.5-sunburst: 100 × $8/M + 1,800 × $30/M = $0.0548 → 33 credits.
+    expect(result.body?.credits?.remaining).toBe(167);
+  });
+
+  it("retries without the JPEG options when the provider rejects them, and refunds a failed image", async () => {
+    let calls = 0;
+    const { sent } = stubProvider(() => ++calls === 1 ? Response.json({ error: { message: "Unknown parameter" } }, { status: 400 }) : image());
+    const result = await forwardChat(encode({ task: "scene_image", prompt: "a red chair" }), imageEnv);
+    expect(sent(1).output_format).toBeUndefined();
+    expect(result.body).toMatchObject({ content: "data:image/jpeg;base64,SU1H" });
+    stubProvider(() => Response.json({ error: { message: "Blocked by policy" } }, { status: 400 }));
+    const ledger = new CreditLedger(memoryCreditStorage(), { perUser: 200, monthlyBudgetUsd: 150, dailyMaxUsd: 15 });
+    const failed = await forwardChat(encode({ task: "scene_image", prompt: "a red chair" }), imageEnv, meter(ledger));
+    expect(failed.status).toBe(502);
+    expect(failed.body).toMatchObject({ error: "Blocked by policy", credits: { remaining: 200 } });
+  });
+
+  it("lets scene_reference carry the image only when reference images are on", async () => {
+    stubProvider();
+    const body = encode({ task: "scene_reference", responseFormat: { type: "json_object" }, messages: [{ role: "system", content: "spec" },
+      { role: "user", content: [{ type: "text", text: "a red chair" }, { type: "image_url", image_url: { url: "data:image/jpeg;base64,SU1H" } }] }] });
+    expect((await forwardChat(body, env)).status).toBe(403);
+    expect((await forwardChat(body, imageEnv)).status).toBe(200);
+  });
+});
+
+describe("dropped provider connections", () => {
+  it("tries a request whose connection failed once more, and reports a second failure", async () => {
+    let calls = 0;
+    vi.stubGlobal("fetch", vi.fn().mockImplementation(async () => { if (++calls === 1) throw new TypeError("fetch failed"); return reply(); }));
+    expect((await forwardChat(request("scene_draft"), env)).body).toEqual({ content: "{}" });
+    expect(calls).toBe(2);
+    vi.stubGlobal("fetch", vi.fn().mockRejectedValue(new TypeError("fetch failed")));
+    expect((await forwardChat(request("scene_draft"), env)).body).toEqual({ error: "Could not reach the configured AI provider." });
   });
 });

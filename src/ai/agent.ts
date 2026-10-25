@@ -14,7 +14,11 @@ import { missingRequested } from "./requested";
 import { AI_TASK_LIMITS } from "./tasks";
 import { parsePartialReply, type PartialReply } from "./partialJson";
 import { detailPrompt, fitDetailObject, parseDetailItems, placeLiveDetail, type DetailItem } from "./detailPass";
-import { CRITIQUE_PASS_SCORE, critiqueCorrections, type CritiqueIssue, type SceneCritique } from "./critique";
+import { CHUNK_VIEWS, CRITIQUE_PASS_SCORE, OVERVIEW_VIEWS, critiqueCorrections, critiqueMessages, parseCritique, type CritiqueIssue, type RenderedView, type SceneCritique } from "./critique";
+import { CONCEPT_SYSTEM_PROMPT, REFERENCE_MIN_COMPLEXITY, conceptUserMessage, parseConcept, parseReferenceSpec, referenceSpecMessages, referenceText, wantsReference } from "./concept";
+import { REBUILD_SCORE, strayParts, chunkDescription, fixRequestText, isolateScene, planChunks, rootsOf, subtreeIds } from "./inspection";
+import type { ViewName } from "./framing";
+import type { VisionChatMessage } from "./client";
 
 export interface SceneAgentReply {
   summary: string;
@@ -32,8 +36,11 @@ interface PreparedReply extends SceneAgentReply {
   requested: string[];
 }
 
-/** The scene tasks; the server routes "scene_review" to the strong model and gives "scene_detail" a large output budget. */
-export type SceneAgentTask = "scene_draft" | "scene_detail" | "scene_review";
+/**
+ * The scene tasks; the server routes "scene_review" and "scene_fix" to the strong model and gives "scene_detail" and
+ * "scene_fix" a large output budget.
+ */
+export type SceneAgentTask = "scene_draft" | "scene_detail" | "scene_review" | "scene_fix";
 
 export interface SceneAgentRequest {
   systemPrompt: string;
@@ -81,10 +88,22 @@ export interface SceneAgentDependencies {
   /** Shows each draft attempt while it is written, then once more with the finished draft. Reviews are not streamed. */
   onLiveBuild?(build: LiveBuild): void;
   /**
-   * Scores a finished build from renders of it (task scene_critique). Absent when visual critique is off; resolves
-   * to null when it can't run now (e.g. too few credits for the critique and its fix pass).
+   * Renders views of a scene as JPEG data URLs: the whole scene when ids is null, else the subtrees of ids alone
+   * (see snapshot.ts). With `see`, turns on the visual inspection of finished builds.
    */
-  critique?(request: { userPrompt: string; scene: Scene }): Promise<SceneCritique | null>;
+  renderViews?(scene: Scene, ids: readonly string[] | null, views: readonly ViewName[]): Promise<RenderedView[]>;
+  /**
+   * A vision call: scene_critique scores renders (see critique.ts), scene_reference reads a concept image into a
+   * build spec (see concept.ts). Returns the raw JSON reply, or null when it can't run now (e.g. too few credits).
+   */
+  see?(request: { task: "scene_critique" | "scene_reference"; messages: VisionChatMessage[] }): Promise<unknown>;
+  /**
+   * The concept step (task scene_concept, see concept.ts): sent its system and user messages, returns the raw JSON
+   * reply, or null when it can't run now. With generateImage and see, turns on reference images.
+   */
+  planConcept?(request: { systemPrompt: string; userPrompt: string }): Promise<unknown>;
+  /** Draws a reference image (task scene_image) and returns it as a data URL, or null when it can't run now. */
+  generateImage?(prompt: string): Promise<string | null>;
   /**
    * The reference step before a follow-up build (task scene_context, see references.ts): sent its system and user
    * messages, returns the raw JSON reply, or null when it cannot run now. Absent: the outline expands the selection
@@ -102,19 +121,55 @@ export interface SceneAgentPreflight {
   quality?: BuildQualityReport;
   /** Geometry checker lines still open on the returned build (soft; never block a build on their own). */
   geometry?: string[];
-  /** The visual critique of the build and what came of it (see runSceneAgent). */
+  /** The visual inspection of the build and what came of it (see inspectAndFix). */
   critique?: CritiqueReport;
   /** How a follow-up's scene context was chosen; absent for a build on an empty scene and for cache hits. */
   context?: ContextReport;
+  /** Whether a reference image was drawn for the request (see referenceStep); absent when the step is off. */
+  reference?: ReferenceReport;
+}
+
+/** One critique of the whole scene or one chunk in an inspection round. */
+export interface InspectionCheck {
+  /** "the whole scene" or 'chunk "Name"'. */
+  target: string;
+  /** Absent when the critique could not run. */
+  score?: number;
+  issues: CritiqueIssue[];
+  note?: string;
+}
+
+export interface InspectionRound {
+  round: number;
+  checks: InspectionCheck[];
+  /** Targets whose fix pass was applied after this round's checks. */
+  fixed: string[];
+  /** Fix passes that were rejected or undone, and why. */
+  notes: string[];
 }
 
 export interface CritiqueReport {
-  /** Score of the build before any fix pass; absent when the critique call failed. */
+  /** Lowest latest score across the whole scene and every chunk; absent when no critique ran. */
   score?: number;
+  /** Issues still open on targets below CRITIQUE_PASS_SCORE at the end. */
   issues: CritiqueIssue[];
-  /** passed: scored at least CRITIQUE_PASS_SCORE. fixed: one fix pass applied. kept: the fix pass failed, so the critiqued build stands. failed: the critique call failed. */
+  /** passed: everything scored at least CRITIQUE_PASS_SCORE at once. fixed: fix passes were applied and checked again. kept: no fix pass could be applied. failed: no critique could run. */
   outcome: "passed" | "fixed" | "kept" | "failed";
-  /** Why the fix pass or the critique failed. */
+  note?: string;
+  rounds?: InspectionRound[];
+}
+
+export interface ReferenceReport {
+  /** used: a concept image was drawn and given to the builders and critics. skipped: the request was simple, an edit, or the step could not run now. failed: a call failed. */
+  outcome: "used" | "skipped" | "failed";
+  /** The concept step's rating, 1-10. */
+  complexity?: number;
+  subject?: string;
+  imagePrompt?: string;
+  /** The concept image as a data URL. */
+  image?: string;
+  /** The build spec the vision model read from the image. */
+  spec?: string;
   note?: string;
 }
 
@@ -160,6 +215,10 @@ const UNUSABLE_REPLY = (truncated: boolean) => truncated
 /** The model answered but the reply couldn't be used (see UnusableReplyError in client.ts); worth one more try. */
 const unusableReply = (error: unknown): boolean | null =>
   error instanceof Error && error.name === "UnusableReplyError" ? (error as Error & { truncated?: boolean }).truncated === true : null;
+/** Correction for an inspection fix pass whose reply was cut off or wasn't JSON. */
+const UNUSABLE_FIX = (truncated: boolean) => truncated
+  ? `Your previous reply was cut off at the ${AI_TASK_LIMITS.scene_fix.maxCompletionTokens}-token output limit. Return only the ops that fix the listed problems: update existing parts in place, and use assemble or repeat for new repeated parts; keep the plan under 300 characters and leave out default-valued fields.`
+  : "Your previous reply was not valid JSON. Return only the JSON object in the required format.";
 const TOO_LARGE = "The request or scene instructions are too large. Split the request into smaller edits or select a smaller assembly.";
 
 /** Accepts plan as optional (dropped when applying) so a reply missing it never costs a retry. */
@@ -313,7 +372,7 @@ const REVIEW_INSTRUCTIONS = "You are now doing a separate second-pass review. In
  * (truncated only if they cannot fit), then as much of the resulting scene as remains. Null when even the
  * fixed parts do not fit.
  */
-function reviewPrompt(userPrompt: string, draft: PreparedReply, candidate: Scene, preflight: SceneAgentPreflight, focusIds: readonly string[], geometry: readonly string[], maxChars: number, expand?: readonly string[]): string | null {
+function reviewPrompt(userPrompt: string, draft: PreparedReply, candidate: Scene, preflight: SceneAgentPreflight, focusIds: readonly string[], geometry: readonly string[], maxChars: number, expand?: readonly string[], reference?: string): string | null {
   const sampled = (lines: readonly string[], count: number, width: number, empty: string) => lines.length ? `${lines.slice(0, count).map((line) => `- ${line.slice(0, width)}`).join("\n")}${lines.length > count ? `\n- ${lines.length - count} further lines omitted from review context; all are checked locally.` : ""}` : empty;
   const baselineSet = new Set(preflight.baselineIssues);
   const reviewIssues = [...preflight.issues.filter((issue) => !baselineSet.has(issue)), ...preflight.issues.filter((issue) => baselineSet.has(issue))];
@@ -322,7 +381,7 @@ function reviewPrompt(userPrompt: string, draft: PreparedReply, candidate: Scene
   const baselineOutput = sampled(preflight.baselineIssues, 4, 180, "- No baseline runtime script errors.");
   const geometryOutput = sampled(geometry, 10, 240, "- No geometry problems found.");
   const compactQuality = preflight.quality ? { ...preflight.quality, checks: undefined, warnings: preflight.quality.warnings.slice(0, 10).map((warning) => warning.slice(0, 180)), totalWarnings: preflight.quality.warnings.length } : undefined;
-  const head = `${REVIEW_INSTRUCTIONS}\n\nPLAYER REQUEST:\n${userPrompt}\n\nFIRST BUILD SUMMARY:\n${draft.summary}\n\nFIRST BUILD PLAN:\n${draft.plan || "(none given)"}\n\nREQUESTED OBJECTS LISTED BY THE FIRST BUILD (re-check against the request):\n${draft.requested.length ? draft.requested.join("; ") : "(none listed)"}\n\nFIRST BUILD OPERATIONS:\n`;
+  const head = `${REVIEW_INSTRUCTIONS}\n\nPLAYER REQUEST:\n${userPrompt}${reference ? `\n\n${reference}` : ""}\n\nFIRST BUILD SUMMARY:\n${draft.summary}\n\nFIRST BUILD PLAN:\n${draft.plan || "(none given)"}\n\nREQUESTED OBJECTS LISTED BY THE FIRST BUILD (re-check against the request):\n${draft.requested.length ? draft.requested.join("; ") : "(none listed)"}\n\nFIRST BUILD OPERATIONS:\n`;
   const middle = "\n\nFIRST BUILD RESULTING SCENE:\n";
   const tail = `\n\nISOLATED PLAY-START CONSOLE OUTPUT (${preflight.frames} script ticks of 0.1 seconds; no Rapier physics):\n${consoleOutput}\n\nRUNTIME ISSUES IN THE FIRST BUILD:\n${issueOutput}\n\nRUNTIME ISSUES ALREADY PRESENT BEFORE THIS REQUEST:\n${baselineOutput}\n\nGEOMETRY CHECKS (exact; fix each unless the request intends it):\n${geometryOutput}\n\nDESIGN AND ORGANIZATION CHECKS:\n${JSON.stringify(compactQuality)}\n\nCompare the resulting scene with what the player explicitly asked for. Preserve requested details, correct mismatches, geometry problems or newly introduced errors found in the Console check. Keep decorative details that support the request (props, clutter, small objects). Remove only things that contradict the request or that the player clearly didn't want. If the first build is sparse, add detail instead of removing it. Do not treat baseline issues as caused by this edit. If the first build already matches, return its operations unchanged. Your summary must briefly say what you checked and whether you changed anything. Do not claim visual review or physics checks. Review silhouette and required parts, requested style/colors, proportions, material choices, lighting, camera, repeated counts, and meaningful folders. Design warnings use conservative bounds and may flag intentional contacts; do not remove requested detail merely to reduce warnings. The second-pass operations must apply to the ORIGINAL scene, not the first build result. Return the complete replacement operation list.`;
   const room = maxChars - head.length - middle.length - tail.length;
@@ -343,30 +402,89 @@ function compileIssueCheck(scene: Scene): (candidate: Scene) => string[] {
   return (candidate) => validateScripts(candidate).map((issue) => scriptErrorText(candidate, issue)).filter((issue) => !baseline.has(issue));
 }
 
-/** Builds that create fewer entities than this skip the visual critique. */
-const MIN_CRITIQUE_CREATES = 3;
+/** Builds whose touched objects hold fewer mesh parts than this skip the visual inspection. */
+const MIN_INSPECTED_PARTS = 3;
+/** Inspection rounds: each critiques what is due, then fixes what failed; the last round only checks. */
+export const MAX_INSPECTION_ROUNDS = 4;
+/** Critiques run this many at a time; fix passes run one after another, each on the scene the earlier ones left. */
+const INSPECTION_CONCURRENCY = 3;
 
 /**
  * Draft (cheap model, ≤ 2 corrections), validate, measure design and geometry, inspect isolated scripts, then
  * review only when it can matter: the strong model when enabled and the build is large or needed fixing, the
- * cheap model when checks found problems, nothing when the draft is clean. When visual critique is on, a build
- * that created 3+ entities is then rendered and scored, and one below CRITIQUE_PASS_SCORE gets one fix pass
- * (see critiqueAndFix). Commits one validated batch.
+ * cheap model when checks found problems, nothing when the draft is clean. A complex request first gets a
+ * reference image (see referenceStep). When visual inspection is on, the finished build is then rendered whole and
+ * chunk by chunk from every side, and fixed until it passes (see inspectAndFix). Commits one validated batch.
  */
 export async function runSceneAgent(scene: Scene, userPrompt: string, dependencies: SceneAgentDependencies): Promise<SceneAgentResult> {
   const context: BuildContext = {};
-  const withContext = (result: SceneAgentResult): SceneAgentResult => context.report && result.preflight ? { ...result, preflight: { ...result.preflight, context: context.report } } : result;
+  const withContext = (result: SceneAgentResult): SceneAgentResult => result.preflight && (context.report || context.reference)
+    ? { ...result, preflight: { ...result.preflight, ...(context.report ? { context: context.report } : {}), ...(context.reference ? { reference: context.reference } : {}) } } : result;
   const built = await buildScene(scene, userPrompt, dependencies, context);
-  const created = built.ops.filter((op) => op.op === "create").length;
-  if (!dependencies.critique || !built.ok || !built.scene || built.cacheHit || created < MIN_CRITIQUE_CREATES) return withContext(built);
-  return withContext(await critiqueAndFix(scene, userPrompt, built, dependencies, context));
+  if (!dependencies.renderViews || !dependencies.see || !built.ok || !built.scene || built.cacheHit) return withContext(built);
+  const roots = rootsOf(built.scene, touchedIds(built.ops));
+  const parts = roots.flatMap((id) => subtreeIds(built.scene!, id)).filter((id) => built.scene!.entities.find((entity) => entity.id === id)?.components.Mesh).length;
+  if (parts < MIN_INSPECTED_PARTS) return withContext(built);
+  return withContext(await inspectAndFix(scene, userPrompt, built, dependencies, context));
 }
 
-/** What buildScene settled on for the scene context, kept for the critique's fix pass and the result. */
+/** What buildScene settled on for the scene context, kept for the inspection's fix passes and the result. */
 interface BuildContext {
   /** Outline mode's expanded ids; unset when the scene was empty and was sent in full. */
   expand?: string[];
   report?: ContextReport;
+  reference?: ReferenceReport;
+}
+
+/** Runs task over items, at most `limit` at a time, keeping their order. */
+async function mapLimit<T, R>(items: readonly T[], limit: number, task: (item: T) => Promise<R>): Promise<R[]> {
+  const results: R[] = new Array(items.length);
+  let next = 0;
+  const worker = async () => { while (next < items.length) { const index = next++; results[index] = await task(items[index]!); } };
+  await Promise.all(Array.from({ length: Math.min(limit, items.length) }, worker));
+  return results;
+}
+
+const errorText = (error: unknown, max = 200) => (error instanceof Error ? error.message : String(error)).slice(0, max);
+
+/**
+ * The reference image for a complex request: the concept step rates the request; one that creates something of
+ * complexity REFERENCE_MIN_COMPLEXITY or more gets a concept image, which the vision model reads into a build spec.
+ * Null when the step is off.
+ */
+async function referenceStep(scene: Scene, userPrompt: string, history: readonly string[], resolution: string, expand: readonly string[] | undefined, dependencies: SceneAgentDependencies): Promise<ReferenceReport | null> {
+  if (!dependencies.planConcept || !dependencies.generateImage || !dependencies.see) return null;
+  dependencies.onProgress?.("Judging how complex the request is…");
+  let plan: ReturnType<typeof parseConcept>;
+  try {
+    const outline = scene.entities.length ? sceneText(scene, { expand: expand ?? [], partNames: true }) : undefined;
+    const raw = await dependencies.planConcept({ systemPrompt: CONCEPT_SYSTEM_PROMPT, userPrompt: conceptUserMessage(userPrompt, { ...(outline ? { outline } : {}), previousRequests: history, resolution }) });
+    if (raw === null) return { outcome: "skipped", note: "The concept step was skipped." };
+    plan = parseConcept(raw);
+  } catch (error) {
+    return { outcome: "failed", note: `The concept step failed: ${errorText(error)}` };
+  }
+  if (!plan) return { outcome: "failed", note: "The concept step returned an unusable reply." };
+  const rated = { complexity: plan.complexity, ...(plan.subject ? { subject: plan.subject } : {}) };
+  if (!wantsReference(plan)) {
+    return { ...rated, outcome: "skipped", note: plan.creates ? `Complexity ${plan.complexity}/10 is below ${REFERENCE_MIN_COMPLEXITY}, so no reference image was needed.` : "The request edits the scene rather than creating something." };
+  }
+  dependencies.onProgress?.(`Drawing a reference image of ${plan.subject || "the request"} (complexity ${plan.complexity}/10)…`);
+  let image: string | null;
+  try {
+    image = await dependencies.generateImage(plan.imagePrompt);
+  } catch (error) {
+    return { ...rated, outcome: "failed", imagePrompt: plan.imagePrompt, note: `The reference image failed: ${errorText(error)}` };
+  }
+  if (!image) return { ...rated, outcome: "skipped", imagePrompt: plan.imagePrompt, note: "The reference image was skipped." };
+  dependencies.onProgress?.("Reading the reference image into a build spec…");
+  const used = { ...rated, outcome: "used" as const, imagePrompt: plan.imagePrompt, image };
+  try {
+    const spec = parseReferenceSpec(await dependencies.see({ task: "scene_reference", messages: referenceSpecMessages(userPrompt, plan.subject, image) }));
+    return spec ? { ...used, spec } : { ...used, note: "The image could not be read into a spec; only the critiques compare against it." };
+  } catch (error) {
+    return { ...used, note: `Reading the image failed (${errorText(error)}); only the critiques compare against it.` };
+  }
 }
 
 /** Ids a batch creates or updates; a follow-up's outline expands them so the builder sees what it just made. */
@@ -379,8 +497,9 @@ function requestContext(scene: Scene, userPrompt: string, dependencies: SceneAge
   const systemPrompt = dependencies.buildSystemPrompt();
   const draftBudget = MAX_SCENE_INPUT_CHARS - systemPrompt.length - CORRECTION_RESERVE - DRAFT_ECHO_RESERVE;
   // The draft message depends on the reference step's answer, so the key holds what that step is asked instead.
-  const cacheKey = JSON.stringify(["scene-build-v4", scene, systemPrompt, userPrompt, history, focusIds, dependencies.responseSchema,
-    dependencies.solReviewEnabled === true, Boolean(dependencies.resolveReferences)]);
+  const cacheKey = JSON.stringify(["scene-build-v5", scene, systemPrompt, userPrompt, history, focusIds, dependencies.responseSchema,
+    dependencies.solReviewEnabled === true, Boolean(dependencies.resolveReferences), Boolean(dependencies.planConcept && dependencies.generateImage),
+    Boolean(dependencies.renderViews && dependencies.see)]);
   return { history, focusIds, systemPrompt, draftBudget, cacheKey };
 }
 
@@ -418,7 +537,7 @@ async function buildScene(scene: Scene, userPrompt: string, dependencies: SceneA
   const tooLarge = (attempts = 0): SceneAgentResult => ({ ok: false, ops: [], errors: [TOO_LARGE], attempts });
   if (userPrompt.length > 12_000) return tooLarge();
   const { history, focusIds, systemPrompt, draftBudget, cacheKey } = requestContext(scene, userPrompt, dependencies);
-  const draftMessage = (options: { expand?: string[]; resolution?: string } = {}) =>
+  const draftMessage = (options: { expand?: string[]; resolution?: string; reference?: string } = {}) =>
     buildSceneUserMessage(scene, userPrompt, { focusIds, previousRequests: history, maxChars: draftBudget, ...options });
   // Checked before any call: the request and history alone must leave room for the scene.
   if (draftMessage({ expand: [] }).length > draftBudget) return tooLarge();
@@ -441,14 +560,21 @@ async function buildScene(scene: Scene, userPrompt: string, dependencies: SceneA
 
   // A follow-up sees the scene as an outline: top-level objects, with groups collapsed to their world boxes except
   // those the request involves. A first build has nothing to outline.
-  let draftPrompt = draftMessage();
+  let resolution = "";
   if (scene.entities.length) {
     const resolved = await resolveContext(scene, userPrompt, history, focusIds, dependencies);
     context.expand = resolved.expand;
     context.report = resolved.report;
-    draftPrompt = draftMessage({ expand: resolved.expand, resolution: resolved.resolution });
-    if (draftPrompt.length > draftBudget) draftPrompt = draftMessage({ expand: resolved.expand });
+    resolution = resolved.resolution;
   }
+  const referenceReport = await referenceStep(scene, userPrompt, history, resolution, context.expand, dependencies);
+  if (referenceReport) context.reference = referenceReport;
+  const reference = referenceReport?.spec ? referenceText(referenceReport.spec) : undefined;
+  // Over budget, the resolution goes first, then the reference spec.
+  const expandOption = context.expand ? { expand: context.expand } : {};
+  let draftPrompt = draftMessage({ ...expandOption, ...(resolution ? { resolution } : {}), ...(reference ? { reference } : {}) });
+  if (draftPrompt.length > draftBudget) draftPrompt = draftMessage({ ...expandOption, ...(reference ? { reference } : {}) });
+  if (draftPrompt.length > draftBudget) draftPrompt = draftMessage(expandOption);
 
   let attempts = 0;
   /** One model call; errors and the echoed reply are cut so system + user + correction stay within the input cap. */
@@ -581,7 +707,7 @@ async function buildScene(scene: Scene, userPrompt: string, dependencies: SceneA
         attempt: draftCalls, label: `Detailing ${Math.min(done + 1, items.length)} of ${items.length}${inProgress.length ? `: ${inProgress.join(", ")}` : ""}…` });
     };
     const buildItem = async (item: DetailItem) => {
-      const prompt = detailPrompt(userPrompt, layout.plan, items, item);
+      const prompt = detailPrompt(userPrompt, layout.plan, items, item, reference);
       let errors: string[] = [];
       let rejectedReply = "";
       /** A first attempt whose only problems were detached parts; used if the correction fails outright. */
@@ -680,7 +806,7 @@ async function buildScene(scene: Scene, userPrompt: string, dependencies: SceneA
   dependencies.onProgress?.(escalate ? "Reviewing the first build with the stronger model…" : "Reviewing the first build and its check results…");
 
   const reviewBudget = MAX_SCENE_INPUT_CHARS - systemPrompt.length - CORRECTION_RESERVE - REVIEW_ECHO_RESERVE;
-  const reviewUserPrompt = reviewPrompt(userPrompt, draft, candidate, preflight, focusIds, draftGeometry, reviewBudget, context.expand);
+  const reviewUserPrompt = reviewPrompt(userPrompt, draft, candidate, preflight, focusIds, draftGeometry, reviewBudget, context.expand, reference);
   if (reviewUserPrompt === null) return useDraftAfterReviewFailure("The review context is too large for one request.");
   correctionErrors = [];
   previousReply = "";
@@ -731,59 +857,214 @@ async function buildScene(scene: Scene, userPrompt: string, dependencies: SceneA
 }
 
 
-/**
- * Visual critique of a finished build: score it from renders, and below CRITIQUE_PASS_SCORE run one fix pass whose
- * ops apply on top of the build, with the critique's issues as its correction errors. The fix must apply, add no
- * script compile or runtime errors and no more geometry flags than the build had; otherwise the build stands as it
- * was. Never a second critique.
- */
-async function critiqueAndFix(scene: Scene, userPrompt: string, built: SceneAgentResult, dependencies: SceneAgentDependencies, context: BuildContext): Promise<SceneAgentResult> {
-  const before = built.preflight ?? inspectCandidate(built.scene!);
-  const report = (critique: CritiqueReport, result: SceneAgentResult = built, preflight = before): SceneAgentResult =>
-    ({ ...result, preflight: { ...preflight, critique } });
-  dependencies.onProgress?.("Rendering the build for a visual critique…");
-  let critique: SceneCritique | null;
-  try {
-    critique = await dependencies.critique!({ userPrompt, scene: built.scene! });
-  } catch (error) {
-    return report({ issues: [], outcome: "failed", note: (error instanceof Error ? error.message : String(error)).slice(0, 300) });
-  }
-  if (!critique) return built;
-  if (critique.score >= CRITIQUE_PASS_SCORE || !critique.issues.length) return report({ score: critique.score, issues: critique.issues, outcome: "passed" });
-  const kept = (note: string) => report({ score: critique.score, issues: critique.issues, outcome: "kept", note });
+/** One thing an inspection round critiques: the whole scene, or one chunk rendered alone. */
+interface InspectionTarget {
+  key: string;
+  /** "the whole scene" or 'chunk "Name"'. */
+  label: string;
+  /** The chunk's entities; null for the whole scene. */
+  ids: string[] | null;
+  /** The chunk as its critique and fix pass describe it. */
+  description?: string;
+}
 
-  dependencies.onProgress?.(`The visual critique scored the build ${critique.score}/10; fixing ${critique.issues.length} issue${critique.issues.length === 1 ? "" : "s"}…`);
+/**
+ * Visual inspection of a finished build, in up to MAX_INSPECTION_ROUNDS rounds. Each round renders and critiques
+ * what is due: the whole scene from four corners and above, and each chunk of the objects the build touched alone
+ * from its six faces (see inspection.ts). Every target below CRITIQUE_PASS_SCORE gets a fix pass (scene_fix, on the
+ * strong model when enabled; a chunk at REBUILD_SCORE or below is rebuilt whole). Fix passes run one after another,
+ * chunks before the whole scene, each on the scene the earlier ones left, and those that validate are applied on top
+ * of the build; next round re-checks the fixed
+ * targets, the whole scene and any chunk a fix touched, and undoes a fix whose target then scores lower than before.
+ * It stops when everything due passes; the last round only checks.
+ */
+async function inspectAndFix(scene: Scene, userPrompt: string, built: SceneAgentResult, dependencies: SceneAgentDependencies, context: BuildContext): Promise<SceneAgentResult> {
+  const reference = context.reference?.outcome === "used" ? context.reference : undefined;
+  const spec = reference?.spec ? referenceText(reference.spec) : undefined;
   const { history, systemPrompt, cacheKey } = requestContext(scene, userPrompt, dependencies);
-  const focusIds = critique.issues.flatMap((issue) => issue.entityId && built.scene!.entities.some((entity) => entity.id === issue.entityId) ? [issue.entityId] : []);
-  const fixRequest = `A reviewer looked at renders of the build you made for this request and found the problems listed after this message: "${userPrompt.slice(0, 2_000)}". Fix each one in the current scene. Return only the ops that change it (update, delete, or create for anything missing); do not rebuild what is already right.`;
-  const budget = MAX_SCENE_INPUT_CHARS - systemPrompt.length - CORRECTION_RESERVE;
-  // A follow-up fix sees the outline with the critiqued and newly built entities expanded.
-  const expand = context.expand ? [...context.expand, ...focusIds, ...touchedIds(built.ops)] : undefined;
-  const prompt = buildSceneUserMessage(built.scene!, fixRequest, { focusIds, previousRequests: history, maxChars: budget, ...(expand ? { expand } : {}) });
-  if (prompt.length > budget) return kept("The scene is too large for a fix request.");
-  let raw: unknown;
-  try {
-    raw = await dependencies.complete({ systemPrompt, userPrompt: prompt, correctionErrors: correctionPayload(critiqueCorrections(critique)),
-      responseSchema: dependencies.responseSchema, previousReply: "", task: "scene_draft" });
-  } catch (error) {
-    return kept(`The fix pass failed: ${(error instanceof Error ? error.message : String(error)).slice(0, 200)}`);
-  }
-  const prepared = prepareReply(built.scene!, raw);
-  if (!prepared.reply) return kept(`The fix pass reply was invalid: ${prepared.errors[0]?.slice(0, 200) ?? "no ops"}`);
-  const ops = [...built.ops, ...prepared.reply.ops];
-  const combined = applyOps(scene, ops);
-  const compile = combined.errors.length ? [] : compileIssueCheck(scene)(combined.scene);
-  if (combined.errors.length || compile.length) return kept(`The fix pass did not validate: ${[...combined.errors, ...compile][0]!.slice(0, 200)}`);
+  const newCompileIssues = compileIssueCheck(scene);
   const baseline = inspectCandidate(scene);
-  const checked = inspectCandidate(combined.scene, baseline.issues);
-  const newRuntime = checked.issues.filter((line) => !before.issues.includes(line));
-  if (newRuntime.length) return kept(`The fix pass added a script error: ${newRuntime[0]!.slice(0, 200)}`);
-  const geometry = geometryFlags(combined.scene, ops, userPrompt);
-  if (geometry.length > (before.geometry?.length ?? 0)) return kept(`The fix pass added geometry problems: ${geometry[0]!.slice(0, 200)}`);
-  checked.quality = inspectBuildQuality(combined.scene, ops);
-  if (geometry.length) checked.geometry = geometry;
-  const summary = `${built.summary ?? ""} Visual critique: ${critique.score}/10; fixed: ${prepared.reply.summary}`.trim();
-  if (!built.skipped) dependencies.cache?.set(cacheKey, { summary, ops });
-  return report({ score: critique.score, issues: critique.issues, outcome: "fixed" },
-    { ...built, summary, ops, scene: combined.scene, inverseOps: combined.inverseOps, attempts: built.attempts + 1 }, checked);
+  let ops = built.ops;
+  let current = built.scene!;
+  let inverseOps = built.inverseOps;
+  let preflight = built.preflight ?? inspectCandidate(current, baseline.issues);
+  let geometryCount = preflight.geometry?.length ?? 0;
+  /** Roots of everything the build or its fixes touched: the chunks come from these. */
+  const roots = new Set(rootsOf(current, touchedIds(ops)));
+  /** The latest critique of each target, and the issues it was fixed for (checked again next time). */
+  const latest = new Map<string, { label: string; critique: SceneCritique }>();
+  const fixedFor = new Map<string, CritiqueIssue[]>();
+  /** Applied fix batches, in order; undoing one replays the build with the others. */
+  let applied: { key: string; label: string; ops: SceneOp[]; scoreBefore: number }[] = [];
+  /** Targets whose fix was undone: they keep their earlier critique and get no more fixes. */
+  const settled = new Set<string>();
+  const rounds: InspectionRound[] = [];
+  let due: ((target: InspectionTarget) => boolean) = () => true;
+  let anyCritique = false;
+  let lastFailure = "";
+
+  /** Replays the build plus the given fix batches on the original scene; null when they no longer apply cleanly. */
+  const replay = (batches: typeof applied) => {
+    const candidateOps = [...built.ops, ...batches.flatMap((batch) => batch.ops)];
+    const result = applyOps(scene, candidateOps);
+    if (result.errors.length || newCompileIssues(result.scene).length) return null;
+    const checked = inspectCandidate(result.scene, baseline.issues);
+    if (checked.issues.some((issue) => !baseline.issues.includes(issue) && !preflight.issues.includes(issue))) return null;
+    const geometry = geometryFlags(result.scene, candidateOps, userPrompt);
+    checked.quality = inspectBuildQuality(result.scene, candidateOps);
+    if (geometry.length) checked.geometry = geometry;
+    return { ops: candidateOps, result, checked, geometry };
+  };
+
+  /** One critique; a call that fails outright (a dropped connection) is tried once more. */
+  const critiqueTarget = async (target: InspectionTarget, attempt = 1): Promise<{ critique: SceneCritique | null; note?: string }> => {
+    try {
+      const views = await dependencies.renderViews!(current, target.ids, target.ids ? CHUNK_VIEWS : OVERVIEW_VIEWS);
+      const text = target.ids ? sceneText(isolateScene(current, target.ids)) : sceneText(current, { maxChars: 20_000, query: userPrompt });
+      const previous = fixedFor.get(target.key);
+      const raw = await dependencies.see!({ task: "scene_critique", messages: critiqueMessages({ request: userPrompt, sceneText: text, views, reference: reference?.image ?? null,
+        ...(target.description ? { chunk: target.description } : {}), ...(previous ? { previous } : {}) }) });
+      if (raw === null) return { critique: null, note: "skipped" };
+      const critique = parseCritique(raw);
+      return critique ? { critique } : { critique: null, note: "The critique reply was unusable." };
+    } catch (error) {
+      return attempt === 1 ? critiqueTarget(target, 2) : { critique: null, note: errorText(error) };
+    }
+  };
+
+  /**
+   * A fix pass for one failing target, validated on its own against the current build, with one correction. When the
+   * correction still has invalid parts, the parts that apply are kept if they are at least 80% of the fix.
+   */
+  const fixTarget = async (target: InspectionTarget, critique: SceneCritique): Promise<{ ops?: SceneOp[]; note?: string }> => {
+    const known = (id: string | null): id is string => !!id && current.entities.some((entity) => entity.id === id);
+    const issueIds = critique.issues.map((issue) => issue.entityId).filter(known);
+    const focusIds = [...new Set([...(target.ids ?? []), ...issueIds])];
+    const budget = MAX_SCENE_INPUT_CHARS - systemPrompt.length - CORRECTION_RESERVE - DRAFT_ECHO_RESERVE;
+    const rebuild = target.ids && critique.score <= REBUILD_SCORE ? target.ids : undefined;
+    const request = fixRequestText(userPrompt, target.description ? `chunk ${target.description}` : target.label, critique, spec, rebuild);
+    let prompt = buildSceneUserMessage(current, request, { focusIds, previousRequests: history, maxChars: budget, expand: focusIds });
+    if (prompt.length > budget) prompt = buildSceneUserMessage(current, fixRequestText(userPrompt, target.label, critique, undefined, rebuild), { focusIds, previousRequests: history, maxChars: budget, expand: focusIds });
+    if (prompt.length > budget) return { note: `${target.label}: the scene is too large for a fix request.` };
+    let errors = critiqueCorrections(critique);
+    let previousReply = "";
+    let lastOps: readonly unknown[] | null = null;
+    for (let call = 1; call <= 2; call += 1) {
+      let raw: unknown;
+      try {
+        raw = await dependencies.complete({ systemPrompt, userPrompt: prompt, correctionErrors: correctionPayload(errors), responseSchema: dependencies.responseSchema,
+          previousReply: call > 1 ? echoReply(previousReply, DRAFT_ECHO_RESERVE) : "", task: "scene_fix" });
+      } catch (error) {
+        const truncated = unusableReply(error);
+        if (truncated !== null && call < 2) { errors = [...critiqueCorrections(critique), UNUSABLE_FIX(truncated)]; continue; }
+        return { note: `${target.label}: the fix pass failed: ${errorText(error)}` };
+      }
+      previousReply = typeof raw === "string" ? raw : JSON.stringify(raw) ?? "";
+      lastOps = rejectedBuild(raw)?.ops ?? lastOps;
+      const prepared = prepareReply(current, raw);
+      if (!prepared.reply) { errors = [...critiqueCorrections(critique), ...prepared.errors]; continue; }
+      const result = applyOps(current, prepared.reply.ops);
+      const hard = result.errors.length ? result.errors : newCompileIssues(result.scene);
+      if (!hard.length) return { ops: prepared.reply.ops };
+      errors = [...critiqueCorrections(critique), ...hard];
+    }
+    if (lastOps) {
+      const salvaged = salvageOps(current, lastOps, newCompileIssues);
+      if (salvaged.ops.length && salvaged.ops.length >= salvaged.total * 0.8) return { ops: salvaged.ops };
+    }
+    return { note: `${target.label}: the fix pass did not validate: ${errors.at(-1)?.slice(0, 200) ?? ""}` };
+  };
+
+  /** Structures once split into chunks stay split, so chunks keep their keys while fixes change sizes. */
+  const split = new Set<string>();
+  for (let round = 1; round <= MAX_INSPECTION_ROUNDS; round += 1) {
+    const chunks = planChunks(current, rootsOf(current, [...roots]), split);
+    const targets: InspectionTarget[] = [{ key: "overview", label: "the whole scene", ids: null },
+      ...chunks.map((chunk) => ({ key: chunk.key, label: `chunk "${chunk.name}"`, ids: chunk.ids, description: chunkDescription(current, chunk) }))];
+    // A target whose fix was undone is still checked when due, but never fixed again.
+    const checking = targets.filter((target) => !latest.has(target.key) || due(target));
+    if (!checking.length) break;
+    dependencies.onProgress?.(`Inspecting the build from every side (round ${round}): ${checking.length === 1 ? checking[0]!.label : `the whole scene and ${checking.length - 1} chunk${checking.length === 2 ? "" : "s"}`}…`);
+    const results = await mapLimit(checking, INSPECTION_CONCURRENCY, critiqueTarget);
+    const record: InspectionRound = { round, checks: [], fixed: [], notes: [] };
+    rounds.push(record);
+    const lastBatches = new Map(applied.filter((batch) => fixedFor.has(batch.key)).map((batch) => [batch.key, batch]));
+    for (const [index, target] of checking.entries()) {
+      const { critique, note } = results[index]!;
+      record.checks.push({ target: target.label, ...(critique ? { score: critique.score } : {}), issues: critique?.issues ?? [], ...(note ? { note } : {}) });
+      if (!critique) { if (note && note !== "skipped") lastFailure = note; continue; }
+      anyCritique = true;
+      // A fix that made its target worse is undone, and the target keeps its earlier critique.
+      const batch = lastBatches.get(target.key);
+      const before = latest.get(target.key);
+      if (batch && before && critique.score < batch.scoreBefore) {
+        const undone = replay(applied.filter((other) => other !== batch));
+        if (undone) {
+          applied = applied.filter((other) => other !== batch);
+          ({ ops } = undone);
+          current = undone.result.scene;
+          inverseOps = undone.result.inverseOps;
+          preflight = undone.checked;
+          geometryCount = undone.geometry.length;
+          settled.add(target.key);
+          record.notes.push(`${target.label}: the fix scored ${critique.score}/10, lower than ${batch.scoreBefore}/10 before it, so it was undone.`);
+          continue;
+        }
+      }
+      latest.set(target.key, { label: target.label, critique });
+    }
+    fixedFor.clear();
+    // Only targets critiqued this round are fixed: an earlier critique may be out of date.
+    const failing = checking.filter((target, index) => results[index]!.critique !== null).filter((target) => {
+      const critique = latest.get(target.key)?.critique;
+      return critique && critique.score < CRITIQUE_PASS_SCORE && critique.issues.length && !settled.has(target.key);
+    });
+    if (!failing.length || round === MAX_INSPECTION_ROUNDS) break;
+
+    dependencies.onProgress?.(`Fixing ${failing.length === 1 ? failing[0]!.label : `${failing.length} inspected targets`} (round ${round})…`);
+    const touchedRoots = new Set<string>();
+    const fixedKeys = new Set<string>();
+    // Chunks first: the whole scene's fix then sees the fixed objects and only needs what is still wrong between them.
+    for (const target of [...failing.filter((target) => target.ids), ...failing.filter((target) => !target.ids)]) {
+      const fix = await fixTarget(target, latest.get(target.key)!.critique);
+      if (!fix.ops) { record.notes.push(fix.note ?? `${target.label}: no fix.`); continue; }
+      const scoreBefore = latest.get(target.key)!.critique.score;
+      const batch = { key: target.key, label: target.label, ops: fix.ops, scoreBefore };
+      const next = replay([...applied, batch]);
+      if (!next) { record.notes.push(`${target.label}: the fix did not apply on top of the build, or added script errors.`); continue; }
+      const strays = strayParts(current, next.result.scene, fix.ops);
+      if (strays.length) { record.notes.push(`${target.label}: the fix put parts outside the build (${[...new Set(strays)].slice(0, 4).join(", ")}).`); continue; }
+      if (next.geometry.length > geometryCount) { record.notes.push(`${target.label}: the fix added geometry problems: ${next.geometry.find((line) => !preflight.geometry?.includes(line))?.slice(0, 200) ?? next.geometry[0]!.slice(0, 200)}`); continue; }
+      applied.push(batch);
+      ({ ops } = next);
+      current = next.result.scene;
+      inverseOps = next.result.inverseOps;
+      preflight = next.checked;
+      geometryCount = next.geometry.length;
+      fixedFor.set(target.key, latest.get(target.key)!.critique.issues);
+      fixedKeys.add(target.key);
+      record.fixed.push(target.label);
+      for (const root of rootsOf(current, touchedIds(fix.ops))) { roots.add(root); touchedRoots.add(root); }
+    }
+    if (!fixedKeys.size) break;
+    // Next round: the fixed targets, the whole scene, and any chunk under a root a fix touched.
+    due = (target) => fixedKeys.has(target.key) || target.ids === null || rootsOf(current, target.ids).some((root) => touchedRoots.has(root));
+  }
+
+  const report = (critique: CritiqueReport): SceneAgentResult => {
+    const fixedSummary = applied.length ? ` Inspected from every side over ${rounds.length} round${rounds.length === 1 ? "" : "s"} and applied ${applied.length} fix pass${applied.length === 1 ? "" : "es"}${critique.score !== undefined ? `; lowest score now ${critique.score}/10` : ""}.` : "";
+    const result: SceneAgentResult = applied.length
+      ? { ...built, summary: `${built.summary ?? ""}${fixedSummary}`.trim(), ops, scene: current, inverseOps, attempts: built.attempts + applied.length }
+      : built;
+    if (applied.length && !built.skipped) dependencies.cache?.set(cacheKey, { summary: result.summary ?? "", ops });
+    return { ...result, preflight: { ...(applied.length ? preflight : built.preflight ?? preflight), critique } };
+  };
+  if (!anyCritique) return report({ issues: [], outcome: "failed", rounds, note: lastFailure || "The critiques were skipped." });
+  const finals = [...latest.values()];
+  const score = Math.min(...finals.map((entry) => entry.critique.score));
+  const issues = finals.filter((entry) => entry.critique.score < CRITIQUE_PASS_SCORE).flatMap((entry) => entry.critique.issues);
+  const firstPassed = rounds[0]!.checks.every((check) => check.score === undefined || check.score >= CRITIQUE_PASS_SCORE || !check.issues.length);
+  const outcome = applied.length ? "fixed" : firstPassed ? "passed" : "kept";
+  const notes = rounds.flatMap((round) => round.notes);
+  return report({ score, issues, outcome, rounds, ...(outcome === "kept" && notes.length ? { note: notes[0] } : {}) });
 }

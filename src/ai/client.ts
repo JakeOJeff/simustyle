@@ -1,6 +1,7 @@
 /** Browser-side client for the Vite development server's secret-holding proxy. */
 import { AI_RESPONSE_JSON_SCHEMA } from "./prompt";
-import { CRITIQUE_JSON_SCHEMA, critiqueMessages, parseCritique, type CritiqueImages, type SceneCritique } from "./critique";
+import { CRITIQUE_JSON_SCHEMA } from "./critique";
+import { CONCEPT_JSON_SCHEMA, REFERENCE_SPEC_JSON_SCHEMA } from "./concept";
 import { REFERENCE_JSON_SCHEMA } from "./references";
 import { desktopChat, isDesktopRuntime } from "../platform/desktop";
 import type { CreditStatus } from "./credits";
@@ -24,25 +25,27 @@ export interface AiStatus {
   credits: CreditStatus | null;
   /** True when the server will run scene_review on the strong model, so asking for a review is worth it. */
   solReview: boolean;
-  /** True when the server accepts scene_critique (visual critique of finished builds). */
+  /** True when the server accepts scene_critique (visual inspection of finished builds). */
   critique: boolean;
+  /** True when the server draws reference images for complex requests (scene_image and scene_reference). */
+  referenceImage: boolean;
 }
 
 /** Reads the visitor's credits and whether the strong review model is on. The desktop app meters nothing. */
 export async function fetchAiStatus(): Promise<AiStatus> {
-  const off: AiStatus = { credits: null, solReview: false, critique: false };
+  const off: AiStatus = { credits: null, solReview: false, critique: false, referenceImage: false };
   if (isDesktopRuntime()) return off;
   try {
     const response = await fetch("/api/ai/credits", { cache: "no-store" });
     const payload = await response.json() as unknown;
     if (!isRecord(payload)) return off;
-    return { credits: isCreditStatus(payload.credits) ? payload.credits : null, solReview: payload.solReview === true, critique: payload.critique === true };
+    return { credits: isCreditStatus(payload.credits) ? payload.credits : null, solReview: payload.solReview === true, critique: payload.critique === true, referenceImage: payload.referenceImage === true };
   } catch {
     return off;
   }
 }
 
-/** Text, or an inline base64 image (scene_critique only). */
+/** Text, or an inline base64 image (scene_critique and scene_reference only). */
 export type ChatContentPart = { type: "text"; text: string } | { type: "image_url"; image_url: { url: string; detail?: "low" | "high" | "auto" } };
 
 export interface ChatMessage {
@@ -50,7 +53,7 @@ export interface ChatMessage {
   content: string;
 }
 
-/** A message that may carry images (scene_critique only; the desktop app has no vision call). */
+/** A message that may carry images (scene_critique and scene_reference only; the desktop app has no vision call). */
 export interface VisionChatMessage {
   role: "system" | "user";
   content: string | ChatContentPart[];
@@ -69,9 +72,34 @@ export async function requestSceneEdit(
   return requestJson(sceneEditMessages(systemPrompt, userPrompt, correctionErrors, previousReply), { ...AI_RESPONSE_JSON_SCHEMA, schema: responseSchema }, task, onText);
 }
 
-/** Asks the vision model to score a finished build from its two renders (task scene_critique); null for an unusable reply. */
-export async function requestCritique(request: string, sceneText: string, images: CritiqueImages): Promise<SceneCritique | null> {
-  return parseCritique(await requestJson(critiqueMessages(request, sceneText, images), CRITIQUE_JSON_SCHEMA, "scene_critique"));
+/** The JSON schema each vision task answers in. */
+export const VISION_SCHEMAS = { scene_critique: CRITIQUE_JSON_SCHEMA, scene_reference: REFERENCE_SPEC_JSON_SCHEMA } as const;
+
+/** A vision call (task scene_critique or scene_reference); returns the raw JSON reply. */
+export async function requestVision(task: keyof typeof VISION_SCHEMAS, messages: VisionChatMessage[]): Promise<unknown> {
+  return requestJson(messages, VISION_SCHEMAS[task], task);
+}
+
+/** The concept step before a build (task scene_concept, see concept.ts); returns the raw JSON reply. */
+export async function requestConcept(systemPrompt: string, userPrompt: string): Promise<unknown> {
+  return requestJson([{ role: "system", content: systemPrompt }, { role: "user", content: userPrompt }], CONCEPT_JSON_SCHEMA, "scene_concept");
+}
+
+/** Draws a reference image (task scene_image) and returns it as a data URL. The desktop app has no image call. */
+export async function requestImage(prompt: string): Promise<string> {
+  if (isDesktopRuntime()) throw new Error("Reference images are not available in the desktop app.");
+  let response: Response;
+  try {
+    response = await fetch("/api/ai/chat", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ task: "scene_image", prompt }) });
+  } catch {
+    throw new Error("Could not reach the local AI endpoint. Check that the development server is running.");
+  }
+  const payload = await response.json().catch(() => null) as unknown;
+  if (isRecord(payload) && isCreditStatus(payload.credits)) creditListener?.(payload.credits);
+  if (!response.ok || !isRecord(payload) || typeof payload.content !== "string") {
+    throw new Error(isRecord(payload) && typeof payload.error === "string" ? payload.error : `AI request failed with HTTP ${response.status}.`);
+  }
+  return payload.content;
 }
 
 /** Asks what a follow-up request refers to (task scene_context, see references.ts); returns the raw JSON reply. */

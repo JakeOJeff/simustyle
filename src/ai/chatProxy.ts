@@ -4,23 +4,32 @@
  * OpenAI-compatible provider, so neither the key nor the model choice is ever in the page's hands.
  */
 
-import { AI_TASK_LIMITS, MAX_CRITIQUE_IMAGE_BYTES, MAX_CRITIQUE_IMAGES, isAiTask, type AiTask } from "./tasks";
+import { AI_TASK_LIMITS, IMAGE_TASKS, MAX_CRITIQUE_IMAGE_BYTES, MAX_CRITIQUE_IMAGES, isAiTask, type AiTask } from "./tasks";
 import { callCostUsd, creditsForCost, readUsage, worstCaseUsd, type TokenUsage } from "./pricing";
 import type { CallCharge, CreditStatus, Reservation, ReserveResult } from "./credits";
 
-export const MAX_CHAT_REQUEST_BYTES = 1024 * 1024;
+/** Room for a critique's eight inline images. */
+export const MAX_CHAT_REQUEST_BYTES = 4 * 1024 * 1024;
+/** The image model used for reference images when AI_MODEL_IMAGE is unset. */
+export const DEFAULT_IMAGE_MODEL = "gpt-image-2.5-sunburst";
 
 export interface ChatProxyEnv {
   AI_API_KEY?: string;
   /** Cheap model for every task; falls back to the older AI_MODEL. */
   AI_MODEL_LUNA?: string;
-  /** Strong model, used only for scene_review and scene_context and only when AI_SOL_ENABLED is "true". */
+  /** Strong model, used only for scene_review, scene_fix, scene_context and scene_concept, and only when AI_SOL_ENABLED is "true". */
   AI_MODEL_SOL?: string;
   AI_SOL_ENABLED?: string;
   /** Model that reads images for scene_critique; defaults to AI_MODEL_SOL. */
   AI_MODEL_VISION?: string;
   /** "true" turns on the visual critique pass (task scene_critique). */
   AI_CRITIQUE_ENABLED?: string;
+  /** "true" turns on reference images for complex requests (tasks scene_image and scene_reference). */
+  AI_REFERENCE_IMAGE_ENABLED?: string;
+  /** Image model for reference images; defaults to DEFAULT_IMAGE_MODEL. */
+  AI_MODEL_IMAGE?: string;
+  /** Reference image quality: low, medium or high (the default). */
+  AI_IMAGE_QUALITY?: string;
   /** Former single-model setting, still honoured when AI_MODEL_LUNA is unset. */
   AI_MODEL?: string;
   AI_BASE_URL?: string;
@@ -54,7 +63,7 @@ export interface ChatCredits {
   settle(reservation: Reservation, charge: CallCharge | null): Promise<CreditStatus>;
 }
 
-/** Text, or (scene_critique user messages only) text and inline images. */
+/** Text, or (user messages of IMAGE_TASKS only) text and inline images. */
 export type ChatContentPart = { type: "text"; text: string } | { type: "image_url"; image_url: { url: string; detail?: "low" | "high" | "auto" } };
 type ChatMessage = { role: "system" | "user" | "assistant"; content: string | ChatContentPart[] };
 
@@ -82,13 +91,25 @@ export function critiqueEnabled(env: ChatProxyEnv): boolean {
   return env.AI_CRITIQUE_ENABLED === "true" && Boolean(visionModel(env)) && isAiConfigured(env);
 }
 
+export function imageModel(env: ChatProxyEnv): string {
+  return env.AI_MODEL_IMAGE?.trim() || DEFAULT_IMAGE_MODEL;
+}
+
+/** True when the browser may ask for a reference image before building a complex request. */
+export function referenceImageEnabled(env: ChatProxyEnv): boolean {
+  return env.AI_REFERENCE_IMAGE_ENABLED === "true" && Boolean(visionModel(env)) && isAiConfigured(env);
+}
+
 /**
- * The model a task runs on. Only scene_review and scene_context can reach Sol, and only scene_critique the vision model (undefined
- * when critique is off); everything else, and Sol when off, is Luna.
+ * The model a task runs on. Only scene_review, scene_fix, scene_context and scene_concept can reach Sol; scene_critique and
+ * scene_reference run on the vision model and scene_image on the image model (undefined when their feature is off);
+ * everything else, and Sol when off, is Luna.
  */
 export function resolveModel(task: AiTask, env: ChatProxyEnv): string | undefined {
   if (task === "scene_critique") return critiqueEnabled(env) ? visionModel(env) : undefined;
-  if ((task === "scene_review" || task === "scene_context") && solReviewEnabled(env)) return env.AI_MODEL_SOL!.trim();
+  if (task === "scene_reference") return referenceImageEnabled(env) ? visionModel(env) : undefined;
+  if (task === "scene_image") return referenceImageEnabled(env) ? imageModel(env) : undefined;
+  if ((task === "scene_review" || task === "scene_fix" || task === "scene_context" || task === "scene_concept") && solReviewEnabled(env)) return env.AI_MODEL_SOL!.trim();
   return lunaModel(env);
 }
 
@@ -104,23 +125,25 @@ export function promptCacheKeyEnabled(baseUrl: string, env: ChatProxyEnv): boole
 
 /** Parses raw request bytes and forwards a valid chat request to the model its task maps to. */
 export async function forwardChat(raw: Uint8Array, env: ChatProxyEnv, credits?: ChatCredits): Promise<ChatProxyResult> {
-  if (raw.byteLength > MAX_CHAT_REQUEST_BYTES) return fail(413, "AI request body exceeds 1 MiB.");
+  if (raw.byteLength > MAX_CHAT_REQUEST_BYTES) return fail(413, "AI request body exceeds 4 MiB.");
   let body: unknown;
   try {
     body = JSON.parse(new TextDecoder().decode(raw)) as unknown;
   } catch {
     return fail(400, "AI request body must be valid JSON.");
   }
-  if (!isRecord(body) || !isAiTask(body.task)) return fail(400, "AI request requires a task: parse, scene_draft, scene_detail, scene_review, scene_critique, or scene_context.");
+  if (!isRecord(body) || !isAiTask(body.task)) return fail(400, "AI request requires a task: parse, scene_draft, scene_detail, scene_review, scene_critique, scene_context, scene_concept, scene_image, scene_reference, or scene_fix.");
+  if (body.task === "scene_image") return forwardImage(body, env, credits);
   if (!isChatRequest(body)) return fail(400, "AI request requires system/user messages and a JSON response format.");
   const task = body.task;
   const images = body.messages.flatMap((message) => typeof message.content === "string" ? [] : message.content.filter((part) => part.type === "image_url"));
-  if (images.length && task !== "scene_critique") return fail(400, "Only scene_critique requests may include images.");
-  if (images.length > MAX_CRITIQUE_IMAGES) return fail(413, `A critique takes at most ${MAX_CRITIQUE_IMAGES} images.`);
+  if (images.length && !IMAGE_TASKS.includes(task)) return fail(400, "Only scene_critique and scene_reference requests may include images.");
+  if (images.length > MAX_CRITIQUE_IMAGES) return fail(413, `A request takes at most ${MAX_CRITIQUE_IMAGES} images.`);
   if (images.some((image) => image.type === "image_url" && dataUrlBytes(image.image_url.url) > MAX_CRITIQUE_IMAGE_BYTES)) {
-    return fail(413, `Each critique image must be at most ${MAX_CRITIQUE_IMAGE_BYTES / 1024} KB.`);
+    return fail(413, `Each image must be at most ${MAX_CRITIQUE_IMAGE_BYTES / 1024} KB.`);
   }
   if (task === "scene_critique" && !critiqueEnabled(env)) return fail(403, "Visual critique is turned off on this server.");
+  if (task === "scene_reference" && !referenceImageEnabled(env)) return fail(403, "Reference images are turned off on this server.");
   const limits = AI_TASK_LIMITS[task];
   const inputChars = body.messages.reduce((sum, message) => sum + textLength(message.content), 0);
   if (inputChars > limits.maxInputChars) {
@@ -168,7 +191,7 @@ export async function forwardChat(raw: Uint8Array, env: ChatProxyEnv, credits?: 
   });
 
   try {
-    let upstream = await call(body.stream === true);
+    let upstream = await retryDropped(() => call(body.stream === true));
     // A provider that rejects streaming options gets the same request unstreamed; a rejected call isn't billed.
     if (body.stream === true && upstream.status === 400) upstream = await call(false);
     if (upstream.ok && upstream.body && (upstream.headers.get("Content-Type") ?? "").includes("text/event-stream")) {
@@ -193,6 +216,70 @@ export async function forwardChat(raw: Uint8Array, env: ChatProxyEnv, credits?: 
       ? "AI provider request timed out."
       : "Could not reach the configured AI provider.";
     return failAndRefund(502, message);
+  }
+}
+
+/**
+ * Makes a provider request, and makes it once more after a second when the connection itself failed (the request
+ * never got an answer, so it was not billed). Timeouts are not retried.
+ */
+async function retryDropped(request: () => Promise<Response>): Promise<Response> {
+  try {
+    return await request();
+  } catch (error) {
+    if (error instanceof Error && error.name === "TimeoutError") throw error;
+    await new Promise((resolve) => setTimeout(resolve, 1_000));
+    return request();
+  }
+}
+
+/**
+ * Draws a reference image (task scene_image) from {task, prompt} on the image model and returns it as a data URL in
+ * `content`. Charged from the images API's usage like a chat call.
+ */
+async function forwardImage(body: Record<string, unknown>, env: ChatProxyEnv, credits?: ChatCredits): Promise<ChatProxyResult> {
+  const task: AiTask = "scene_image";
+  if (!referenceImageEnabled(env)) return fail(403, "Reference images are turned off on this server.");
+  const prompt = typeof body.prompt === "string" ? body.prompt.trim() : "";
+  if (!prompt) return fail(400, "An image request requires a prompt.");
+  if (prompt.length > AI_TASK_LIMITS[task].maxInputChars) return fail(413, `This image prompt is too long (the limit is ${AI_TASK_LIMITS[task].maxInputChars} characters).`);
+  const baseUrl = (env.AI_BASE_URL || DEFAULT_BASE_URL).replace(/\/+$/, "");
+  if (!/^https?:\/\//i.test(baseUrl)) return fail(503, "AI_BASE_URL must be an HTTP or HTTPS URL.");
+  const model = imageModel(env);
+  let reservation: Reservation | undefined;
+  if (credits) {
+    const reserved = await credits.reserve(task);
+    if (!reserved.ok || !reserved.reservation) return { status: 429, body: { error: outOfCreditsMessage(reserved, task), credits: reserved.status } };
+    reservation = reserved.reservation;
+  }
+  const settle = async (charge: CallCharge | null) => credits && reservation ? credits.settle(reservation, charge) : undefined;
+  const failed = async (error: string, charge: CallCharge | null = null): Promise<ChatProxyResult> => {
+    const balance = await settle(charge);
+    return { status: 502, body: { error, ...(balance ? { credits: balance } : {}) } };
+  };
+  const quality = ["low", "medium", "high"].includes(env.AI_IMAGE_QUALITY ?? "") ? env.AI_IMAGE_QUALITY : "high";
+  const call = (jpeg: boolean) => fetch(`${baseUrl}/images/generations`, {
+    method: "POST",
+    headers: { Authorization: `Bearer ${env.AI_API_KEY}`, "Content-Type": "application/json" },
+    body: JSON.stringify({ model, prompt, n: 1, size: "1024x1024", quality, ...(jpeg ? { output_format: "jpeg", output_compression: 85 } : {}) }),
+    signal: AbortSignal.timeout(240_000)
+  });
+  try {
+    let upstream = await retryDropped(() => call(true));
+    // A provider without the JPEG output options gets the plain request; a rejected call isn't billed.
+    if (upstream.status === 400) upstream = await call(false);
+    const result = await upstream.json().catch(() => null) as unknown;
+    if (!upstream.ok) return failed((extractProviderMessage(result) || `AI provider returned HTTP ${upstream.status}.`).slice(0, 500));
+    const first = isRecord(result) && Array.isArray(result.data) ? result.data[0] : undefined;
+    const data = isRecord(first) && typeof first.b64_json === "string" ? first.b64_json : null;
+    const usage = readUsage(result);
+    const charge = !data && !usage ? null : chargeFor(task, model, usage);
+    if (!data) return failed("The image model returned no image.", charge);
+    const balance = await settle(charge);
+    const format = isRecord(result) && typeof result.output_format === "string" && /^(png|jpeg|webp)$/.test(result.output_format) ? result.output_format : "png";
+    return { status: 200, body: { content: `data:image/${format};base64,${data}`, ...(balance ? { credits: balance } : {}) } };
+  } catch (error) {
+    return failed(error instanceof Error && error.name === "TimeoutError" ? "The image request timed out." : "Could not reach the configured AI provider.");
   }
 }
 
@@ -327,7 +414,7 @@ function isChatRequest(value: Record<string, unknown>): value is {
   return value.messages.length >= 2 && value.messages.length <= 8 && value.messages.every((message) =>
     isRecord(message) && (message.role === "system" || message.role === "user" || message.role === "assistant") &&
     (typeof message.content === "string" ? message.content.length <= 50_000
-      : message.role === "user" && Array.isArray(message.content) && message.content.length >= 1 && message.content.length <= 4 &&
+      : message.role === "user" && Array.isArray(message.content) && message.content.length >= 1 && message.content.length <= 2 * MAX_CRITIQUE_IMAGES + 2 &&
         message.content.every(isContentPart) && textLength(message.content as ChatContentPart[]) <= 50_000)
   );
 }

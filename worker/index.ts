@@ -2,7 +2,7 @@
  * Cloudflare Worker for the hosted site. Static files (landing page at /, editor at /editor/) come from
  * the built `dist/` folder; only /api/* and /download/* reach this code (see `run_worker_first` in wrangler.jsonc).
  */
-import { critiqueEnabled, forwardChat, isAiConfigured, solReviewEnabled, type ChatCredits, type ChatProxyEnv } from "../src/ai/chatProxy";
+import { critiqueEnabled, forwardChat, isAiConfigured, referenceImageEnabled, solReviewEnabled, type ChatCredits, type ChatProxyEnv } from "../src/ai/chatProxy";
 import {
   adminSpendResult, creditClientIds, creditCookie, creditLimits, CreditLedger,
   type AdminEnv, type CallCharge, type CreditLimitEnv, type CreditStatus, type CreditStorage, type Reservation, type SpendReport
@@ -53,9 +53,9 @@ async function aiChat(request: Request, env: Env, ctx: ExecutionContext): Promis
 /** Lets the editor show the visitor's balance, and whether reviews can use the strong model, before they send anything. */
 async function aiCredits(request: Request, env: Env): Promise<Response> {
   if (request.method !== "GET") return json(405, { error: "Use GET /api/ai/credits." }, { Allow: "GET" });
-  if (!isAiConfigured(env)) return json(200, { enabled: false, solReview: false, critique: false });
+  if (!isAiConfigured(env)) return json(200, { enabled: false, solReview: false, critique: false, referenceImage: false });
   const ledger = await ledgerFor(request, env);
-  return json(200, { enabled: true, credits: await ledger.status(), solReview: solReviewEnabled(env), critique: critiqueEnabled(env) }, ledger.headers);
+  return json(200, { enabled: true, credits: await ledger.status(), solReview: solReviewEnabled(env), critique: critiqueEnabled(env), referenceImage: referenceImageEnabled(env) }, ledger.headers);
 }
 
 /** Month-to-date spend for the site owner; needs the X-Admin-Secret header to equal AI_ADMIN_SECRET. */

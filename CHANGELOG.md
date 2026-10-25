@@ -4,6 +4,35 @@ Record meaningful project changes during the event, newest first.
 
 ## Event build log
 
+### 2026-10-26 — Reference images, and inspection from every side until the build passes
+
+- Added: Reference images for complex requests (`src/ai/concept.ts`, behind `AI_REFERENCE_IMAGE_ENABLED`, default off). Before every build:
+  - `scene_concept` (on `AI_MODEL_SOL` when Sol is on) decides whether the request creates something and how complex it is (1–10). It writes one image prompt: a clean 3D render from the front-right, a neutral background, no text. On follow-ups, "this" and "it" are resolved from the scene outline and the reference step.
+  - At complexity 5 or more, `scene_image` draws it through the provider's `/images/generations` on `AI_MODEL_IMAGE` (default `gpt-image-2.5-sunburst`, 1024 px, quality `AI_IMAGE_QUALITY`, default high, JPEG). The image comes back as a data URL.
+  - `scene_reference` has the vision model read the image into a measured build spec: components, shapes, sizes, hex colors, counts, signature features and a floor plan.
+  - The builders cannot see images, so the spec goes into the draft, every detail pass and the review. The image itself goes first in every critique, so the critics compare the build against it.
+  - A failed image never fails the build. The check details show the complexity and the image.
+- Changed: The visual critique is now a multi-round inspection (still behind `AI_CRITIQUE_ENABLED`; `src/ai/inspection.ts`, `inspectAndFix` in `src/ai/agent.ts`):
+  - Each round renders the whole scene from four upper corners and from straight above.
+  - It splits the objects the build touched into chunks: one top-level object or group each. A structure over 6 m long or 12 m² of floor (a room, a house) splits into its sub-groups and stays split. Nearby loose parts are clustered, and floors are skipped.
+  - Each chunk is rendered alone (`isolateScene`) from its six orthographic faces plus one corner, on a plain backdrop with a camera headlight (`renderViews` in `src/ai/snapshot.ts`, 640 px JPEG).
+  - The vision model scores each target with a chunk rubric: attachment, symmetry, finished backs and bottoms, and a match to the reference.
+  - Every target below 9/10 gets a fix pass on the new task `scene_fix` (Sol when on, 16,000 output tokens). A chunk at 4/10 or below is rebuilt whole. Fixes run one after another, chunks before the whole scene, each on the scene the earlier fixes left.
+  - A fix is applied only if it validates (one correction, then the parts that apply are kept when they are 80% of it). It must add no script errors and no geometry flags, and put no part outside the build's bounds.
+  - The next round re-checks the fixed targets (told what they were fixed for), the whole scene and any chunk a fix touched. A fix whose target then scores lower is undone. Up to 4 rounds; the last only checks.
+  - The check details list every round's scores, fixes and undone fixes.
+- Changed: Image requests may carry 8 images of up to 400 KB (a reference plus seven views), in bodies of up to 4 MiB. `scene_critique` returns up to 10 issues with 3,000 output tokens. The proxy retries a dropped provider connection once, and the eval saves every rendered view under `views/` and the reference image as `reference-<step>.jpg`.
+- Eval runs (Sol on, inspection and reference images on):
+  - The sports car (case 3, three runs) went from failing outright to a mixed result:
+    - First run: every fix was cut off at the review task's 4,000 output tokens; this led to `scene_fix`.
+    - Second run: fixes ran in parallel and stacked conflicting edits on one car, and the car was split into tiny chunks by part count; this led to sequential fixes and size-based chunks.
+    - Third run ($0.95, 8 min): the wheels, arches, windshield and mirrors improved, but the body is still blocky and some fixes added stray pieces. The critic held it at 4/10 throughout and undid the fix that made it worse.
+  - The kitchen nook (case 1):
+    - Third run: chunking worked, but fixes put a rug and floor planks outside the room; this led to the stray-parts guard.
+    - Final run ($2.99, 26 min): 14 chunks per round; the whole scene went from 5/10 to 7/10. The blank cabinet top became a counter with a sink and faucet, and a window, prints and a pedestal table were refined; nothing left the room.
+    - Lowest chunk at the end: the pendant lamp, 3/10.
+- Validation: new tests in `tests/ai/inspection.test.ts` and `tests/ai/concept.test.ts`. The agent tests cover rounds, re-checks, undo on regression, rebuild prompts, partial-fix salvage, critique retries and reference images; the proxy tests cover image routing, limits, charging and connection retries. All 493 tests pass.
+
 ### 2026-10-25 — Eval: a follow-up reference case
 
 - Added: `npm run ai:eval` case 8, "A home office with a desk, a computer monitor and an office chair" → "Put a coffee mug on the desk next to the monitor" → "Make it red". Its check (`mugOnDeskThenRed`, `scripts/ai-eval/checks.ts`) passes when the mug stands on the desk top (within 5 cm), sits over it, turned red, and nothing else changed color. It takes the largest "desk", and a "mug" before any other "cup".

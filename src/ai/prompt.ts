@@ -59,6 +59,8 @@ export interface SceneUserMessageOptions extends Pick<SceneContextOptions, "focu
   maxChars?: number;
   /** What the request refers to, from the reference step (resolutionText in references.ts); goes just before the request. */
   resolution?: string;
+  /** The reference concept's build spec (referenceText in concept.ts); goes before the resolution. */
+  reference?: string;
 }
 
 /** Earlier requests kept as style context: the latest six, at most 2,500 JSON characters. */
@@ -103,7 +105,7 @@ function selectionText(focusIds: readonly string[]): string {
 export function buildSceneUserMessage(scene: Scene, request: string, options: SceneUserMessageOptions = {}): string {
   const history = requestHistory(options.previousRequests);
   const focusIds = options.focusIds ?? [];
-  const tail = `${history.length ? `\n\nEarlier successful requests (context only; current request overrides these):\n${JSON.stringify(history)}` : ""}${focusIds.length ? `\n\nSelected object ids (resolve this/these using this selection): ${selectionText(focusIds)}` : ""}${scene.entities.length ? "" : `\n\n${EMPTY_SCENE_NOTE}`}${options.resolution ? `\n\n${options.resolution}` : ""}\n\n## Request\n${request}`;
+  const tail = `${history.length ? `\n\nEarlier successful requests (context only; current request overrides these):\n${JSON.stringify(history)}` : ""}${focusIds.length ? `\n\nSelected object ids (resolve this/these using this selection): ${selectionText(focusIds)}` : ""}${scene.entities.length ? "" : `\n\n${EMPTY_SCENE_NOTE}`}${options.reference ? `\n\n${options.reference}` : ""}${options.resolution ? `\n\n${options.resolution}` : ""}\n\n## Request\n${request}`;
   // Relevant worked examples go first: a repeated example extends the provider's cached prefix. Each is dropped
   // (least relevant first) when keeping it would leave the scene snapshot less than MIN_SCENE_CHARS.
   const examples = selectExamples(request, scene.entities.length === 0);
