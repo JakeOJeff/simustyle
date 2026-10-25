@@ -1,17 +1,17 @@
 /** Compact modeling guidance; every character is sent on every call. Rules state principles; examples are illustrations. */
 export const MODELING_RULES = `## Modeling well
 - Real-world sizes in meters (door 2 m tall, chair seat 0.45 m high, car 4.2×1.8×1.4 m, adult 1.7 m). Default box is 1 m, so box scale = its size.
-- Build the 3–6 most recognizable features first, then details: 6–20 parts per object modeled directly in ops (repeated small items like balloons, books, leaves, bricks: up to 60), 40–150 in a detail pass.
-- Every part is recognizable on its own: give it its defining feature (door: knob; fridge: handle + split line; table: legs; bed: pillow + headboard).
-- Every part touches or overlaps a neighbor by ~0.02 m; no floating parts. Position is the center: put the group's lowest point at y=0.
-- Shape with rotation/scale. Cylinders stand along Y: wheels of a car whose length runs along X use rotation [90,0,0] (axle along Z); along Z use [0,0,90]. Cones for roofs, capsules for limbs, squashed spheres (scale [1,0.6,1]) for domes/hair. Lampshades are truncated cones (radiusTop < radius), wide end down.
-- Every held floating object (balloons, kites) MUST have a thin cylinder (radius 0.01) running to its anchor point; the checker flags any without one. Hanging lamps/signs hang from a cord.
+- Spend detail in this order: (1) every object the request implies, (2) props and clutter that make it lived-in, (3) only then extra features on one object. Each object gets its defining feature (door: knob; bed: pillow + headboard); 6–20 parts per object in ops (repeated books, leaves, bricks: up to 60). If the reply would run long, use fewer parts per object, never fewer objects.
+- Detail must show from the default camera: no part under 5 cm on every side (the checker flags specks), no decorative lines, stitching or buttons.
+- Every part touches or overlaps a neighbor by ~0.02 m. Position is the center; a group's lowest point is at y=0.
+- Cylinders stand along Y: wheels of a car along X use rotation [90,0,0] (axle along Z); along Z use [0,0,90]. Cones for roofs, capsules for limbs, squashed spheres (scale [1,0.6,1]) for domes/hair. Lampshades are truncated cones (radiusTop < radius), wide end down.
+- Every held floating object (balloons, kites) MUST have a thin cylinder (radius 0.01) to its anchor; the checker flags any without one. Hanging lamps/signs hang from a cord.
 - Buildings: fill gables with a wedge; multi-floor buildings need stairs or a ladder.
 - Y must hold existing objects ("put X inside Y", "build Y around X"): size Y to their combined bounds + ≥0.5 m clearance on every side and above the tallest, centered on them; move each in with {"op":"update","id":…,"parent":Y,"components":{}} (no Transform keeps world position).
-- Surfaces and containers meant to hold things are never empty: fill them with items varied in size, color and angle, some leaning or stacked (e.g. a shelf row of 5–8 books or jars, 2–4 props on a table, produce on a counter, tools on a bench).
-- Anything that gives off light (lamp, candle, fire, screen, window, sign) gets a Light child at its glowing point, and the glowing part gets emissive with emissiveIntensity 1–3.
+- Surfaces and containers meant to hold things are never empty: fill them with items varied in size, color and angle, some leaning or stacked (e.g. 5–8 books on a shelf, 2–4 props on a table).
+- Anything that gives off light (lamp, candle, fire, screen, window, sign) gets a Light child at its glowing point, and the glowing part gets emissive with emissiveIntensity 1–3. Every point/spot Light belongs to such a visible source, never floating bare (daylight: one directional sun).
 - The mood of the request sets the lighting: warm/cozy/night = warm light (#ffb070–#ffd6a0), low ambient (~0.3), dark background; bright/clean/day = white light, ambient 0.6–1, light background; eerie = cold dim light.
-- Spaces: an interior (room, corner, nook, kitchen, shop) has a floor and at least two walls that meet; an exterior has a ground surface. Cluster furniture and props around a focal piece (within ~1.5 m) instead of spreading them evenly.
+- Spaces: an interior (room, corner, nook, kitchen, shop) has a floor and at least two walls that meet; an exterior has a ground surface. Floor/ground = the content's footprint + about 1 m; furniture fills it, never a big empty room around one object. Cluster pieces around a focal piece (within ~1.5 m).
 - Mirror symmetric parts exactly: same y/z, negated x (or negated z for left/right of a car along X).
 - 2–4 related colors per object.
 - Material: metal metalness 0.8 roughness 0.3; glass opacity 0.4 roughness 0.1; lamps emissive color + emissiveIntensity 1–3; gloss paint roughness 0.35; wood/cloth metalness 0, roughness 0.6–0.9.
@@ -41,7 +41,7 @@ const shirt = { color: "#3b6ea5" };
 const pants = { color: "#2b3a55" };
 const dark = { color: "#2a1d14" };
 const limb = (radius: number, height: number) => ({ shape: "capsule", radius, height });
-const eye = { shape: "sphere", radius: 0.02 };
+const eye = { shape: "sphere", radius: 0.025 };
 const wall = { color: "#e8dcc4" };
 const roof = { color: "#7a2e24", roughness: 0.8 };
 const glass = { color: "#b8c4cc", opacity: 0.4, roughness: 0.1 };
@@ -163,13 +163,13 @@ export const EXAMPLE_LIBRARY: readonly LibraryExample[] = [
     tags: ["room", "corner", "nook", "interior", "insid", "indoor", "living", "bedroom", "kitchen", "library", "study", "office", "furni", "decorat", "shelf", "shelv", "lamp", "cozy", "cosy"],
     focal: "armchair",
     reply: {
-      plan: "Floor 3x3 top y0; walls 0.1 thick meet at back-left (z-1.45, x-1.45). Focal armchair x-0.55 z-0.85; shelf on back wall x0.6: 2 rows of 5 varied books (one leaning, one stack), plant+box on top; side table x0.1 z-0.6 with mug+book; floor lamp x-1.15 z-1.1, shade wide end down, warm point light inside; dark background, ambient 0.3.",
+      plan: "Floor 3 wide x 2.4 deep (z -1.5..0.9, the furniture + ~1 m) top y0; walls 0.1 thick meet at back-left (z-1.45, x-1.45). Focal armchair x-0.55 z-0.85; shelf on back wall x0.6: 2 rows of 5 varied books (one leaning, one stack), plant+box on top; side table x0.1 z-0.6 with mug+book; floor lamp x-1.15 z-1.1, shade wide end down, warm point light inside; dark background, ambient 0.3.",
       summary: "Built a cozy reading corner with an armchair, a filled bookshelf, a side table and a warm floor lamp.",
       ops: [{ op: "settings", settings: { background: "#1d1712", ambientLightIntensity: 0.3 } },
       { op: "assemble", id: "corner", name: "Corner", parent: null, parts: [
-        part("floor", "Floor", box, [0, -0.02, 0], { color: "#6b4630" }, [3, 0.04, 3]),
+        part("floor", "Floor", box, [0, -0.02, -0.3], { color: "#6b4630" }, [3, 0.04, 2.4]),
         part("wall_back", "Back Wall", box, [0, 1.2, -1.45], sage, [3, 2.4, 0.1]),
-        part("wall_left", "Left Wall", box, [-1.45, 1.2, 0], sage, [0.1, 2.4, 3])
+        part("wall_left", "Left Wall", box, [-1.45, 1.2, -0.3], sage, [0.1, 2.4, 2.4])
       ] },
       { op: "assemble", id: "armchair", name: "Armchair", parent: null, transform: { position: [-0.55, 0, -0.85] }, parts: [
         part("ac_seat", "Seat", box, [0, 0.225, 0], fabric, [0.8, 0.45, 0.75]),
@@ -241,11 +241,11 @@ export const EXAMPLE_LIBRARY: readonly LibraryExample[] = [
     request: "a campfire at night in a forest clearing",
     tags: ["camp", "fire", "bonfire", "night", "forest", "woods", "tree", "clearing", "tent", "dark", "moon", "evening", "snow", "winter"],
     reply: {
-      plan: "Ground 6x6 top y0. Fire at origin: stone ring r0.5 (top 0.45) h0.12; two crossed logs r0.06 h0.8 at y0.18 and y0.29; flame cone r0.16 h0.45 y0.5, emissive, warm point light inside. Log bench r0.16 along Z at x1.4. Pines (trunk + cone) at x-1.9 z-1.6 and a copy 3.6 m right. Night: dark blue background, ambient 0.25.",
+      plan: "Ground 6 wide x 4.5 deep (z -2.85..1.65, the clearing + ~1 m) top y0. Fire at origin: stone ring r0.5 (top 0.45) h0.12; two crossed logs r0.06 h0.8 at y0.18 and y0.29; flame cone r0.16 h0.45 y0.5, emissive, warm point light inside. Log bench r0.16 along Z at x1.4. Pines (trunk + cone) at x-1.9 z-1.6 and a copy 3.6 m right. Night: dark blue background, ambient 0.25.",
       summary: "Built a campfire in a forest clearing at night, with a glowing fire, a log bench and two pines.",
       ops: [{ op: "settings", settings: { background: "#0b1020", ambientLightIntensity: 0.25 } },
       { op: "assemble", id: "clearing", name: "Clearing", parent: null, parts: [
-        part("ground", "Ground", box, [0, -0.02, 0], { color: "#3b4a2f" }, [6, 0.04, 6])
+        part("ground", "Ground", box, [0, -0.02, -0.6], { color: "#3b4a2f" }, [6, 0.04, 4.5])
       ] },
       { op: "assemble", id: "campfire", name: "Campfire", parent: null, parts: [
         part("fire_ring", "Stone Ring", { shape: "cylinder", radius: 0.5, radiusTop: 0.45, height: 0.12 }, [0, 0.06, 0], stone),

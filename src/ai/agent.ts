@@ -55,7 +55,7 @@ const LIVE_INTERVAL_MS = 100;
 const DETAIL_CONCURRENCY = 3;
 const DETAIL_CALLS = 2;
 const UNUSABLE_DETAIL = (truncated: boolean) => truncated
-  ? `Your previous reply was cut off at the ${AI_TASK_LIMITS.scene_detail.maxCompletionTokens}-token output limit. Return the object again more compactly: at most 90 parts, repeat ops for repeated features, a plan under 300 characters, and no default-valued fields.`
+  ? `Your previous reply was cut off at the ${AI_TASK_LIMITS.scene_detail.maxCompletionTokens}-token output limit. Return the object again more compactly: at most 40 parts, repeat ops for repeated features, a plan under 300 characters, and no default-valued fields.`
   : "Your previous reply was not valid JSON. Return only the JSON object with one assemble op.";
 
 export interface SceneAgentDependencies {
@@ -113,7 +113,7 @@ const REVIEW_ECHO_RESERVE = 2_000;
 const CORRECTION_RESERVE = CORRECTION_ERROR_CHARS + CORRECTION_WRAPPER_CHARS;
 /** Correction sent when the model's reply was cut off or wasn't JSON; the agent retries instead of giving up. */
 const UNUSABLE_REPLY = (truncated: boolean) => truncated
-  ? `Your previous reply was cut off at the ${AI_TASK_LIMITS.scene_draft.maxCompletionTokens}-token output limit and could not be used. Return a much more compact complete response: a plan under 400 characters, at most 20 parts per object, repeat for repeated parts, and no default-valued fields.`
+  ? `Your previous reply was cut off at the ${AI_TASK_LIMITS.scene_draft.maxCompletionTokens}-token output limit and could not be used. Return a much more compact complete response: a plan under 400 characters, fewer parts per object (at most 12) but every object, repeat for repeated parts, and no default-valued fields.`
   : "Your previous reply was not valid JSON. Return only the JSON object in the required format.";
 /** The model answered but the reply couldn't be used (see UnusableReplyError in client.ts); worth one more try. */
 const unusableReply = (error: unknown): boolean | null =>

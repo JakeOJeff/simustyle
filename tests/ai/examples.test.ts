@@ -91,6 +91,28 @@ describe("examples", () => {
       }
     });
 
+    it.each(ALL.map((example) => [example.request, example] as const))("%s: no specks, and every point light sits at a glowing part", (_request, example) => {
+      const { scene, meshes, size, bounds } = built(example);
+      for (const entity of meshes) expect(Math.max(size(entity).x, size(entity).y, size(entity).z), `${entity.name} is visible`).toBeGreaterThanOrEqual(0.05);
+      const glows = meshes.filter((entity) => Number(entity.components.Material?.emissiveIntensity ?? 0) > 0);
+      for (const light of scene.entities.filter((entity) => entity.components.Light && entity.components.Light.type !== "directional")) {
+        const at = new THREE.Vector3().setFromMatrixPosition(worldMatrix(scene, light.id));
+        expect(glows.some((glow) => bounds(glow).clone().expandByScalar(0.3).containsPoint(at)), `${light.name} belongs to a visible source`).toBe(true);
+      }
+    });
+
+    it.each(ALL.map((example) => [example.request, example] as const))("%s: the floor is the content's footprint plus about 1 m", (_request, example) => {
+      const { meshes, size, bounds, isComposition, detail, reserved } = built(example);
+      if (!isComposition) return;
+      const floor = meshes.find((entity) => Math.abs(bounds(entity).max.y) <= 0.05 && size(entity).y <= 0.3 && size(entity).x >= 2 && size(entity).z >= 2)!;
+      const content = [...meshes.filter((entity) => entity !== floor && size(entity).y < 2), ...detail.items].reduce<THREE.Box3>(
+        (box, item) => box.union("components" in item ? bounds(item) : reserved(item)), new THREE.Box3());
+      for (const axis of ["x", "z"] as const) {
+        const margin = Math.max(content.min[axis] - bounds(floor).min[axis], bounds(floor).max[axis] - content.max[axis]);
+        expect(margin, `floor margin along ${axis}`).toBeLessThanOrEqual(1.5);
+      }
+    });
+
     it.each(ALL.map((example) => [example.request, example] as const))("%s: mood words set light color, ambient and background", (_request, example) => {
       const { scene, words, isComposition, detail } = built(example);
       if (!isComposition) return;
@@ -150,7 +172,7 @@ describe("examples", () => {
     expect(fewShotText().length).toBeLessThanOrEqual(7_000);
     expect(MODELING_RULES.startsWith("## Modeling well")).toBe(true);
     // Sent on every call; raised from 2,600 for the tether and containment rules.
-    expect(MODELING_RULES.length).toBeLessThanOrEqual(2_900);
+    expect(MODELING_RULES.length).toBeLessThanOrEqual(3_100);
     for (const principle of ["never empty", "gives off light", "Light child", "mood of the request sets the lighting", "at least two walls that meet", "ground surface", "focal piece"]) expect(MODELING_RULES).toContain(principle);
     // A few library examples together must still leave room for the scene in one request.
     for (const example of EXAMPLE_LIBRARY) expect(examplesText([example]).length, example.request).toBeLessThanOrEqual(6_500);

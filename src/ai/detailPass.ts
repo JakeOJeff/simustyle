@@ -69,7 +69,7 @@ name: ${item.name}
 description: ${item.description}
 size: ${item.size[0]} wide (x) × ${item.size[1]} tall (y) × ${item.size[2]} deep (z) m; its front faces +z.
 
-Return {"plan","summary","ops"} where ops is exactly one assemble op: id "${item.id}", name "${item.name}", parent null, NO transform. Positions are local: the origin is the center of the object's base, y=0 is its bottom, and every part fits inside the size above. Use 40–150 parts: after the main forms, model the sub-parts that make it read as real (panels, frames, trims, rims, handles, knobs, hinges, seams, feet, legs, bolts, labels, cushions, stitching, wear). Use repeat ops after the assemble for repeated features. Start every part id with "${item.id}_". Settings, cameras and other objects are not allowed.`;
+Return {"plan","summary","ops"} where ops is exactly one assemble op: id "${item.id}", name "${item.name}", parent null, NO transform. Positions are local: the origin is the center of the object's base, y=0 is its bottom, and every part fits inside the size above. Use 15–60 parts, in this order: the main forms, then the items it holds or carries if the description names them, then the features that make it recognizable (handles, legs, cushions, frames). Every part must be visible from a room-wide camera: nothing under 5 cm on every side, and no decorative lines, seams, stitching, buttons, bolts or labels. A Light goes only inside a glowing part (bulb, flame, screen). Use repeat ops after the assemble for repeated features. Start every part id with "${item.id}_". Settings, cameras and other objects are not allowed.`;
 }
 
 /**

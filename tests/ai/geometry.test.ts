@@ -148,6 +148,17 @@ describe("geometry checker", () => {
     expect(checkGeometry(build(free), free, "a hot air balloon")).toEqual([]);
   });
 
+  it("flags stray specks outside an object group, but not small parts a group holds", () => {
+    const ops: SceneOp[] = [...car(), box("dot", "Dot", null, [3, 0.015, 0], [0.03, 0.03, 0.03]),
+      box("button", "Button", "body", [0, 0.31, 0], [0.04 / 4, 0.03 / 0.6, 0.04 / 1.8]), box("bolt", "Bolt", "car", [0, 1.11, 0], [0.04, 0.04, 0.04])];
+    expect(checkGeometry(build(ops), ops, "a car")).toEqual([
+      "Dot is a speck (0.03×0.03×0.03 m), too small to see; delete it or make it at least 0.05 m on one side.",
+      "Button is a speck (0.04×0.03×0.04 m), too small to see; delete it or make it at least 0.05 m on one side."
+    ]);
+    const thin: SceneOp[] = [box("rod", "Rod", null, [0, 0.3, 0], [0.02, 0.6, 0.02])];
+    expect(checkGeometry(build(thin), thin, "a rod")).toEqual([]);
+  });
+
   it("caps the output", () => {
     const ops: SceneOp[] = Array.from({ length: 20 }, (_, i) => [group(`g${i}`, `G${i}`, null, [i * 3, 2, 0]), box(`m${i}`, `M${i}`, `g${i}`, [0, 0, 0], [1, 1, 1])]).flat();
     const lines = checkGeometry(build(ops), ops, "boxes");

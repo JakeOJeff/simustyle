@@ -68,11 +68,11 @@ export function requestHistory(previousRequests: readonly string[] = []): string
 
 /** How a reply hands objects to detail passes; the detail pass itself is described in its own message (detailPass.ts). */
 export const DETAIL_RULES = `## Rich scenes: lay out, then detail
-The editor builds each substantial object in its own high-detail pass of 40–150 parts, so scenes can be far more detailed than one reply allows.
+The editor builds each substantial object in its own pass, so a scene can hold more objects and props than one reply allows. Spend that on more objects and props, not on finer detail.
 - When the request creates a scene, or any object that deserves more than ~15 parts, put that object in "detail" instead of modeling it in ops. ops then holds only settings, floor/ground, walls, room lights and simple pieces.
 - Each detail item: {"id","name","description","position","rotation","size","parent"}. position is the center of its base; size [w,h,d] (m) is the box it must fit, front facing +z before rotation; description names its key features, sub-parts, materials and colors so the detail pass can model them (e.g. "oak dresser: 3 drawers with brass pulls, plinth, carved top edge, a lamp and two framed photos on top").
-- Fill a scene with 6–20 detail items: the main pieces plus props. Group small props on one surface into one item ("desk clutter"). Give boxes clearance; an object standing on another sits at the top of that one's box.
-- Glowing parts of a detail object (bulbs, flames, screens) get their Light in its detail pass; room and sun lights stay in ops.
+- Fill a scene with 6–20 detail items: every object the request implies, then the props that make it lived-in. Group small props on one surface into one item ("desk clutter"). Give boxes clearance; an object standing on another sits at the top of that one's box. Size the floor to the items' footprint + about 1 m.
+- Glowing parts of a detail object (bulbs, flames, screens) get their Light in its detail pass. ops holds at most the directional sun; every other light belongs to a lamp, candle or window.
 - Small edits and recolors never use detail.`;
 
 /** Heading for the library examples chosen for one request (see selectExamples). */
@@ -81,7 +81,7 @@ export const EXAMPLES_HEADING = "## Examples close to this request (illustration
 const MIN_SCENE_CHARS = 4_000;
 
 /** Added to the request when the scene has no entities, so a first build is a whole composition. */
-export const EMPTY_SCENE_NOTE = "The scene is empty, so build a full, richly detailed composition, not loose objects on the grid: a floor or ground surface, any walls the request implies, lights that match the mood, and a settings op for background and ambientLightIntensity to match, with every substantial object listed in detail.";
+export const EMPTY_SCENE_NOTE = "The scene is empty, so build a full composition, not loose objects on the grid: every object the request implies plus lived-in props, a floor or ground sized to them + about 1 m, any walls the request implies, lights from visible sources that match the mood, and a settings op for background and ambientLightIntensity to match, with every substantial object listed in detail.";
 
 /** Selected ids as JSON, bounded so a select-all on a big scene cannot crowd out the scene itself. */
 function selectionText(focusIds: readonly string[]): string {

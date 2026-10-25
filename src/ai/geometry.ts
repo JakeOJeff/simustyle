@@ -7,6 +7,8 @@ const TOUCH = 0.05;
 /** Separate top-level objects may interpenetrate this much (a deliberate snug fit) before it reads as a mistake. */
 const OVERLAP = 0.03;
 const MAX_LINES = 12;
+/** A part under this size on every axis can't be seen from the default camera. */
+const SPECK = 0.05;
 /** Requests whose objects may legitimately leave the ground. */
 const AIRBORNE = /\b(float|floating|fly|flying|flies|hover|hovering|levitat|airborne|in the air|in the sky|cloud|balloon|hanging|hang|hung|ceiling|chandelier|orbit|outer space|in space|zero gravity|bird|drone|plane|jet|spaceship|ufo|underwater|submerged|buried)\w*/i;
 
@@ -109,8 +111,9 @@ function describeOffset(part: THREE.Box3, reference: THREE.Box3, referenceName: 
 /**
  * Deterministic post-build geometry review of entities created/updated by `ops` (and their descendants):
  * detached parts, object groups that do not rest on the ground, top-level objects that overlap (one sitting wholly
- * inside the other's interior is contained, not overlapping), held floating objects with no string to an anchor, and
- * objects moved inside a container they do not fit in. One correction line per problem.
+ * inside the other's interior is contained, not overlapping), held floating objects with no string to an anchor,
+ * objects moved inside a container they do not fit in, and stray specks (parts under 5 cm on every axis outside an
+ * object group). One correction line per problem.
  */
 export function checkGeometry(scene: Scene, ops: SceneOp[], request: string): string[] {
   const byId = new Map(scene.entities.map((entity) => [entity.id, entity]));
@@ -187,6 +190,14 @@ export function checkGeometry(scene: Scene, ops: SceneOp[], request: string): st
       if (other !== part && (!nearest || gap(box, boxes.get(other.id)!) < gap(box, boxes.get(nearest.id)!))) nearest = other;
     }
     lines.push(`${part.name} ${describeOffset(box, boxes.get(nearest!.id)!, nearest!.name)}.`);
+  }
+
+  // Stray specks: a part too small to see from the default camera that no object group holds.
+  for (const part of meshes) {
+    if (!affected(part) || (part.parent !== null && isGroup(byId.get(part.parent)!))) continue;
+    const size = boxes.get(part.id)!.getSize(new THREE.Vector3());
+    if (Math.max(size.x, size.y, size.z) >= SPECK) continue;
+    lines.push(`${part.name} is a speck (${meters(size.x)}×${meters(size.y)}×${meters(size.z)} m), too small to see; delete it or make it at least ${SPECK} m on one side.`);
   }
 
   // Top-level objects that pass through each other. One resting on/in the other (its lowest point within TOUCH of the

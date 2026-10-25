@@ -76,7 +76,7 @@ describe("detail pass messages and live view", () => {
   it("names the object, its box and the rest of the scene", () => {
     const items = [item(), item({ id: "desk", name: "Desk", size: [1.2, 0.75, 0.6] })];
     const prompt = detailPrompt("a study", "desk by the window", items, items[0]!);
-    for (const fragment of ["id: chair", "0.5 wide (x) × 1 tall (y) × 0.5 deep (z)", "Desk (1.2×0.75×0.6 m)", 'Start every part id with "chair_"', "40–150 parts", "desk by the window"]) expect(prompt).toContain(fragment);
+    for (const fragment of ["id: chair", "0.5 wide (x) × 1 tall (y) × 0.5 deep (z)", "Desk (1.2×0.75×0.6 m)", 'Start every part id with "chair_"', "15–60 parts", "nothing under 5 cm", "desk by the window"]) expect(prompt).toContain(fragment);
     expect(prompt).not.toContain("Chair (0.5");
   });
 

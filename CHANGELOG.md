@@ -4,6 +4,28 @@ Record meaningful project changes during the event, newest first.
 
 ## Event build log
 
+### 2026-10-25 — A detail budget instead of "10x more detailed"
+
+- Changed: The prompts now say what detail to spend on and in what order, instead of asking for as many sub-parts as possible.
+  - "Modeling well" (`src/ai/examples.ts`): spend detail on (1) every object the request implies, (2) props and clutter that make the scene lived-in, (3) only then extra features on one object. Under budget pressure, build fewer parts per object, never fewer objects. No part under 5 cm on every side, and no decorative lines, stitching or buttons. Floor or ground = the content's footprint + about 1 m, furnished, never a big empty room. Every point or spot Light belongs to a visible source (lamp, candle, fire, window); daylight is one directional sun. Some existing lines were shortened so the rules grew only from 2,900 to 3,100 characters (the budget test moved with them).
+  - Layout rules (`src/ai/prompt.ts`): the detail stage is described as room for more objects and props, not finer detail. Detail items are every implied object first, then props. The floor is sized to the items + ~1 m. `ops` holds at most the sun. The empty-scene note says the same instead of "richly detailed".
+  - Detail pass (`src/ai/detailPass.ts`): 15–60 parts (was 40–150 with seams, stitching, bolts and labels), in order: main forms, then items the object holds, then recognizable features. Nothing under 5 cm, no decorative lines, seams, stitching, buttons, bolts or labels. A Light goes only inside a glowing part. A cut-off detail reply is retried with at most 40 parts (was 90). A cut-off layout or single-pass reply is retried with at most 12 parts per object but every object (was "at most 20 parts per object").
+  - Geometry checker: a mesh under 0.05 m on every axis whose parent isn't a group (top level, or a child of another mesh) is flagged as a stray speck, with its size and a fix.
+  - Examples: the character's eyes grew from 4 cm to 5 cm. The reading corner floor shrank from 3×3 to 3×2.4 m and the campfire ground from 6×6 to 6×4.5 m, to match the footprint rule. New example tests: no example part under 5 cm on every side, every non-directional light within 0.3 m of a glowing part, and a composition's floor at most 1.5 m beyond its content on any side.
+  - Files: `src/ai/examples.ts`, `src/ai/prompt.ts`, `src/ai/detailPass.ts`, `src/ai/agent.ts`, `src/ai/geometry.ts`, `tests/ai/examples.test.ts`, `tests/ai/detailPass.test.ts`, `tests/ai/geometry.test.ts`.
+- Why: The "10x detailed" pass spent its budget on detail too small to see: 52 sub-5 cm parts in the kitchen nook, buttons on the bench cushion, a 12×10 m ground under one car, and a bare light in the nook.
+- Validation: `npm run check` passes (418 tests, svelte-check, build). Real `npm run ai:eval` compared with the previous run (2026-10-25T00-51), same four prompts:
+
+  | Prompt | Top-level objects | Parts | Parts < 5 cm | Bare lights | Floor (content) | Cost |
+  |---|---|---|---|---|---|---|
+  | Kitchen nook | 7 → 9 | 327 → 162 | 52 → 0 | 1 → 0 | 4.8×4.2 (3.6×2.5) → 4.0×3.8 (3.6×2.8) | $0.041 → $0.023 |
+  | Up house, decorated | 8 → 12 | 431 → 250 | 15 → 8 | 0 → 0 | 14×12 (8.3×8.5) → 7×7 (4.7×5.6) | $0.032 → $0.026 |
+  | Red sports car | 3 → 9 | 82 → 62 | 0 → 0 | 0 → 0 | 12×10 (4.3×2.0) → 6×4.5 (3.9×4.4) | $0.011 → $0.006 |
+  | Snowman garden | 9 → 8 | 286 → 144 | 31 → 4 | 0 → 0 | 8×7 (7.7×6.2) → 7×6 (5.0×4.7) | $0.024 → $0.015 |
+
+  The four prompts cost $0.070 and 7.7 minutes (was $0.107 and 13.2 minutes). None of the sub-5 cm parts left are stray; all are inside object groups. The nook now has a set table with plates, two chairs, a filled wall shelf, a window with a plant and a pendant lamp that glows. The car sits on a fitted asphalt pad with parking lines. The fifth case, "reading corner → Up house around it" (new since the previous run), fails its tether check: the corner is inside the house, but the balloons sit on the roof with short strings that don't reach it.
+- Limitations: The car is still blocky, and its body slabs look misaligned. The Up house built around the reading corner (one 44-part detail object) has a roof that doesn't close over the walls. Speck detection ignores parts inside groups, so small parts the model puts inside an object still pass.
+
 ### 2026-10-25 — Much more detailed AI builds: lay out the scene, then build each object in its own pass
 
 - Changed: New scenes are built in two stages, so they can hold roughly ten times the detail one reply allows.
