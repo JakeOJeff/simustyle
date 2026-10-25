@@ -49,9 +49,10 @@ export async function requestSceneEdit(
   correctionErrors: string[] = [],
   responseSchema: Record<string, unknown> = AI_RESPONSE_JSON_SCHEMA.schema,
   previousReply = "",
-  task: AiTask = "scene_draft"
+  task: AiTask = "scene_draft",
+  onText?: (text: string) => void
 ): Promise<unknown> {
-  return requestJson(sceneEditMessages(systemPrompt, userPrompt, correctionErrors, previousReply), { ...AI_RESPONSE_JSON_SCHEMA, schema: responseSchema }, task);
+  return requestJson(sceneEditMessages(systemPrompt, userPrompt, correctionErrors, previousReply), { ...AI_RESPONSE_JSON_SCHEMA, schema: responseSchema }, task, onText);
 }
 
 /** The chat messages for one scene-edit call; a correction replays the rejected reply, then the errors to fix. */
@@ -85,11 +86,14 @@ export class UnusableReplyError extends Error {
 /**
  * Sends chat messages through the proxy (or desktop shell) and returns the model's parsed JSON object.
  * The hosted proxy picks the model from `task`; the desktop app always uses the user's own configured model.
+ * With onText, the proxy streams the reply and onText receives the whole text written so far after each piece
+ * (the desktop app does not stream, so there it is never called).
  */
 export async function requestJson(
   messages: ChatMessage[],
   jsonSchema: { name: string; strict: boolean; schema: Record<string, unknown> },
-  task: AiTask
+  task: AiTask,
+  onText?: (text: string) => void
 ): Promise<unknown> {
   const request = { messages, responseFormat: { type: "json_schema", json_schema: jsonSchema } };
   let payload: unknown;
@@ -101,12 +105,14 @@ export async function requestJson(
       response = await fetch("/api/ai/chat", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ task, ...request })
+        body: JSON.stringify({ task, ...request, ...(onText ? { stream: true } : {}) })
       });
     } catch {
       throw new Error("Could not reach the local AI endpoint. Check that the development server is running.");
     }
-    payload = await response.json().catch(() => null);
+    payload = response.ok && (response.headers.get("Content-Type") ?? "").includes("ndjson") && response.body
+      ? await readStream(response.body, onText ?? (() => undefined))
+      : await response.json().catch(() => null);
     if (isRecord(payload) && isCreditStatus(payload.credits)) creditListener?.(payload.credits);
     if (!response.ok) {
       const message = isRecord(payload) && typeof payload.error === "string"
@@ -116,6 +122,38 @@ export async function requestJson(
     }
   }
   return parseChatPayload(payload);
+}
+
+/**
+ * Collects a streamed reply (see ChatStreamEvent in chatProxy.ts) into the same payload an unstreamed call returns.
+ * A stream that ends without a done or error line broke off.
+ */
+async function readStream(body: ReadableStream<Uint8Array>, onText: (text: string) => void): Promise<unknown> {
+  const reader = body.getReader();
+  const decoder = new TextDecoder();
+  let buffer = "";
+  let content = "";
+  let end: Record<string, unknown> | null = null;
+  const handle = (line: string) => {
+    if (!line.trim()) return;
+    let event: unknown;
+    try { event = JSON.parse(line); } catch { return; }
+    if (!isRecord(event)) return;
+    if (typeof event.delta === "string") { content += event.delta; onText(content); }
+    else end = event;
+  };
+  for (let chunk = await reader.read(); !chunk.done; chunk = await reader.read()) {
+    buffer += decoder.decode(chunk.value, { stream: true });
+    const lines = buffer.split("\n");
+    buffer = lines.pop() ?? "";
+    lines.forEach(handle);
+  }
+  handle(buffer);
+  const last = end as Record<string, unknown> | null;
+  if (last && isCreditStatus(last.credits)) creditListener?.(last.credits);
+  if (!last) throw new Error("The AI reply stream broke off. Try again.");
+  if (typeof last.error === "string") throw new Error(last.error);
+  return { content, ...(last.truncated === true ? { truncated: true } : {}) };
 }
 
 /** The model's JSON object from a successful proxy reply; a cut-off or non-JSON reply is an UnusableReplyError. */

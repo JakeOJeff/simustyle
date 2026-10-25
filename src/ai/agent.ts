@@ -10,6 +10,7 @@ import { validateScene } from "../scene/validate";
 import { buildSceneUserMessage, requestHistory } from "./prompt";
 import { checkGeometry } from "./geometry";
 import { AI_TASK_LIMITS } from "./tasks";
+import { parsePartialReply, type PartialReply } from "./partialJson";
 
 export interface SceneAgentReply {
   summary: string;
@@ -34,7 +35,17 @@ export interface SceneAgentRequest {
   /** The rejected reply as JSON, sent back with the errors so the model can correct it (truncated to the input budget). */
   previousReply: string;
   task: SceneAgentTask;
+  /** Set on draft calls when the editor shows builds live: called with the whole reply text written so far. */
+  onText?: (text: string) => void;
 }
+
+/** A draft as it streams in (see parsePartialReply); attempt counts draft calls from 1. */
+export interface LiveBuild extends PartialReply {
+  attempt: number;
+}
+
+/** At most one partial parse per this many milliseconds while a reply streams. */
+const LIVE_INTERVAL_MS = 100;
 
 export interface SceneAgentDependencies {
   /** The static, cacheable system prompt; per-call context is built into the user message. */
@@ -51,6 +62,8 @@ export interface SceneAgentDependencies {
   focusIds?: readonly string[];
   /** Server allows escalating reviews to the strong model (task "scene_review"). */
   solReviewEnabled?: boolean;
+  /** Shows each draft attempt while it is written, then once more with the finished draft. Reviews are not streamed. */
+  onLiveBuild?(build: LiveBuild): void;
 }
 
 export interface SceneAgentPreflight {
@@ -297,12 +310,20 @@ export async function runSceneAgent(scene: Scene, userPrompt: string, dependenci
 
   let attempts = 0;
   /** One model call; errors and the echoed reply are cut so system + user + correction stay within the input cap. */
-  const ask = (prompt: string, task: SceneAgentTask, errors: readonly string[], rejected: string) => {
+  const ask = (prompt: string, task: SceneAgentTask, errors: readonly string[], rejected: string, liveAttempt?: number) => {
     attempts += 1;
     const correctionErrors = correctionPayload(errors);
     const room = MAX_SCENE_INPUT_CHARS - systemPrompt.length - prompt.length - CORRECTION_WRAPPER_CHARS - JSON.stringify(correctionErrors).length;
+    const live = liveAttempt !== undefined ? dependencies.onLiveBuild : undefined;
+    let parsedAt = 0;
+    const onText = live ? (text: string) => {
+      const now = Date.now();
+      if (now - parsedAt < LIVE_INTERVAL_MS) return;
+      parsedAt = now;
+      live({ ...parsePartialReply(text), attempt: liveAttempt! });
+    } : undefined;
     return dependencies.complete({ systemPrompt, userPrompt: prompt, correctionErrors, responseSchema: dependencies.responseSchema,
-      previousReply: correctionErrors.length ? echoReply(rejected, room) : rejected, task });
+      previousReply: correctionErrors.length ? echoReply(rejected, room) : rejected, task, ...(onText ? { onText } : {}) });
   };
   const replyText = (raw: unknown) => typeof raw === "string" ? raw : JSON.stringify(raw) ?? "";
 
@@ -319,7 +340,7 @@ export async function runSceneAgent(scene: Scene, userPrompt: string, dependenci
     draftCalls = attempt;
     let raw: unknown;
     try {
-      raw = await ask(draftPrompt, "scene_draft", correctionErrors, previousReply);
+      raw = await ask(draftPrompt, "scene_draft", correctionErrors, previousReply, attempt);
     } catch (error) {
       const truncated = unusableReply(error);
       if (truncated !== null && attempt <= maxRetries) { correctionErrors = [UNUSABLE_REPLY(truncated)]; previousReply = ""; continue; }
@@ -330,6 +351,8 @@ export async function runSceneAgent(scene: Scene, userPrompt: string, dependenci
     const prepared = prepareReply(scene, raw);
     const reply = prepared.reply;
     previousReply = replyText(raw);
+    // The last throttled update may have missed the end of the reply; show the finished draft.
+    if (dependencies.onLiveBuild) dependencies.onLiveBuild({ ...parsePartialReply(previousReply), attempt });
     if (!reply) {
       correctionErrors = prepared.errors;
       const build = rejectedBuild(raw);

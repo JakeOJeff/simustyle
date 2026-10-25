@@ -113,6 +113,16 @@ function aiProxy(env: Record<string, string>) {
           reserve: (task) => ledger.reserve(id, task),
           settle: (reservation, charge) => ledger.settle(id, reservation, charge)
         });
+        if (result.stream) {
+          response.statusCode = 200;
+          response.setHeader("Content-Type", "application/x-ndjson; charset=utf-8");
+          const reader = result.stream.getReader();
+          // The request stream closes as soon as its body is read; the response closing early means the tab went away.
+          response.on("close", () => { if (!response.writableEnded) void reader.cancel(); });
+          for (let chunk = await reader.read(); !chunk.done; chunk = await reader.read()) response.write(chunk.value);
+          response.end();
+          return;
+        }
         send(result.status, result.body);
       });
     }

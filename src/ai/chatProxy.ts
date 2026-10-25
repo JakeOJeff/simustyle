@@ -5,7 +5,7 @@
  */
 
 import { AI_TASK_LIMITS, isAiTask, type AiTask } from "./tasks";
-import { callCostUsd, creditsForCost, readUsage, worstCaseUsd } from "./pricing";
+import { callCostUsd, creditsForCost, readUsage, worstCaseUsd, type TokenUsage } from "./pricing";
 import type { CallCharge, CreditStatus, Reservation, ReserveResult } from "./credits";
 
 export const MAX_CHAT_REQUEST_BYTES = 1024 * 1024;
@@ -24,11 +24,25 @@ export interface ChatProxyEnv {
   AI_PROMPT_CACHE_KEY?: string;
 }
 
-export interface ChatProxyResult {
+export type ChatProxyResult = {
   status: number;
   /** `truncated` marks a reply cut off at max_completion_tokens; it was billed but is usually not valid JSON. */
   body: ({ content: string; truncated?: boolean } | { error: string }) & { credits?: CreditStatus };
-}
+  stream?: undefined;
+} | {
+  status: 200;
+  body?: undefined;
+  /**
+   * A streamed reply (the request set `stream: true`), as newline-delimited JSON events:
+   * {"delta": text} while the model writes, then one {"done": true, "truncated"?, "credits"?} or {"error", "credits"?}.
+   */
+  stream: ReadableStream<Uint8Array>;
+  /** Settles when the provider call is finished and credits are settled, even if the browser stopped reading. */
+  finished: Promise<void>;
+};
+
+/** One line of a streamed reply; see ChatProxyResult.stream. */
+export type ChatStreamEvent = { delta: string } | { done: true; truncated?: boolean; credits?: CreditStatus } | { error: string; credits?: CreditStatus };
 
 /** The calling visitor's credits; omitted when the server does not meter AI. */
 export interface ChatCredits {
@@ -110,22 +124,30 @@ export async function forwardChat(raw: Uint8Array, env: ChatProxyEnv, credits?: 
     return { status, body: { error, ...(balance ? { credits: balance } : {}) } };
   };
 
+  const call = (stream: boolean) => fetch(`${baseUrl}/chat/completions`, {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${env.AI_API_KEY}`,
+      "Content-Type": "application/json"
+    },
+    body: JSON.stringify({
+      model,
+      messages: body.messages.map(({ role, content }) => ({ role, content })),
+      response_format: body.responseFormat,
+      max_completion_tokens: limits.maxCompletionTokens,
+      ...(promptCacheKeyEnabled(baseUrl, env) ? { prompt_cache_key: `simustyle-${task}-v1` } : {}),
+      ...(stream ? { stream: true, stream_options: { include_usage: true } } : {})
+    }),
+    signal: AbortSignal.timeout(stream ? 300_000 : 120_000)
+  });
+
   try {
-    const upstream = await fetch(`${baseUrl}/chat/completions`, {
-      method: "POST",
-      headers: {
-        Authorization: `Bearer ${env.AI_API_KEY}`,
-        "Content-Type": "application/json"
-      },
-      body: JSON.stringify({
-        model,
-        messages: body.messages.map(({ role, content }) => ({ role, content })),
-        response_format: body.responseFormat,
-        max_completion_tokens: limits.maxCompletionTokens,
-        ...(promptCacheKeyEnabled(baseUrl, env) ? { prompt_cache_key: `simustyle-${task}-v1` } : {})
-      }),
-      signal: AbortSignal.timeout(120_000)
-    });
+    let upstream = await call(body.stream === true);
+    // A provider that rejects streaming options gets the same request unstreamed; a rejected call isn't billed.
+    if (body.stream === true && upstream.status === 400) upstream = await call(false);
+    if (upstream.ok && upstream.body && (upstream.headers.get("Content-Type") ?? "").includes("text/event-stream")) {
+      return streamReply(upstream.body, (charge) => settle(charge), task, model);
+    }
     const result = await upstream.json().catch(() => null) as unknown;
     if (!upstream.ok) {
       const message = extractProviderMessage(result) || `AI provider returned HTTP ${upstream.status}.`;
@@ -146,6 +168,70 @@ export async function forwardChat(raw: Uint8Array, env: ChatProxyEnv, credits?: 
       : "Could not reach the configured AI provider.";
     return failAndRefund(502, message);
   }
+}
+
+/**
+ * Relays a provider's server-sent events as ChatStreamEvent lines. The provider is read to the end even
+ * after the browser stops reading, so the call is always settled from its real usage.
+ */
+function streamReply(source: ReadableStream<Uint8Array>, settle: (charge: CallCharge | null) => Promise<CreditStatus | undefined>, task: AiTask, model: string): ChatProxyResult {
+  const encoder = new TextEncoder();
+  const sink: { output?: ReadableStreamDefaultController<Uint8Array> } = {};
+  let reading = true;
+  const send = (event: ChatStreamEvent) => {
+    if (!reading || !sink.output) return;
+    try { sink.output.enqueue(encoder.encode(`${JSON.stringify(event)}\n`)); } catch { reading = false; }
+  };
+  const finished = (async () => {
+    const reader = source.getReader();
+    const decoder = new TextDecoder();
+    let buffer = "";
+    let content = "";
+    let usage: TokenUsage | null = null;
+    let finish: string | null = null;
+    let failed: string | null = null;
+    const handle = (line: string) => {
+      const data = line.replace(/^data:\s?/, "").trim();
+      if (!line.startsWith("data:") || !data || data === "[DONE]") return;
+      let chunk: unknown;
+      try { chunk = JSON.parse(data); } catch { return; }
+      usage = readUsage(chunk) ?? usage;
+      if (!isRecord(chunk)) return;
+      const message = extractProviderMessage(chunk);
+      if (message) failed = message.slice(0, 500);
+      const first = Array.isArray(chunk.choices) ? chunk.choices[0] : undefined;
+      if (!isRecord(first)) return;
+      if (typeof first.finish_reason === "string") finish = first.finish_reason;
+      const delta = isRecord(first.delta) && typeof first.delta.content === "string" ? first.delta.content : "";
+      if (delta) { content += delta; send({ delta }); }
+    };
+    try {
+      for (;;) {
+        const { value, done } = await reader.read();
+        if (done) break;
+        buffer += decoder.decode(value, { stream: true });
+        const lines = buffer.split("\n");
+        buffer = lines.pop() ?? "";
+        lines.forEach(handle);
+      }
+      handle(buffer);
+    } catch (error) {
+      failed = error instanceof Error && error.name === "TimeoutError" ? "AI provider request timed out." : "The AI provider's reply stream broke off.";
+    }
+    const truncated = finish === "length";
+    // Same rule as an unstreamed call: with no content and no usage there is no sign the call was billed.
+    const charge = !content && !usage ? null : chargeFor(task, model, usage);
+    const credits = await settle(charge);
+    if (failed && !truncated) send({ error: failed, ...(credits ? { credits } : {}) });
+    else if (!content && !truncated) send({ error: "AI provider returned no message content.", ...(credits ? { credits } : {}) });
+    else send({ done: true, ...(truncated ? { truncated: true } : {}), ...(credits ? { credits } : {}) });
+    if (reading) try { sink.output?.close(); } catch { /* already closed */ }
+  })();
+  const stream = new ReadableStream<Uint8Array>({
+    start(controller) { sink.output = controller; },
+    cancel() { reading = false; }
+  });
+  return { status: 200, stream, finished };
 }
 
 /** Prices a finished call from its usage and logs it; missing usage is charged at the task's worst case. */
@@ -188,6 +274,8 @@ function isChatRequest(value: Record<string, unknown>): value is {
   task: AiTask;
   messages: ChatMessage[];
   responseFormat: Record<string, unknown>;
+  /** Relay the reply as it is written (see ChatProxyResult.stream). */
+  stream?: unknown;
 } {
   if (!Array.isArray(value.messages) || !isRecord(value.responseFormat)) return false;
   return value.messages.length >= 2 && value.messages.length <= 8 && value.messages.every((message) =>

@@ -7,7 +7,8 @@
   import { fetchAiStatus, onCreditsChange, requestSceneEdit, type CreditStatus } from "./ai/client";
   import SupportDialog from "./editor/SupportDialog.svelte";
   import { AI_RESPONSE_JSON_SCHEMA, buildSystemPrompt } from "./ai/prompt";
-  import { runSceneAgent, type SceneAgentReply } from "./ai/agent";
+  import { runSceneAgent, type LiveBuild, type SceneAgentReply } from "./ai/agent";
+  import { LivePreview } from "./ai/livePreview";
   import { BuildCache } from "./ai/cache";
   import Timeline from "./editor/Timeline.svelte";
   import DocsPanel from "./editor/DocsPanel.svelte";
@@ -422,6 +423,11 @@
 
   let selectedEntity = $derived(scene.entities.find((entity) => entity.id === selectedId) ?? null);
   let viewportScene = $derived(panelOpen.timeline && playState === "stopped" ? animatorPreview.evaluate(scene, timelineTime).scene : scene);
+  /** The AI draft being written right now, drawn over the scene until the finished build is applied. */
+  let aiLive = $state.raw<LiveBuild | null>(null);
+  const livePreview = new LivePreview();
+  /** What the viewport draws: the scene, plus the streaming AI build while one is in progress (never committed). */
+  let displayScene = $derived(aiLive && playState === "stopped" ? livePreview.update(viewportScene, aiLive.ops, aiLive.complete) : viewportScene);
 
   function tracksFor(entityId: string): AnimationTrack[] {
     const value = scene.entities.find((entity) => entity.id === entityId)?.components.Animator?.tracks;
@@ -478,6 +484,27 @@
 
   function pushAIMessage(aiMessage: AIPanelMessage) { aiMessages = [...aiMessages, aiMessage]; }
 
+  /** Roughly how many objects a partial build adds: one per create, assembly and part, and one per repeat copy. */
+  function liveObjectCount(ops: readonly unknown[]): number {
+    return ops.reduce<number>((total, op) => {
+      const fields = op as { op?: unknown; parts?: unknown; count?: unknown };
+      if (fields.op === "create") return total + 1;
+      if (fields.op === "assemble") return total + 1 + (Array.isArray(fields.parts) ? fields.parts.length : 0);
+      if (fields.op === "repeat" && typeof fields.count === "number") return total + fields.count;
+      return total;
+    }, 0);
+  }
+
+  /** Shows a draft as it streams. A correction keeps the previous attempt on screen until it has caught up. */
+  function showLiveBuild(build: LiveBuild) {
+    const objects = liveObjectCount(build.ops);
+    if (aiLive && build.attempt !== aiLive.attempt && objects < liveObjectCount(aiLive.ops)) return;
+    aiLive = build;
+    const verb = build.attempt > 1 ? "Rebuilding" : "Building";
+    if (objects) aiProgress = `${verb} live: ${objects} object${objects === 1 ? "" : "s"} so far…`;
+    else if (build.plan) aiProgress = `Planning: …${build.plan.slice(-90)}`;
+  }
+
   async function submitAI(prompt: string) {
     if (aiLoading || !prompt.trim()) return;
     if (playState !== "stopped") { message = "Stop the simulation before asking the scene agent to edit."; return; }
@@ -499,9 +526,10 @@
         focusIds: selectedIds.length ? selectedIds : selectedId ? [selectedId] : [],
         responseSchema: AI_RESPONSE_JSON_SCHEMA.schema,
         onProgress: (progress) => aiProgress = progress,
+        onLiveBuild: showLiveBuild,
         solReviewEnabled,
-        complete: ({ systemPrompt, userPrompt, correctionErrors, responseSchema, previousReply, task }) =>
-          requestSceneEdit(systemPrompt, userPrompt, correctionErrors, responseSchema, previousReply, task)
+        complete: ({ systemPrompt, userPrompt, correctionErrors, responseSchema, previousReply, task, onText }) =>
+          requestSceneEdit(systemPrompt, userPrompt, correctionErrors, responseSchema, previousReply, task, onText)
       });
       const id = `ai_${nextAIId++}`;
       // Small edits made while waiting (a camera nudge, a rename) shouldn't waste a paid build: replay its ops on the
@@ -550,6 +578,7 @@
       pushAIMessage({ id: `ai_${nextAIId++}`, role: "assistant", content: reason, summary: `AI request failed: ${reason}`, retry: { prompt } });
       message = reason;
     } finally {
+      aiLive = null;
       aiLoading = false;
       emitTutorial("ai-response");
     }
@@ -1005,6 +1034,8 @@
 
   /** Viewport clicks select objects, and during Play also fire "when clicked". */
   function viewportSelect(id: string | null) {
+    // Objects drawn only by a streaming AI build don't exist in the scene yet.
+    if (id && aiLive && !scene.entities.some((entity) => entity.id === id)) return;
     if (playState === "playing" && id) simulation?.click(id);
     selectEntity(id);
   }
@@ -1696,7 +1727,7 @@ when clicked
         </div>
       {/if}
       <div class="stage" bind:this={stageHost} style={stageContentStyle()} use:observeStageSize>
-        <Viewport scene={viewportScene} {selectedId} {selectedIds} {mode} {frameToken} {focusToken} {gridVisible} {space} {snap} playState={playState} onCameraInput={(ops) => { const result = applyOps(scene, ops); if (!result.errors.length) scene = result.scene; }} canDrag={playState === "stopped"} onSelect={viewportSelect} onSelectMany={selectEntities} onTransform={updateTransform} onModeChange={(nextMode) => setMode(nextMode, "key")} onContextMenu={(id, x, y, position) => openEntityMenu(id, x, y, position, id ? "object" : "viewport")}>
+        <Viewport scene={displayScene} {selectedId} {selectedIds} {mode} {frameToken} {focusToken} {gridVisible} {space} {snap} playState={playState} onCameraInput={(ops) => { const result = applyOps(scene, ops); if (!result.errors.length) scene = result.scene; }} canDrag={playState === "stopped" && !aiLive} onSelect={viewportSelect} onSelectMany={selectEntities} onTransform={updateTransform} onModeChange={(nextMode) => setMode(nextMode, "key")} onContextMenu={(id, x, y, position) => openEntityMenu(id, x, y, position, id ? "object" : "viewport")}>
           {#snippet overlay()}
             <div class="tool-rail" role="toolbar" aria-label="Transform tools" aria-orientation="vertical">
               {#each railTools as item (item.mode)}

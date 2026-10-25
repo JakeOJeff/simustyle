@@ -438,3 +438,34 @@ describe("unusable replies", () => {
     expect(result.errors.join()).toContain("AI request failed");
   });
 });
+
+describe("live builds", () => {
+  it("streams draft calls into onLiveBuild, never reviews, and always shows the finished draft", async () => {
+    const live: { attempt: number; ops: number; complete: number }[] = [];
+    const requests: SceneAgentRequest[] = [];
+    const text = JSON.stringify(threeCubes);
+    const result = await runSceneAgent(createEmptyScene(), "three cubes", {
+      ...dependencies([]), solReviewEnabled: true,
+      onLiveBuild: (build) => live.push({ attempt: build.attempt, ops: build.ops.length, complete: build.complete }),
+      complete: async (request) => {
+        requests.push(request);
+        // Stream the draft in pieces; the throttle lets only the first through, the final emit shows the rest.
+        if (request.task === "scene_draft") for (let end = 1; end <= text.length; end += 40) request.onText?.(text.slice(0, end));
+        return threeCubes;
+      }
+    });
+    expect(result.ok).toBe(true);
+    expect(requests.map((request) => [request.task, typeof request.onText])).toEqual([["scene_draft", "function"], ["scene_review", "undefined"]]);
+    expect(live.at(-1)).toEqual({ attempt: 1, ops: 3, complete: 3 });
+    expect(live.length).toBeGreaterThanOrEqual(2);
+  });
+
+  it("numbers correction attempts and sends no onText without a live listener", async () => {
+    const attempts: number[] = [];
+    await runSceneAgent(createEmptyScene(), "a cube", { ...dependencies([{ summary: "bad", ops: [{ op: "nonsense" }] }, clean]), onLiveBuild: (build) => attempts.push(build.attempt) });
+    expect([...new Set(attempts)]).toEqual([1, 2]);
+    const { requests, complete } = recorder([clean]);
+    await runSceneAgent(createEmptyScene(), "a cube", { ...dependencies([]), complete });
+    expect(requests[0]?.onText).toBeUndefined();
+  });
+});

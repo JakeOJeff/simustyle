@@ -76,7 +76,7 @@ describe("chat proxy task routing", () => {
     const long = encode({ task: "parse", messages: [{ role: "system", content: "s".repeat(4_000) }, { role: "user", content: "u".repeat(4_001) }], responseFormat: {} });
     const result = await forwardChat(long, env);
     expect(result.status).toBe(413);
-    expect("error" in result.body && result.body.error).toContain("8000");
+    expect("error" in result.body! && result.body!.error).toContain("8000");
     expect(fetchMock).not.toHaveBeenCalled();
   });
 
@@ -104,8 +104,8 @@ describe("chat proxy credits", () => {
     await ledger.reserve("a", "parse", noon);
     const result = await forwardChat(request("scene_review"), env, meter(ledger));
     expect(result.status).toBe(429);
-    expect(result.body.credits?.remaining).toBe(28);
-    expect("error" in result.body && result.body.error).toContain("needs up to 30");
+    expect(result.body!.credits?.remaining).toBe(28);
+    expect("error" in result.body! && result.body!.error).toContain("needs up to 30");
     expect(fetchMock).not.toHaveBeenCalled();
   });
 
@@ -114,8 +114,8 @@ describe("chat proxy credits", () => {
     const ledger = new CreditLedger(memoryCreditStorage(), { perUser: 30, monthlyBudgetUsd: 0.001, dailyMaxUsd: 15 });
     const result = await forwardChat(request("parse"), env, meter(ledger));
     expect(result.status).toBe(429);
-    expect(result.body.credits?.globalExhausted).toBe(true);
-    expect("error" in result.body && result.body.error).toMatch(/monthly AI budget/);
+    expect(result.body!.credits?.globalExhausted).toBe(true);
+    expect("error" in result.body! && result.body!.error).toMatch(/monthly AI budget/);
   });
 
   it("charges the call's real cost from usage, counting cached tokens", async () => {
@@ -124,7 +124,7 @@ describe("chat proxy credits", () => {
     const ledger = new CreditLedger(memoryCreditStorage(), { perUser: 30, monthlyBudgetUsd: 150, dailyMaxUsd: 15 });
     const result = await forwardChat(request("scene_draft"), env, meter(ledger));
     expect(result.status).toBe(200);
-    expect(result.body.credits?.remaining).toBe(29);
+    expect(result.body!.credits?.remaining).toBe(29);
     const report = await ledger.report(noon);
     expect(report.tasks.scene_draft).toEqual({ calls: 1, promptTokens: 4_000, cachedTokens: 1_000, completionTokens: 2_000, costUsd: 0.00131 });
     const logged = JSON.parse(String(vi.mocked(console.log).mock.calls[0]?.[0])) as Record<string, unknown>;
@@ -135,7 +135,7 @@ describe("chat proxy credits", () => {
     stubProvider();
     const ledger = new CreditLedger(memoryCreditStorage(), { perUser: 30, monthlyBudgetUsd: 150, dailyMaxUsd: 15 });
     const result = await forwardChat(request("scene_draft"), env, meter(ledger));
-    expect(result.body.credits?.remaining).toBe(25);
+    expect(result.body!.credits?.remaining).toBe(25);
     expect((await ledger.report(noon)).tasks.scene_draft.costUsd).toBeCloseTo(5 * 0.00167, 9);
   });
 
@@ -144,9 +144,9 @@ describe("chat proxy credits", () => {
     stubProvider(() => Response.json({ error: { message: "down" } }, { status: 500 }));
     const failed = await forwardChat(request("scene_review" as AiTask), env, meter(ledger));
     expect(failed.status).toBe(502);
-    expect(failed.body.credits?.remaining).toBe(30);
+    expect(failed.body!.credits?.remaining).toBe(30);
     vi.stubGlobal("fetch", vi.fn().mockRejectedValue(new TypeError("offline")));
-    expect((await forwardChat(request("parse"), env, meter(ledger))).body.credits?.remaining).toBe(30);
+    expect((await forwardChat(request("parse"), env, meter(ledger))).body!.credits?.remaining).toBe(30);
     expect((await ledger.report(noon)).totals.calls).toBe(0);
   });
 });
@@ -158,13 +158,68 @@ describe("chat proxy truncated replies", () => {
     const ledger = new CreditLedger(memoryCreditStorage(), { perUser: 30, monthlyBudgetUsd: 150, dailyMaxUsd: 15 });
     const result = await forwardChat(request("scene_draft"), env, meter(ledger));
     expect(result.status).toBe(200);
-    expect(result.body).toMatchObject({ content: "{\"plan\":\"cut", truncated: true });
-    expect(result.body.credits?.remaining).toBe(28);
+    expect(result.body!).toMatchObject({ content: "{\"plan\":\"cut", truncated: true });
+    expect(result.body!.credits?.remaining).toBe(28);
   });
 
   it("treats an empty reply that spent its budget as truncated, not missing", async () => {
     stubProvider(() => Response.json({ choices: [{ finish_reason: "length", message: { content: null } }], usage: { prompt_tokens: 10, completion_tokens: 4000 } }));
     const result = await forwardChat(request("scene_draft"), env);
     expect(result).toMatchObject({ status: 200, body: { content: "", truncated: true } });
+  });
+});
+
+describe("streamed replies", () => {
+  /** A provider answering with server-sent events, split at awkward byte boundaries. */
+  const events = (chunks: unknown[], cut = 7) => {
+    const text = chunks.map((chunk) => `data: ${typeof chunk === "string" ? chunk : JSON.stringify(chunk)}\n\n`).join("");
+    const bytes = new TextEncoder().encode(text);
+    const body = new ReadableStream<Uint8Array>({ start(controller) { for (let i = 0; i < bytes.length; i += cut) controller.enqueue(bytes.slice(i, i + cut)); controller.close(); } });
+    return new Response(body, { headers: { "Content-Type": "text/event-stream" } });
+  };
+  const delta = (content: string, finish?: string) => ({ choices: [{ delta: { content }, ...(finish ? { finish_reason: finish } : {}) }] });
+  const usage = { choices: [], usage: { prompt_tokens: 10_000, completion_tokens: 1_000, prompt_tokens_details: { cached_tokens: 8_000 } } };
+  const read = async (result: Awaited<ReturnType<typeof forwardChat>>) => {
+    expect(result.stream).toBeDefined();
+    const text = await new Response(result.stream!).text();
+    return text.trim().split("\n").map((line) => JSON.parse(line) as Record<string, unknown>);
+  };
+
+  it("relays deltas as they arrive, then settles from the final usage", async () => {
+    const ledger = new CreditLedger(memoryCreditStorage(), { perUser: 30, monthlyBudgetUsd: 150, dailyMaxUsd: 15 });
+    const { sent } = stubProvider(() => events([delta('{"plan":'), delta('"x","summary":"y","ops":[]}', "stop"), usage, "[DONE]"]));
+    const result = await forwardChat(request("scene_draft", { stream: true }), env, meter(ledger));
+    expect(sent()).toMatchObject({ stream: true, stream_options: { include_usage: true } });
+    const lines = await read(result);
+    await (result as { finished: Promise<void> }).finished;
+    expect(lines.slice(0, 2)).toEqual([{ delta: '{"plan":' }, { delta: '"x","summary":"y","ops":[]}' }]);
+    expect(lines[2]).toMatchObject({ done: true, credits: { remaining: 29 } });
+    expect((await ledger.report(noon)).totals.calls).toBe(1);
+  });
+
+  it("marks a reply cut off at the output limit and reports a broken stream as an error", async () => {
+    stubProvider(() => events([delta('{"plan":"lon', "length"), usage]));
+    expect((await read(await forwardChat(request("scene_draft", { stream: true }), env))).at(-1)).toEqual({ done: true, truncated: true });
+    stubProvider(() => events([usage]));
+    expect((await read(await forwardChat(request("scene_draft", { stream: true }), env))).at(-1)).toEqual({ error: "AI provider returned no message content." });
+  });
+
+  it("keeps reading and charging after the browser stops listening", async () => {
+    const ledger = new CreditLedger(memoryCreditStorage(), { perUser: 30, monthlyBudgetUsd: 150, dailyMaxUsd: 15 });
+    stubProvider(() => events([delta("{"), delta("}", "stop"), usage]));
+    const result = await forwardChat(request("scene_draft", { stream: true }), env, meter(ledger));
+    await result.stream!.cancel();
+    await (result as { finished: Promise<void> }).finished;
+    expect((await ledger.report(noon)).totals.calls).toBe(1);
+  });
+
+  it("falls back to an unstreamed call when the provider rejects streaming, and to JSON when it ignores it", async () => {
+    let calls = 0;
+    const { sent } = stubProvider(() => ++calls === 1 ? Response.json({ error: { message: "stream_options unsupported" } }, { status: 400 }) : reply());
+    const fallback = await forwardChat(request("scene_draft", { stream: true }), env);
+    expect(sent(1).stream).toBeUndefined();
+    expect(fallback.body).toEqual({ content: "{}" });
+    stubProvider(() => reply());
+    expect((await forwardChat(request("scene_draft", { stream: true }), env)).body).toEqual({ content: "{}" });
   });
 });

@@ -4,6 +4,20 @@ Record meaningful project changes during the event, newest first.
 
 ## Event build log
 
+### 2026-10-25 — AI builds appear in the viewport while they are written
+
+- Changed: The first pass of an AI build now streams into the viewport instead of appearing all at once.
+  - `/api/ai/chat` accepts `stream: true` (dev server and Worker). It asks the provider for a server-sent-event stream with usage and relays it as newline-delimited JSON: `{"delta"}` while the model writes, then one `{"done"}` or `{"error"}` line carrying the credit balance. The provider is read to the end even if the tab closes (`ctx.waitUntil` on the Worker), so every call is settled from its real usage. A provider that rejects streaming (HTTP 400) is retried unstreamed, and one that ignores it is answered as plain JSON. Streamed calls may run up to 5 minutes; unstreamed calls keep the 2-minute timeout.
+  - `src/ai/partialJson.ts` reads a half-written reply: the plan so far, and every finished op, cut just after the last finished op or assemble part. A half-written assemble shows only its finished parts. Number arrays are never cut, so no part appears with a partial position.
+  - `src/ai/livePreview.ts` applies those ops on top of the current scene for display only. Finished ops are applied once, only the growing op is re-applied, and a part that doesn't apply is skipped without hiding the rest.
+  - The agent streams draft calls only, parsing at most every 100 ms, and shows the finished draft once more when the call ends. Review calls are not streamed, so the draft stays on screen while the stronger model checks it. A correction keeps the previous attempt visible until it has rebuilt at least as many objects.
+  - The editor draws the live build in the viewport, and the Assistant shows "Planning: …", then "Building live: N objects so far…" ("Rebuilding" for corrections). Live objects can't be selected or dragged and are never added to undo history. The finished, reviewed build is applied as before.
+  - The desktop app doesn't stream yet; its builds still appear when finished.
+  - Files: `src/ai/chatProxy.ts`, `src/ai/client.ts`, `src/ai/agent.ts`, `src/ai/partialJson.ts`, `src/ai/livePreview.ts`, `src/App.svelte`, `worker/index.ts`, `vite.config.ts`, `scripts/ai-eval/run.ts`, tests.
+- Why: Requested. A build that takes a minute looked frozen until it all appeared at once.
+- Validation: all 355 tests pass, including new tests for the partial-reply parser (checked at every 7th character of a real example), the live preview (grows monotonically and ends equal to applying the whole reply), proxy streaming (relay, usage settlement, truncation, missing content, client disconnect, both fallbacks), client stream reading, and the agent hooks. svelte-check reports 0 errors and the build passes. In a real headless-Chrome run of the dev editor ("A small wooden pier over water with a lamp post and a rowboat"), the viewport went from 1 to 31 objects over about 10 seconds while the draft was written. The previous build stayed visible through two corrections and a Sol review, and the reviewed 28-object build was applied.
+- Limitations: The model spends roughly the first 20 seconds thinking before it writes anything, so nothing appears until then. Live objects aren't listed in the Scene panel until the build is applied. Objects without an explicit position sit at the origin in the live view and move to their placed spot when the build is applied.
+
 ### 2026-10-25 — `npm run ai:eval` quality runs, and floors no longer count as sunk objects
 
 - Changed:

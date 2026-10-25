@@ -94,3 +94,34 @@ describe("unusable model replies", () => {
     await expect(requestSceneEdit("system", "request")).rejects.toBeInstanceOf(UnusableReplyError);
   });
 });
+
+describe("streamed scene replies", () => {
+  const ndjson = (lines: unknown[], cut = 5) => {
+    const bytes = new TextEncoder().encode(lines.map((line) => `${JSON.stringify(line)}\n`).join(""));
+    return new Response(new ReadableStream<Uint8Array>({ start(controller) { for (let i = 0; i < bytes.length; i += cut) controller.enqueue(bytes.slice(i, i + cut)); controller.close(); } }),
+      { status: 200, headers: { "Content-Type": "application/x-ndjson; charset=utf-8" } });
+  };
+
+  it("asks for a stream, reports the growing text and returns the parsed reply", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(ndjson([{ delta: '{"summary":"Added' }, { delta: ' a cube.","ops":[]}' }, { done: true }]));
+    vi.stubGlobal("fetch", fetchMock);
+    const seen: string[] = [];
+    await expect(requestSceneEdit("system", "add a cube", [], undefined, "", "scene_draft", (text) => seen.push(text))).resolves.toEqual({ summary: "Added a cube.", ops: [] });
+    expect(JSON.parse(String((fetchMock.mock.calls[0]?.[1] as RequestInit).body)).stream).toBe(true);
+    expect(seen).toEqual(['{"summary":"Added', '{"summary":"Added a cube.","ops":[]}']);
+  });
+
+  it("turns cut-off, failed and broken streams into the same errors as unstreamed replies", async () => {
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(ndjson([{ delta: '{"summ' }, { done: true, truncated: true }])));
+    await expect(requestSceneEdit("system", "x", [], undefined, "", "scene_draft", () => undefined)).rejects.toBeInstanceOf(UnusableReplyError);
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(ndjson([{ error: "AI provider request timed out." }])));
+    await expect(requestSceneEdit("system", "x", [], undefined, "", "scene_draft", () => undefined)).rejects.toThrow("timed out");
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(ndjson([{ delta: "{" }])));
+    await expect(requestSceneEdit("system", "x", [], undefined, "", "scene_draft", () => undefined)).rejects.toThrow("broke off");
+  });
+
+  it("accepts a plain JSON answer when the server did not stream", async () => {
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(Response.json({ content: '{"summary":"ok","ops":[]}' })));
+    await expect(requestSceneEdit("system", "x", [], undefined, "", "scene_draft", () => undefined)).resolves.toEqual({ summary: "ok", ops: [] });
+  });
+});

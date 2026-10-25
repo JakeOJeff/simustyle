@@ -9,6 +9,9 @@ import {
 } from "../src/ai/credits";
 import { isAiTask } from "../src/ai/tasks";
 
+/** The part of the Workers ExecutionContext used here. */
+interface ExecutionContext { waitUntil(promise: Promise<unknown>): void }
+
 interface DurableObjectStub { fetch(request: Request): Promise<Response> }
 interface DurableObjectNamespace {
   idFromName(name: string): unknown;
@@ -24,9 +27,9 @@ interface Env extends ChatProxyEnv, CreditLimitEnv, AdminEnv {
 }
 
 export default {
-  async fetch(request: Request, env: Env): Promise<Response> {
+  async fetch(request: Request, env: Env, ctx: ExecutionContext): Promise<Response> {
     const url = new URL(request.url);
-    if (url.pathname === "/api/ai/chat") return aiChat(request, env);
+    if (url.pathname === "/api/ai/chat") return aiChat(request, env, ctx);
     if (url.pathname === "/api/ai/credits") return aiCredits(request, env);
     if (url.pathname === "/api/ai/spend") return aiSpend(request, env);
     if (url.pathname === "/download/windows") return windowsDownload(env);
@@ -34,11 +37,16 @@ export default {
   }
 };
 
-async function aiChat(request: Request, env: Env): Promise<Response> {
+async function aiChat(request: Request, env: Env, ctx: ExecutionContext): Promise<Response> {
   if (request.method !== "POST") return json(405, { error: "Use POST /api/ai/chat." }, { Allow: "POST" });
   const bytes = new Uint8Array(await request.arrayBuffer());
   const ledger = await ledgerFor(request, env);
   const result = await forwardChat(bytes, env, ledger);
+  if (result.stream) {
+    // Keep the Worker alive until the provider call is settled, even if the visitor closes the tab.
+    ctx.waitUntil(result.finished);
+    return new Response(result.stream, { headers: { "Content-Type": "application/x-ndjson; charset=utf-8", "Cache-Control": "no-store", ...ledger.headers } });
+  }
   return json(result.status, result.body, ledger.headers);
 }
 

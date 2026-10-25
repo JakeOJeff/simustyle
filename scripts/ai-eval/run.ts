@@ -70,7 +70,7 @@ async function runPrompt(prompt: string): Promise<{ scene?: Scene; row: EvalRow;
         const body = JSON.stringify({ task, messages: sceneEditMessages(systemPrompt, userPrompt, correctionErrors, previousReply),
           responseFormat: { type: "json_schema", json_schema: { ...AI_RESPONSE_JSON_SCHEMA, schema: responseSchema } } });
         const reply = await forwardChat(new TextEncoder().encode(body), env, credits);
-        if (reply.status !== 200) throw new Error(String((reply.body as { error?: unknown }).error ?? `AI proxy returned HTTP ${reply.status}`));
+        if (reply.status !== 200 || !reply.body) throw new Error(String((reply.body as { error?: unknown } | undefined)?.error ?? `AI proxy returned HTTP ${reply.status}`));
         return parseChatPayload(reply.body);
       }
     });
