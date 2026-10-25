@@ -4,6 +4,16 @@ Record meaningful project changes during the event, newest first.
 
 ## Event build log
 
+### 2026-10-25 — Requested-object checklist, identity review, clearance and spring rules
+
+- Added: Every scene reply starts with `requested`, a list of every object the player explicitly named, in their words. It is optional in the response schema, but the output format asks for it first, before the plan. The editor checks each one by name (`src/ai/requested.ts`). An object counts as built when one entity's name together with its ancestors' names holds every identifying word. Word forms match ("climber" and "Climbing"), articles and counts are ignored, and a "Pastry" inside a "Display Case" meets "pastry case". Planned detail objects count. A missing one becomes the correction "Requested 'dome climber' is missing; build it, named for what it is, before any extras." It is fed back like a geometry flag: corrected while draft retries remain, then passed to the review. The review checks its own list the same way, and falls back to the draft's list when it gives none.
+- Changed: The review instructions add a checklist: list every requested object and confirm it exists in the ops, with extras only after all of them. An identity check also runs: every part must clearly belong to a named thing or its setting (floor, walls, ground, lights), or it gets fixed or removed. The review message shows the first build's requested list.
+- Changed: Modeling rules: keep paths of motion clear (1.5 m of open ground in front of a slide exit, a swing seat's full ~2 m arc forward and back with no bars at seat height, a door's swing area). Build springs and coils as 4–8 stacked tori of the same radius. The rules grew from 3,100 to 3,330 characters, and the budget test moved to 3,350.
+- Examples: every example lists `requested`, and each one passes the check. The "Corner" and "Clearing" groups are renamed "Reading Corner" and "Forest Clearing", so they are named for what was asked.
+- Files: `src/ai/requested.ts`, `src/ai/agent.ts`, `src/ai/prompt.ts`, `src/ai/examples.ts`, `tests/ai/requested.test.ts`, `tests/ai/agent.test.ts`, `tests/ai/examples.test.ts`, `tests/ai/prompt.test.ts`.
+- Validation: `npm run check` passes: typecheck, svelte-check (0 errors), all 438 tests and the build. The new tests cover the matching rules, a missing object fed back and then built on the retry, the review's checklist text and list, and every example passing its own list.
+- Limitations: The check trusts the model's own list, so an object the model leaves off the list is not caught. A correct object with an unrelated name (a "Climbing Frame" for a "dome climber") is reported as missing. Clearance and identity are prompt rules, not measured checks.
+
 ### 2026-10-25 — More shapes: bevel, sides, arc, hollow, torus and text
 
 - Added: Five new Mesh fields and two new shapes. Old scenes load as before, because each new field defaults to the old look and default values are not saved.

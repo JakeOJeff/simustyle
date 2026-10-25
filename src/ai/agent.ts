@@ -9,6 +9,7 @@ import { inspectBuildQuality, type BuildQualityReport } from "./quality";
 import { validateScene } from "../scene/validate";
 import { buildSceneUserMessage, requestHistory } from "./prompt";
 import { checkGeometry } from "./geometry";
+import { missingRequested } from "./requested";
 import { AI_TASK_LIMITS } from "./tasks";
 import { parsePartialReply, type PartialReply } from "./partialJson";
 import { detailPrompt, fitDetailObject, parseDetailItems, placeLiveDetail, type DetailItem } from "./detailPass";
@@ -25,6 +26,8 @@ interface PreparedReply extends SceneAgentReply {
   plan: string;
   /** Objects the layout left to be built one by one in detail passes (see detailPass.ts). */
   detail: DetailItem[];
+  /** Every object the player explicitly named, as the model listed them; each must be built. */
+  requested: string[];
 }
 
 /** The scene tasks; the server routes "scene_review" to the strong model and gives "scene_detail" a large output budget. */
@@ -121,7 +124,7 @@ const unusableReply = (error: unknown): boolean | null =>
 const TOO_LARGE = "The request or scene instructions are too large. Split the request into smaller edits or select a smaller assembly.";
 
 /** Accepts plan as optional (dropped when applying) so a reply missing it never costs a retry. */
-function replyFrom(value: unknown): { plan: string; summary: string; ops: unknown[]; detail?: unknown } | null {
+function replyFrom(value: unknown): { plan: string; summary: string; ops: unknown[]; detail?: unknown; requested: string[] } | null {
   let decoded = value;
   if (typeof value === "string") {
     try { decoded = JSON.parse(value) as unknown; }
@@ -130,7 +133,8 @@ function replyFrom(value: unknown): { plan: string; summary: string; ops: unknow
   if (!decoded || typeof decoded !== "object") return null;
   const candidate = decoded as Record<string, unknown>;
   if (typeof candidate.summary !== "string" || !candidate.summary.trim() || candidate.summary.length > 2000 || !Array.isArray(candidate.ops)) return null;
-  return { plan: typeof candidate.plan === "string" ? candidate.plan.trim().slice(0, 1500) : "", summary: candidate.summary.trim(), ops: candidate.ops,
+  const requested = Array.isArray(candidate.requested) ? candidate.requested.filter((item): item is string => typeof item === "string" && item.trim() !== "").map((item) => item.trim().slice(0, 60)).slice(0, 20) : [];
+  return { plan: typeof candidate.plan === "string" ? candidate.plan.trim().slice(0, 1500) : "", summary: candidate.summary.trim(), ops: candidate.ops, requested,
     ...(candidate.detail !== undefined ? { detail: candidate.detail } : {}) };
 }
 
@@ -149,7 +153,7 @@ function prepareReply(scene: Scene, value: unknown): { reply?: PreparedReply; er
   if (detail.errors.length) return { errors: detail.errors };
   try {
     const tidy = tidyCreates(scene, expanded.ops, { preserveExplicitPositions: true });
-    return { reply: { summary: `${parsed.summary}${tidy.notes.length ? ` (Adjusted: ${tidy.notes.join("; ")}.)` : ""}`, ops: tidy.ops, buildPlan: parsed.ops, plan: parsed.plan, detail: detail.items }, errors: [] };
+    return { reply: { summary: `${parsed.summary}${tidy.notes.length ? ` (Adjusted: ${tidy.notes.join("; ")}.)` : ""}`, ops: tidy.ops, buildPlan: parsed.ops, plan: parsed.plan, detail: detail.items, requested: parsed.requested }, errors: [] };
   } catch (error) {
     return { errors: [`Malformed build operation: ${error instanceof Error ? error.message : String(error)}`] };
   }
@@ -263,7 +267,7 @@ function inspectCandidate(scene: Scene, baselineIssues: string[] = []): SceneAge
   return { console: printed.slice(0, 20), issues: [...new Set(issues)], baselineIssues, frames };
 }
 
-const REVIEW_INSTRUCTIONS = "You are now doing a separate second-pass review. Inspect the requested result against the player's exact intent and the first build. Treat the isolated Console output as real script-runtime feedback and the geometry checks as exact measurements. Return one corrected full operation list, or keep the first build unchanged only if it matches the request and its checks are clean. The editor has not applied either build. Do not apply anything; return only the final scene operations in the required JSON format.";
+const REVIEW_INSTRUCTIONS = "You are now doing a separate second-pass review. Inspect the requested result against the player's exact intent and the first build. Treat the isolated Console output as real script-runtime feedback and the geometry checks as exact measurements. Return one corrected full operation list, or keep the first build unchanged only if it matches the request and its checks are clean. Checklist before returning: (1) list in \"requested\" every object the player explicitly named and confirm each exists in your ops, named for what it is; a missing one is an error, and extras come only after every requested object is built. (2) Identity: every part must clearly be part of a named thing or its setting (floor, walls, ground, lights); fix or remove any part that isn't. The editor has not applied either build. Do not apply anything; return only the final scene operations in the required JSON format.";
 
 /**
  * Review user message within maxChars: instructions and checks are fixed, then the first build's operations
@@ -279,7 +283,7 @@ function reviewPrompt(userPrompt: string, draft: PreparedReply, candidate: Scene
   const baselineOutput = sampled(preflight.baselineIssues, 4, 180, "- No baseline runtime script errors.");
   const geometryOutput = sampled(geometry, 10, 240, "- No geometry problems found.");
   const compactQuality = preflight.quality ? { ...preflight.quality, checks: undefined, warnings: preflight.quality.warnings.slice(0, 10).map((warning) => warning.slice(0, 180)), totalWarnings: preflight.quality.warnings.length } : undefined;
-  const head = `${REVIEW_INSTRUCTIONS}\n\nPLAYER REQUEST:\n${userPrompt}\n\nFIRST BUILD SUMMARY:\n${draft.summary}\n\nFIRST BUILD PLAN:\n${draft.plan || "(none given)"}\n\nFIRST BUILD OPERATIONS:\n`;
+  const head = `${REVIEW_INSTRUCTIONS}\n\nPLAYER REQUEST:\n${userPrompt}\n\nFIRST BUILD SUMMARY:\n${draft.summary}\n\nFIRST BUILD PLAN:\n${draft.plan || "(none given)"}\n\nREQUESTED OBJECTS LISTED BY THE FIRST BUILD (re-check against the request):\n${draft.requested.length ? draft.requested.join("; ") : "(none listed)"}\n\nFIRST BUILD OPERATIONS:\n`;
   const middle = "\n\nFIRST BUILD RESULTING SCENE:\n";
   const tail = `\n\nISOLATED PLAY-START CONSOLE OUTPUT (${preflight.frames} script ticks of 0.1 seconds; no Rapier physics):\n${consoleOutput}\n\nRUNTIME ISSUES IN THE FIRST BUILD:\n${issueOutput}\n\nRUNTIME ISSUES ALREADY PRESENT BEFORE THIS REQUEST:\n${baselineOutput}\n\nGEOMETRY CHECKS (exact; fix each unless the request intends it):\n${geometryOutput}\n\nDESIGN AND ORGANIZATION CHECKS:\n${JSON.stringify(compactQuality)}\n\nCompare the resulting scene with what the player explicitly asked for. Preserve requested details, correct mismatches, geometry problems or newly introduced errors found in the Console check. Keep decorative details that support the request (props, clutter, small objects). Remove only things that contradict the request or that the player clearly didn't want. If the first build is sparse, add detail instead of removing it. Do not treat baseline issues as caused by this edit. If the first build already matches, return its operations unchanged. Your summary must briefly say what you checked and whether you changed anything. Do not claim visual review or physics checks. Review silhouette and required parts, requested style/colors, proportions, material choices, lighting, camera, repeated counts, and meaningful folders. Design warnings use conservative bounds and may flag intentional contacts; do not remove requested detail merely to reduce warnings. The second-pass operations must apply to the ORIGINAL scene, not the first build result. Return the complete replacement operation list.`;
   const room = maxChars - head.length - middle.length - tail.length;
@@ -386,7 +390,8 @@ export async function runSceneAgent(scene: Scene, userPrompt: string, dependenci
     const hardErrors = result.errors.length ? result.errors : newCompileIssues(result.scene);
     // Kept even when only geometry flagged it: a later attempt may fail outright, and this one still applies.
     rejected.push({ summary: reply.summary, ops: reply.ops });
-    const geometry = result.errors.length ? [] : geometryFlags(result.scene, reply.ops, userPrompt);
+    // A missing requested object is fed back like a geometry flag: corrected while retries remain, then reviewed.
+    const geometry = result.errors.length ? [] : [...missingRequested(result.scene, reply.requested, reply.detail), ...geometryFlags(result.scene, reply.ops, userPrompt)];
     correctionErrors = [...hardErrors, ...geometry];
     // Geometry flags are soft: the last allowed attempt is accepted with them and they go on to the review.
     if (!hardErrors.length && (!geometry.length || attempt === maxRetries + 1)) {
@@ -408,7 +413,7 @@ export async function runSceneAgent(scene: Scene, userPrompt: string, dependenci
     if (!best) return { ok: false, ops: [], errors, attempts };
     skipped = { kept: best.ops.length, total: best.total, errors: errors.slice(0, 8) };
     const note = best.ops.length < best.total ? ` (Partial: kept ${best.ops.length} of ${best.total} operations; the rest failed validation.)` : " (Some parts were repaired to pass validation.)";
-    draft = { summary: `${best.summary || "Built part of the request."}${note}`, ops: best.ops, buildPlan: best.ops, plan: "", detail: [] };
+    draft = { summary: `${best.summary || "Built part of the request."}${note}`, ops: best.ops, buildPlan: best.ops, plan: "", detail: [], requested: [] };
   }
   /** A result built from the salvaged draft carries what was skipped; a reviewed replacement does not. */
   const withSkipped = (result: SceneAgentResult): SceneAgentResult => skipped && result.ops === draft?.ops ? { ...result, skipped } : result;
@@ -561,7 +566,7 @@ export async function runSceneAgent(scene: Scene, userPrompt: string, dependenci
   if (reviewUserPrompt === null) return useDraftAfterReviewFailure("The review context is too large for one request.");
   correctionErrors = [];
   previousReply = "";
-  let reviewed: SceneAgentReply | null = null;
+  let reviewed: PreparedReply | null = null;
   let reviewedResult: ReturnType<typeof applyOps> | null = null;
   const reviewRetries = 1;
   for (let reviewAttempt = 1; reviewAttempt <= reviewRetries + 1; reviewAttempt += 1) {
@@ -588,7 +593,9 @@ export async function runSceneAgent(scene: Scene, userPrompt: string, dependenci
         checked.quality = inspectBuildQuality(reviewedResult.scene, reviewed.ops);
         hardErrors = checked.issues.filter((line) => !baselineIssues.has(line));
       }
-      const geometry = reviewedResult.errors.length ? [] : geometryFlags(reviewedResult.scene, reviewed.ops, userPrompt);
+      // The reviewer re-lists the requested objects; a reviewer that leaves the list out is held to the draft's.
+      const requested = reviewed.requested.length ? reviewed.requested : draft.requested;
+      const geometry = reviewedResult.errors.length ? [] : [...missingRequested(reviewedResult.scene, requested), ...geometryFlags(reviewedResult.scene, reviewed.ops, userPrompt)];
       correctionErrors = [...hardErrors, ...geometry];
       if (checked && !hardErrors.length && (!geometry.length || reviewAttempt === reviewRetries + 1)) {
         if (geometry.length) checked.geometry = geometry;

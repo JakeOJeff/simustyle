@@ -106,11 +106,13 @@ describe("AI response JSON schema", () => {
     expect(serialized).toContain('"additionalProperties":false');
   });
 
-  it("requires a bounded plan string before ops", () => {
+  it("asks for the requested objects, then a bounded plan string, before ops", () => {
     const schema = buildResponseJsonSchema() as { properties: Record<string, { type?: string; maxLength?: number }>; required: string[] };
     const keys = Object.keys(schema.properties);
     expect(keys.indexOf("plan")).toBeLessThan(keys.indexOf("ops"));
-    expect(keys[0]).toBe("plan");
+    expect(keys.slice(0, 2)).toEqual(["requested", "plan"]);
+    expect(schema.properties.requested).toMatchObject({ type: "array", maxItems: 20 });
+    expect(schema.required).not.toContain("requested");
     expect(schema.properties.plan).toMatchObject({ type: "string", maxLength: 1500 });
     expect(schema.required).toContain("plan");
   });

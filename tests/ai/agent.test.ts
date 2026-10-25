@@ -339,6 +339,28 @@ describe("geometry checks", () => {
     expect(requests[4]?.correctionErrors).toContain(flag);
     expect(result.preflight?.geometry).toEqual([flag]);
   });
+
+  it("feeds a missing requested object back as a correction, then into the review's checklist", async () => {
+    const missing = "Requested 'dome climber' is missing; build it, named for what it is, before any extras.";
+    const partial = { ...clean, requested: ["cube", "dome climber"] };
+    const complete = { ...clean, requested: ["cube", "dome climber"], ops: [cube("cube"), cube("Dome Climber", [3, 0.5, 0])] };
+    const { requests, complete: answer } = recorder([partial, complete]);
+    const result = await runSceneAgent(createEmptyScene(), "a cube and a dome climber", { ...dependencies([]), complete: answer });
+    expect(result.ok).toBe(true);
+    expect(requests[1]?.correctionErrors).toEqual([missing]);
+    expect(result.scene?.entities.map((entity) => entity.name)).toContain("Dome Climber");
+
+    // Still missing after every draft attempt: the review is told what was listed, and runs the checklist.
+    const stuck = recorder([partial]);
+    await runSceneAgent(createEmptyScene(), "a cube and a dome climber", { ...dependencies([]), complete: stuck.complete });
+    const review = stuck.requests[3]!.userPrompt;
+    expect(review).toContain("REQUESTED OBJECTS LISTED BY THE FIRST BUILD (re-check against the request):\ncube; dome climber");
+    expect(review).toContain(`- ${missing}`);
+    expect(review).toContain("every object the player explicitly named");
+    expect(review).toContain("Identity: every part must clearly be part of a named thing");
+    // The review's reply is checked the same way.
+    expect(stuck.requests[4]?.correctionErrors).toContain(missing);
+  });
 });
 
 describe("review escalation", () => {

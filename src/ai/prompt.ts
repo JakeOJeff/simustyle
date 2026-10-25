@@ -163,8 +163,8 @@ ${fewShotText()}
 
 ## Output format
 Return only JSON with keys in this order:
-{ "plan": "every part you will build with its size and position (at most 1500 characters)", "summary": "one plain-English sentence describing what you built or changed", "ops": [ ...operations ], "detail": [ ...objects for detail passes, optional ] }
-Write plan first, then build ops that follow it. Keep the whole reply under 12,000 characters: use assemble/repeat for repeated detail.
+{ "requested": ["every object the player explicitly named"], "plan": "every part you will build with its size and position (at most 1500 characters)", "summary": "one plain-English sentence describing what you built or changed", "ops": [ ...operations ], "detail": [ ...objects for detail passes, optional ] }
+List requested first (each one is checked by name: name its object or group for it), then plan, then ops that follow it. Build every requested object before any extras. Keep the whole reply under 12,000 characters: use assemble/repeat for repeated detail.
 Operations:
 - create: { "op": "create", "id": string, "name": string, "parent": string|null, "components": object }
 - update: { "op": "update", "id": string, "components": changed fields (null removes component), optional "parent": string|null, optional "name": string }
@@ -228,7 +228,8 @@ export function buildResponseJsonSchema(): Record<string, unknown> {
   return {
     type: "object",
     properties: {
-      // First so the model lays out parts and measurements before it writes any operation.
+      // First so the model commits to every named object, then lays out parts and measurements, before any operation.
+      requested: { type: "array", maxItems: 20, items: { type: "string", minLength: 1, maxLength: 60 }, description: "Every object the player explicitly named, in their words." },
       plan: { type: "string", maxLength: 1500, description: "Every part to build with its size and position in meters, and what it rests on or attaches to." },
       summary: { type: "string", minLength: 1, maxLength: 2000 },
       detail: { type: "array", maxItems: 24, items: detailItemSchema },

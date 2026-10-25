@@ -4,6 +4,7 @@ import { parseDetailItems, type DetailItem } from "../../src/ai/detailPass";
 import { EXAMPLE_LIBRARY, FEW_SHOT_EXAMPLES, MODELING_RULES, examplesText, fewShotText, selectExamples, type FewShotExample } from "../../src/ai/examples";
 import { expandBuildOperations } from "../../src/ai/buildTools";
 import { checkGeometry } from "../../src/ai/geometry";
+import { missingRequested } from "../../src/ai/requested";
 import { meshWorldBounds } from "../../src/ai/quality";
 import { applyOps } from "../../src/scene/applyOps";
 import { worldMatrix } from "../../src/scene/hierarchy";
@@ -43,9 +44,12 @@ function built(example: FewShotExample) {
 
 describe("examples", () => {
   it.each(ALL.map((example) => [example.request, example] as const))("%s builds a valid, connected, grounded result", (request, example) => {
-    expect(Object.keys(example.reply)).toEqual(["plan", "summary", "ops", ...(example.reply.detail ? ["detail"] : [])]);
+    expect(Object.keys(example.reply)).toEqual(["requested", "plan", "summary", "ops", ...(example.reply.detail ? ["detail"] : [])]);
     expect(example.reply.plan.trim()).not.toBe("");
     const { expanded, applied, scene, meshes, bounds, detail } = built(example);
+    // Each example names an object or group for everything it lists as requested.
+    expect(example.reply.requested.length).toBeGreaterThan(0);
+    expect(missingRequested(scene, example.reply.requested, detail.items)).toEqual([]);
     expect(expanded.errors).toEqual([]);
     expect(applied.errors).toEqual([]);
     expect(detail.errors).toEqual([]);
@@ -171,9 +175,9 @@ describe("examples", () => {
     expect(fewShotText().startsWith("## Examples")).toBe(true);
     expect(fewShotText().length).toBeLessThanOrEqual(7_000);
     expect(MODELING_RULES.startsWith("## Modeling well")).toBe(true);
-    // Sent on every call; raised from 2,600 for the tether and containment rules.
-    expect(MODELING_RULES.length).toBeLessThanOrEqual(3_100);
-    for (const principle of ["never empty", "gives off light", "Light child", "mood of the request sets the lighting", "at least two walls that meet", "ground surface", "focal piece"]) expect(MODELING_RULES).toContain(principle);
+    // Sent on every call; raised from 2,600 for the tether and containment rules, and from 3,100 for clearance and springs.
+    expect(MODELING_RULES.length).toBeLessThanOrEqual(3_350);
+    for (const principle of ["paths of motion clear", "1.5 m of open ground", "full arc", "swing area", "stacked tori", "never empty", "gives off light", "Light child", "mood of the request sets the lighting", "at least two walls that meet", "ground surface", "focal piece"]) expect(MODELING_RULES).toContain(principle);
     // A few library examples together must still leave room for the scene in one request.
     for (const example of EXAMPLE_LIBRARY) expect(examplesText([example]).length, example.request).toBeLessThanOrEqual(6_500);
     expect(MODELING_RULES).toContain("Every shelf level gets items, including the top one.");

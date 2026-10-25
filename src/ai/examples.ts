@@ -7,6 +7,8 @@ export const MODELING_RULES = `## Modeling well
 - Cylinders stand along Y: wheels of a car along X use rotation [90,0,0] (axle along Z); along Z use [0,0,90]. Cones for roofs, capsules for limbs, squashed spheres (scale [1,0.6,1]) for domes/hair. Lampshades are truncated cones (radiusTop < radius), wide end down.
 - Every held floating object (balloons, kites) MUST have a thin cylinder (radius 0.01) to its anchor; the checker flags any without one. Hanging lamps/signs hang from a cord.
 - Buildings: fill gables with a wedge; multi-floor buildings need stairs or a ladder.
+- Keep paths of motion clear: 1.5 m of open ground in front of a slide exit; a swing seat's full arc (~2 m forward and back) with no bars at seat height; a door's swing area.
+- Springs and coils: 4–8 stacked tori of the same radius.
 - Y must hold existing objects ("put X inside Y", "build Y around X"): size Y to their combined bounds + ≥0.5 m clearance on every side and above the tallest, centered on them; move each in with {"op":"update","id":…,"parent":Y,"components":{}} (no Transform keeps world position).
 - Surfaces and containers meant to hold things are never empty: fill them with items varied in size, color and angle, some leaning or stacked (e.g. 5–8 books on a shelf, 2–4 props on a table). Every shelf level gets items, including the top one.
 - Anything that gives off light (lamp, candle, fire, screen, window, sign) gets a Light child at its glowing point, and the glowing part gets emissive with emissiveIntensity 1–3. Every point/spot Light belongs to such a visible source, never floating bare (daylight: one directional sun).
@@ -19,7 +21,7 @@ export const MODELING_RULES = `## Modeling well
 
 export interface FewShotExample {
   request: string;
-  reply: { plan: string; summary: string; ops: unknown[]; detail?: unknown[] };
+  reply: { requested: string[]; plan: string; summary: string; ops: unknown[]; detail?: unknown[] };
 }
 
 type Vec = [number, number, number];
@@ -59,6 +61,7 @@ export const FEW_SHOT_EXAMPLES: readonly FewShotExample[] = [
   {
     request: "a red car",
     reply: {
+      requested: ["car"],
       plan: "Along X: body 4.2x0.6x1.8 y0.65; cabin 2.2x0.55x1.6 x-0.2 y1.2; windshield x0.9; wheels r0.35 rot [90,0,0] x±1.35 y0.35 z±0.8; metal bumper; glowing lamps.",
       summary: "Built a red car with glass, wheels and headlights.",
       ops: [{ op: "assemble", id: "car", name: "Car", parent: null, parts: [
@@ -78,6 +81,7 @@ export const FEW_SHOT_EXAMPLES: readonly FewShotExample[] = [
   {
     request: "a simple character",
     reply: {
+      requested: ["character"],
       plan: "1.65 m, faces +Z: legs r0.08 h0.8 x±0.1 y0.4; torso 0.4x0.6x0.22 y1.08; arms r0.06 h0.65 x±0.24 y1.05; head r0.13 y1.5; squashed hair; eyes.",
       summary: "Built a simple character with capsule limbs.",
       ops: [{ op: "assemble", id: "char", name: "Character", parent: null, parts: [
@@ -96,6 +100,7 @@ export const FEW_SHOT_EXAMPLES: readonly FewShotExample[] = [
   {
     request: "a cozy bedroom",
     reply: {
+      requested: ["bedroom"],
       plan: "Room 4x4, floor top y0, walls meet at back-left. Rug and walls in ops; bed against the back wall is the focal piece, nightstand with lamp to its left, dresser to its right, wardrobe on the left wall, plant by the dresser, each in detail. Warm: dark background, ambient 0.3.",
       summary: "Laid out a cozy bedroom; the bed, nightstand, dresser, wardrobe and plant are built in detail.",
       ops: [{ op: "settings", settings: { background: "#1a1512", ambientLightIntensity: 0.3 } },
@@ -139,6 +144,7 @@ export const EXAMPLE_LIBRARY: readonly LibraryExample[] = [
     request: "a small two-story house",
     tags: ["house", "home", "cottage", "cabin", "building", "barn", "villa", "story", "storey", "roof", "tower", "chalet"],
     reply: {
+      requested: ["house"],
       plan: "4x3 m, 2 floors, front +Z: body 4x5x3 y2.5; gable wedge r1 h1.2 x-1 y5.6, mirrored copy x+1; roof slab rot z31 + mirror; door+knob; 2 upper windows; 5 steps up the +X wall to an upper door+knob.",
       summary: "Built a two-story house with a gabled roof and outside stairs.",
       ops: [{ op: "assemble", id: "house", name: "House", parent: null, parts: [
@@ -163,10 +169,11 @@ export const EXAMPLE_LIBRARY: readonly LibraryExample[] = [
     tags: ["room", "corner", "nook", "interior", "insid", "indoor", "living", "bedroom", "kitchen", "library", "study", "office", "furni", "decorat", "shelf", "shelv", "lamp", "cozy", "cosy"],
     focal: "armchair",
     reply: {
+      requested: ["reading corner"],
       plan: "Floor 3 wide x 2.4 deep (z -1.5..0.9, the furniture + ~1 m) top y0; walls 0.1 thick meet at back-left (z-1.45, x-1.45). Focal armchair x-0.55 z-0.85; shelf on back wall x0.6: 2 rows of 5 varied books (one leaning, one stack), plant+box on top; side table x0.1 z-0.6 with hollow mug (coffee disc, torus handle)+book; floor lamp x-1.15 z-1.1, shade wide end down, warm point light inside; dark background, ambient 0.3.",
       summary: "Built a cozy reading corner with an armchair, a filled bookshelf, a side table and a warm floor lamp.",
       ops: [{ op: "settings", settings: { background: "#1d1712", ambientLightIntensity: 0.3 } },
-      { op: "assemble", id: "corner", name: "Corner", parent: null, parts: [
+      { op: "assemble", id: "corner", name: "Reading Corner", parent: null, parts: [
         part("floor", "Floor", box, [0, -0.02, -0.3], { color: "#6b4630" }, [3, 0.04, 2.4]),
         part("wall_back", "Back Wall", box, [0, 1.2, -1.45], sage, [3, 2.4, 0.1]),
         part("wall_left", "Left Wall", box, [-1.45, 1.2, -0.3], sage, [0.1, 2.4, 2.4])
@@ -215,6 +222,7 @@ export const EXAMPLE_LIBRARY: readonly LibraryExample[] = [
     tags: ["market", "stall", "stand", "shop", "store", "vendor", "fruit", "produce", "counter", "street", "sunny", "bright", "daytime", "outdoor", "garden", "park", "yard", "plaza", "square"],
     fallback: true,
     reply: {
+      requested: ["fruit stall", "market"],
       plan: "Paving 5x4 top y0. Stall at origin facing +Z: counter 2x0.9x0.8, top board 2.1x0.05x0.9 (top y0.95), posts r0.04 h2.2 at x±0.95 z-0.35, red awning tilted 15°. Produce on the board: 2 apples, orange, squashed melon, crate with an orange stacked on it. White sun, bright sky, ambient 0.8.",
       summary: "Built a fruit stall in a sunny market square, its counter stocked with fruit and a crate.",
       ops: [{ op: "settings", settings: { background: "#cfe6f5", ambientLightIntensity: 0.8 } },
@@ -243,10 +251,11 @@ export const EXAMPLE_LIBRARY: readonly LibraryExample[] = [
     request: "a campfire at night in a forest clearing",
     tags: ["camp", "fire", "bonfire", "night", "forest", "woods", "tree", "clearing", "tent", "dark", "moon", "evening", "snow", "winter"],
     reply: {
+      requested: ["campfire", "forest clearing"],
       plan: "Ground 6 wide x 4.5 deep (z -2.85..1.65, the clearing + ~1 m) top y0. Fire at origin: stone ring r0.5 (top 0.45) h0.12; two crossed logs r0.06 h0.8 at y0.18 and y0.29; flame cone r0.16 h0.45 y0.5, emissive, warm point light inside. Log bench r0.16 along Z at x1.4. Pines (trunk + cone) at x-1.9 z-1.6 and a copy 3.6 m right. Night: dark blue background, ambient 0.25.",
       summary: "Built a campfire in a forest clearing at night, with a glowing fire, a log bench and two pines.",
       ops: [{ op: "settings", settings: { background: "#0b1020", ambientLightIntensity: 0.25 } },
-      { op: "assemble", id: "clearing", name: "Clearing", parent: null, parts: [
+      { op: "assemble", id: "clearing", name: "Forest Clearing", parent: null, parts: [
         part("ground", "Ground", box, [0, -0.02, -0.6], { color: "#3b4a2f" }, [6, 0.04, 4.5])
       ] },
       { op: "assemble", id: "campfire", name: "Campfire", parent: null, parts: [
