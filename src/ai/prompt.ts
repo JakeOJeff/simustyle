@@ -66,13 +66,22 @@ export function requestHistory(previousRequests: readonly string[] = []): string
   return history;
 }
 
+/** How a reply hands objects to detail passes; the detail pass itself is described in its own message (detailPass.ts). */
+export const DETAIL_RULES = `## Rich scenes: lay out, then detail
+The editor builds each substantial object in its own high-detail pass of 40–150 parts, so scenes can be far more detailed than one reply allows.
+- When the request creates a scene, or any object that deserves more than ~15 parts, put that object in "detail" instead of modeling it in ops. ops then holds only settings, floor/ground, walls, room lights and simple pieces.
+- Each detail item: {"id","name","description","position","rotation","size","parent"}. position is the center of its base; size [w,h,d] (m) is the box it must fit, front facing +z before rotation; description names its key features, sub-parts, materials and colors so the detail pass can model them (e.g. "oak dresser: 3 drawers with brass pulls, plinth, carved top edge, a lamp and two framed photos on top").
+- Fill a scene with 6–20 detail items: the main pieces plus props. Group small props on one surface into one item ("desk clutter"). Give boxes clearance; an object standing on another sits at the top of that one's box.
+- Glowing parts of a detail object (bulbs, flames, screens) get their Light in its detail pass; room and sun lights stay in ops.
+- Small edits and recolors never use detail.`;
+
 /** Heading for the library examples chosen for one request (see selectExamples). */
 export const EXAMPLES_HEADING = "## Examples close to this request (illustrations of the rules, not templates to copy)";
 /** Scene snapshot room kept before any library example is added to a build message. */
 const MIN_SCENE_CHARS = 4_000;
 
 /** Added to the request when the scene has no entities, so a first build is a whole composition. */
-export const EMPTY_SCENE_NOTE = "The scene is empty, so build a full composition, not loose objects on the grid: a floor or ground surface, any walls the request implies, lights that match the mood, and a settings op for background and ambientLightIntensity to match.";
+export const EMPTY_SCENE_NOTE = "The scene is empty, so build a full, richly detailed composition, not loose objects on the grid: a floor or ground surface, any walls the request implies, lights that match the mood, and a settings op for background and ambientLightIntensity to match, with every substantial object listed in detail.";
 
 /** Selected ids as JSON, bounded so a select-all on a big scene cannot crowd out the scene itself. */
 function selectionText(focusIds: readonly string[]): string {
@@ -143,11 +152,13 @@ ${BUILD_TOOL_SPEC}
 
 ${MODELING_RULES}
 
+${DETAIL_RULES}
+
 ${fewShotText()}
 
 ## Output format
 Return only JSON with keys in this order:
-{ "plan": "every part you will build with its size and position (at most 1500 characters)", "summary": "one plain-English sentence describing what you built or changed", "ops": [ ...operations ] }
+{ "plan": "every part you will build with its size and position (at most 1500 characters)", "summary": "one plain-English sentence describing what you built or changed", "ops": [ ...operations ], "detail": [ ...objects for detail passes, optional ] }
 Write plan first, then build ops that follow it. Keep the whole reply under 12,000 characters: use assemble/repeat for repeated detail.
 Operations:
 - create: { "op": "create", "id": string, "name": string, "parent": string|null, "components": object }
@@ -215,6 +226,7 @@ export function buildResponseJsonSchema(): Record<string, unknown> {
       // First so the model lays out parts and measurements before it writes any operation.
       plan: { type: "string", maxLength: 1500, description: "Every part to build with its size and position in meters, and what it rests on or attaches to." },
       summary: { type: "string", minLength: 1, maxLength: 2000 },
+      detail: { type: "array", maxItems: 24, items: detailItemSchema },
       ops: {
         type: "array",
         maxItems: 1500,
@@ -272,6 +284,20 @@ export function buildResponseJsonSchema(): Record<string, unknown> {
     additionalProperties: false
   };
 }
+
+/** One object left to a detail pass (see DETAIL_RULES and detailPass.ts). */
+const detailItemSchema = {
+  type: "object",
+  properties: {
+    id: { type: "string", minLength: 1 }, name: { type: "string", minLength: 1 }, description: { type: "string", maxLength: 600 },
+    position: { type: "array", items: { type: "number" }, minItems: 3, maxItems: 3 },
+    rotation: { type: "array", items: { type: "number" }, minItems: 3, maxItems: 3 },
+    size: { type: "array", items: { type: "number", exclusiveMinimum: 0, maximum: 100 }, minItems: 3, maxItems: 3 },
+    parent: { type: ["string", "null"] }
+  },
+  required: ["id", "name", "description", "position", "size"],
+  additionalProperties: false
+};
 
 /** Chat Completions `response_format` value, with the raw schema available separately for other providers. */
 export const AI_RESPONSE_JSON_SCHEMA = {

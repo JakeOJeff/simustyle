@@ -1,5 +1,6 @@
 import * as THREE from "three";
 import { describe, expect, it } from "vitest";
+import { parseDetailItems, type DetailItem } from "../../src/ai/detailPass";
 import { EXAMPLE_LIBRARY, FEW_SHOT_EXAMPLES, MODELING_RULES, examplesText, fewShotText, selectExamples, type FewShotExample } from "../../src/ai/examples";
 import { expandBuildOperations } from "../../src/ai/buildTools";
 import { checkGeometry } from "../../src/ai/geometry";
@@ -30,18 +31,26 @@ function built(example: FewShotExample) {
   const restingOn = (support: Entity) => meshes.filter((entity) => entity !== support && Math.abs(bounds(entity).min.y - bounds(support).max.y) <= 0.05 &&
     bounds(entity).min.x < bounds(support).max.x && bounds(entity).max.x > bounds(support).min.x && bounds(entity).min.z < bounds(support).max.z && bounds(entity).max.z > bounds(support).min.z);
   const isComposition = example.reply.ops.some((op) => (op as { op?: string }).op === "settings");
-  return { expanded, applied, scene, meshes, bounds, size, rotated, restingOn, isComposition, words: example.request.toLowerCase() };
+  const detail = parseDetailItems(example.reply.detail);
+  /** The box a detail item reserves (a quarter turn about Y swaps width and depth). */
+  const reserved = (item: DetailItem) => {
+    const quarter = Math.round(item.rotation[1] / 90) % 2 !== 0;
+    const half = new THREE.Vector3(quarter ? item.size[2] : item.size[0], item.size[1], quarter ? item.size[0] : item.size[2]).multiplyScalar(0.5);
+    return new THREE.Box3(new THREE.Vector3(item.position[0] - half.x, item.position[1], item.position[2] - half.z), new THREE.Vector3(item.position[0] + half.x, item.position[1] + 2 * half.y, item.position[2] + half.z));
+  };
+  return { expanded, applied, scene, meshes, bounds, size, rotated, restingOn, isComposition, detail, reserved, words: example.request.toLowerCase() };
 }
 
 describe("examples", () => {
   it.each(ALL.map((example) => [example.request, example] as const))("%s builds a valid, connected, grounded result", (request, example) => {
-    expect(Object.keys(example.reply)).toEqual(["plan", "summary", "ops"]);
+    expect(Object.keys(example.reply)).toEqual(["plan", "summary", "ops", ...(example.reply.detail ? ["detail"] : [])]);
     expect(example.reply.plan.trim()).not.toBe("");
-    const { expanded, applied, scene, meshes, bounds } = built(example);
+    const { expanded, applied, scene, meshes, bounds, detail } = built(example);
     expect(expanded.errors).toEqual([]);
     expect(applied.errors).toEqual([]);
+    expect(detail.errors).toEqual([]);
     expect(checkGeometry(scene, expanded.ops, request)).toEqual([]);
-    expect(meshes.length).toBeGreaterThanOrEqual(6);
+    expect(meshes.length + detail.items.length).toBeGreaterThanOrEqual(6);
     expect(meshes.every((entity) => entity.parent !== null)).toBe(true);
     for (const entity of meshes) expect(meshes.some((other) => other !== entity && gap(bounds(entity), bounds(other)) <= 0.05), `${entity.name} touches another part`).toBe(true);
     expect(Math.abs(Math.min(...meshes.map((entity) => bounds(entity).min.y)))).toBeLessThanOrEqual(0.05);
@@ -83,11 +92,12 @@ describe("examples", () => {
     });
 
     it.each(ALL.map((example) => [example.request, example] as const))("%s: mood words set light color, ambient and background", (_request, example) => {
-      const { scene, words, isComposition } = built(example);
+      const { scene, words, isComposition, detail } = built(example);
       if (!isComposition) return;
       const background = new THREE.Color(scene.settings.background);
       const lights = scene.entities.filter((entity) => entity.components.Light).map((entity) => new THREE.Color(String(entity.components.Light?.color ?? "#ffffff")));
-      expect(lights.length).toBeGreaterThan(0);
+      // A layout may leave its lights to the detail passes of the objects that glow.
+      expect(lights.length + detail.items.filter((item) => /\bLight\b/.test(item.description)).length).toBeGreaterThan(0);
       if (/cozy|warm|night/.test(words)) {
         expect(scene.settings.ambientLightIntensity).toBeLessThanOrEqual(0.4);
         expect(Math.max(background.r, background.g, background.b)).toBeLessThan(0.2);
@@ -100,25 +110,44 @@ describe("examples", () => {
     });
 
     it.each(ALL.map((example) => [example.request, example] as const))("%s: a composition has a floor or ground, interiors meeting walls around a focal piece", (_request, example) => {
-      const { scene, meshes, size, bounds, isComposition } = built(example);
+      const { scene, meshes, size, bounds, isComposition, detail, reserved } = built(example);
       if (!isComposition) return;
       expect(meshes.some((entity) => Math.abs(bounds(entity).max.y) <= 0.05 && size(entity).y <= 0.3 && size(entity).x >= 2 && size(entity).z >= 2), "floor or ground").toBe(true);
-      const focal = (example as { focal?: string }).focal;
+      const focal = (example as { focal?: string }).focal ?? detail.items[0]?.id;
       if (!/room|corner|nook|kitchen|interior/.test(example.request)) return;
       const walls = meshes.filter((entity) => size(entity).y >= 2 && Math.min(size(entity).x, size(entity).z) < 0.2);
       expect(walls.length).toBeGreaterThanOrEqual(2);
       expect(walls.some((a) => walls.some((b) => a !== b && (size(a).x < 0.2) !== (size(b).x < 0.2) && bounds(a).intersectsBox(bounds(b))))).toBe(true);
       expect(focal).toBeDefined();
-      const center = (root: Entity) => meshes.filter((entity) => ancestors(scene, entity).includes(root)).reduce((box, entity) => box.union(bounds(entity)), new THREE.Box3()).getCenter(new THREE.Vector3()).setY(0);
-      const anchor = center(scene.entities.find((entity) => entity.id === focal)!);
-      const furniture = scene.entities.filter((entity) => entity.parent === null && entity.id !== focal && !meshes.some((mesh) => walls.includes(mesh) && ancestors(scene, mesh).includes(entity)));
-      for (const root of furniture) expect(center(root).distanceTo(anchor), root.name).toBeLessThanOrEqual(1.5);
+      // Every piece of furniture, built or reserved for a detail pass, is within ~1.5 m of the focal piece's box.
+      const boxOf = (root: Entity) => meshes.filter((entity) => ancestors(scene, entity).includes(root)).reduce((box, entity) => box.union(bounds(entity)), new THREE.Box3());
+      const pieces = new Map<string, THREE.Box3>([
+        ...scene.entities.filter((entity) => entity.parent === null && !meshes.some((mesh) => walls.includes(mesh) && ancestors(scene, mesh).includes(entity))).map((root) => [root.id, boxOf(root)] as const),
+        ...detail.items.map((item) => [item.id, reserved(item)] as const)
+      ]);
+      const anchor = pieces.get(focal!)!;
+      for (const [id, box] of pieces) if (id !== focal) expect(gap(box, anchor), id).toBeLessThanOrEqual(1.5);
     });
+  });
+
+  it.each(ALL.filter((example) => example.reply.detail).map((example) => [example.request, example] as const))("%s: detail boxes sit inside the floor, apart, on the floor or on each other", (_request, example) => {
+    const { meshes, bounds, size, detail, reserved } = built(example);
+    const floor = meshes.find((entity) => Math.abs(bounds(entity).max.y) <= 0.05 && size(entity).y <= 0.3 && size(entity).x >= 2)!;
+    const boxes = detail.items.map(reserved);
+    for (const [index, box] of boxes.entries()) {
+      const name = detail.items[index]!.id;
+      expect(box.min.x >= bounds(floor).min.x - 0.01 && box.max.x <= bounds(floor).max.x + 0.01 && box.min.z >= bounds(floor).min.z - 0.01 && box.max.z <= bounds(floor).max.z + 0.01, `${name} inside the floor`).toBe(true);
+      expect(box.min.y === 0 || boxes.some((other) => other !== box && Math.abs(other.max.y - box.min.y) <= 0.05), `${name} rests on something`).toBe(true);
+      for (const other of boxes.slice(index + 1)) {
+        const overlap = box.clone().intersect(other).getSize(new THREE.Vector3());
+        expect(Math.min(overlap.x, overlap.y, overlap.z), `${name} clear of the others`).toBeLessThanOrEqual(0.03);
+      }
+    }
   });
 
   it("keeps the static examples compact and the rules general", () => {
     expect(fewShotText().startsWith("## Examples")).toBe(true);
-    expect(fewShotText().length).toBeLessThanOrEqual(5_000);
+    expect(fewShotText().length).toBeLessThanOrEqual(7_000);
     expect(MODELING_RULES.startsWith("## Modeling well")).toBe(true);
     // Sent on every call; raised from 2,600 for the tether and containment rules.
     expect(MODELING_RULES.length).toBeLessThanOrEqual(2_900);

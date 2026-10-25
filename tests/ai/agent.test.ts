@@ -471,3 +471,93 @@ describe("live builds", () => {
     expect(requests[0]?.onText).toBeUndefined();
   });
 });
+
+describe("detail passes", () => {
+  const floor = { op: "create", id: "floor", name: "Floor", parent: null, components: { Transform: { position: [0, -0.02, 0], scale: [4, 0.04, 4] }, Mesh: {}, Material: { color: "#776655" } } };
+  const layout = { plan: "Room with a table and a chair.", summary: "Laid out a room.", ops: [floor], detail: [
+    { id: "table", name: "Table", description: "round table", position: [0, 0, 0], size: [1, 0.8, 1] },
+    { id: "chair", name: "Chair", description: "chair", position: [1.2, 0, 0], rotation: [0, -90, 0], size: [0.5, 1, 0.5] }
+  ] };
+  const leg = (id: string, x: number) => ({ id, name: "Leg", components: { Transform: { position: [x, 0.35, 0], scale: [0.05, 0.7, 0.05] }, Mesh: {}, Material: { color: "#553311" } } });
+  const object = (id: string) => ({ plan: `${id} parts`, summary: `Built the ${id}.`, ops: [{ op: "assemble", id, name: id, parent: null, parts: [
+    { id: "top", name: "Top", components: { Transform: { position: [0, 0.72, 0], scale: [0.5, 0.04, 0.5] }, Mesh: {}, Material: { color: "#aa7744" } } }, leg("leg_a", -0.2), leg("leg_b", 0.2)
+  ] }] });
+  const objectFor = (prompt: string) => object(/\nid: (\w+)/.exec(prompt)![1]!);
+
+  it("builds each listed object in its own detail call, skips the review, and fits them in place", async () => {
+    const requests: SceneAgentRequest[] = [];
+    const labels: string[] = [];
+    const result = await runSceneAgent(createEmptyScene(), "a dining room", {
+      ...dependencies([]), solReviewEnabled: true, onLiveBuild: (build) => { if (build.label) labels.push(build.label); },
+      complete: async (request) => {
+        requests.push(request);
+        if (request.task !== "scene_detail") return layout;
+        const reply = objectFor(request.userPrompt);
+        request.onText?.(JSON.stringify(reply));
+        return reply;
+      }
+    });
+    expect(result.ok).toBe(true);
+    expect(requests.map((request) => request.task)).toEqual(["scene_draft", "scene_detail", "scene_detail"]);
+    expect(requests[1]?.userPrompt).toContain("## Detail pass");
+    const ids = result.scene!.entities.map((entity) => entity.id);
+    expect(ids).toEqual(expect.arrayContaining(["floor", "table", "table_top", "table_leg_a", "chair", "chair_top", "chair_leg_b"]));
+    expect(result.scene!.entities.find((entity) => entity.id === "chair")?.components.Transform).toEqual({ position: [1.2, 0, 0], rotation: [0, -90, 0] });
+    expect(result.summary).toContain("Built 2 of 2 objects in detail (6 parts).");
+    expect(labels.some((label) => /^Detailing \d of 2/.test(label))).toBe(true);
+  });
+
+  it("keeps the rest when an object fails, and retries a cut-off object once", async () => {
+    const tasks: string[] = [];
+    const corrections: string[][] = [];
+    let chairCalls = 0;
+    const result = await runSceneAgent(createEmptyScene(), "a dining room", {
+      ...dependencies([]),
+      complete: async (request) => {
+        tasks.push(request.task);
+        if (request.task !== "scene_detail") return layout;
+        if (request.userPrompt.includes("\nid: table")) return { summary: "nothing", ops: [{ op: "nonsense" }] };
+        chairCalls += 1;
+        corrections.push(request.correctionErrors);
+        if (chairCalls === 1) throw Object.assign(new Error("cut"), { name: "UnusableReplyError", truncated: true });
+        return objectFor(request.userPrompt);
+      }
+    });
+    expect(result.ok).toBe(true);
+    expect(tasks.filter((task) => task === "scene_detail")).toHaveLength(4);
+    expect(corrections[1]?.[0]).toContain("16000-token output limit");
+    expect(result.scene!.entities.some((entity) => entity.id === "chair_top")).toBe(true);
+    expect(result.scene!.entities.some((entity) => entity.id === "table")).toBe(false);
+    expect(result.summary).toContain("Built 1 of 2 objects in detail");
+    expect(result.summary).toContain("Could not detail: Table");
+  });
+
+  it("keeps an object whose correction still has a broken field, repairing just that part", async () => {
+    const broken = (id: string) => {
+      const reply = object(id);
+      (reply.ops[0]!.parts[0]!.components.Material as Record<string, unknown>).texture = "marble";
+      return reply;
+    };
+    const tasks: string[] = [];
+    const result = await runSceneAgent(createEmptyScene(), "a dining room", {
+      ...dependencies([]),
+      complete: async (request) => {
+        tasks.push(request.task);
+        if (request.task !== "scene_detail") return layout;
+        return request.userPrompt.includes("\nid: table") ? broken("table") : objectFor(request.userPrompt);
+      }
+    });
+    expect(tasks.filter((task) => task === "scene_detail")).toHaveLength(3);
+    const top = result.scene!.entities.find((entity) => entity.id === "table_top");
+    expect(top).toBeDefined();
+    expect(top?.components.Material).toBeUndefined();
+    expect(result.summary).toContain("Table: some parts repaired or left out (");
+    expect(result.summary).toContain("Built 2 of 2 objects");
+  });
+
+  it("asks the layout to fix detail objects that clash with the scene", async () => {
+    const { requests, complete } = recorder([{ ...layout, detail: [{ ...layout.detail[0], id: "floor" }] }, { plan: "", summary: "Added a floor.", ops: [floor] }]);
+    await runSceneAgent(createEmptyScene(), "a room", { ...dependencies([]), complete });
+    expect(requests[1]?.correctionErrors[0]).toContain("detail object 'floor' reuses an id");
+  });
+});

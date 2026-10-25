@@ -83,10 +83,13 @@ describe("chat proxy task routing", () => {
   it("caps completion tokens and sends a stable per-task prompt cache key to OpenAI", async () => {
     const { sent } = stubProvider();
     await forwardChat(request("scene_draft"), env);
-    expect(sent()).toMatchObject({ max_completion_tokens: 4_000, prompt_cache_key: "simustyle-scene_draft-v1", messages });
+    expect(sent()).toMatchObject({ max_completion_tokens: 8_000, prompt_cache_key: "simustyle-scene_draft-v1", messages });
     await forwardChat(request("parse"), { ...env, AI_PROMPT_CACHE_KEY: "false" });
     expect(sent(1).max_completion_tokens).toBe(800);
     expect(sent(1)).not.toHaveProperty("prompt_cache_key");
+    // Detail passes get the large output budget and always run on Luna, even with Sol on.
+    await forwardChat(request("scene_detail"), { ...env, AI_SOL_ENABLED: "true" });
+    expect(sent(2)).toMatchObject({ model: "gpt-6-luna", max_completion_tokens: 16_000, prompt_cache_key: "simustyle-scene_detail-v1" });
   });
 
   it("sends the cache key to other providers only when asked", () => {

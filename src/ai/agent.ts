@@ -1,5 +1,5 @@
 import { applyOps } from "../scene/applyOps";
-import type { Scene, SceneOp } from "../scene/types";
+import { createEmptyScene, type Scene, type SceneOp } from "../scene/types";
 import { ScriptRuntime, validateScripts } from "../runtime/scripts";
 import { tidyCreates } from "./placement";
 import { sceneText } from "./sceneContext";
@@ -11,6 +11,7 @@ import { buildSceneUserMessage, requestHistory } from "./prompt";
 import { checkGeometry } from "./geometry";
 import { AI_TASK_LIMITS } from "./tasks";
 import { parsePartialReply, type PartialReply } from "./partialJson";
+import { detailPrompt, fitDetailObject, parseDetailItems, placeLiveDetail, type DetailItem } from "./detailPass";
 
 export interface SceneAgentReply {
   summary: string;
@@ -22,10 +23,12 @@ interface PreparedReply extends SceneAgentReply {
   buildPlan: unknown[];
   /** The model's parts/sizes plan; context for the reviewer only, never applied. */
   plan: string;
+  /** Objects the layout left to be built one by one in detail passes (see detailPass.ts). */
+  detail: DetailItem[];
 }
 
-/** The two scene tasks; the server routes "scene_review" to the strong model. */
-export type SceneAgentTask = "scene_draft" | "scene_review";
+/** The scene tasks; the server routes "scene_review" to the strong model and gives "scene_detail" a large output budget. */
+export type SceneAgentTask = "scene_draft" | "scene_detail" | "scene_review";
 
 export interface SceneAgentRequest {
   systemPrompt: string;
@@ -42,10 +45,18 @@ export interface SceneAgentRequest {
 /** A draft as it streams in (see parsePartialReply); attempt counts draft calls from 1. */
 export interface LiveBuild extends PartialReply {
   attempt: number;
+  /** What is being built right now, when there is more to say than a part count (the detail passes). */
+  label?: string;
 }
 
 /** At most one partial parse per this many milliseconds while a reply streams. */
 const LIVE_INTERVAL_MS = 100;
+/** Detail passes run this many at a time; each object gets at most DETAIL_CALLS calls (one correction). */
+const DETAIL_CONCURRENCY = 3;
+const DETAIL_CALLS = 2;
+const UNUSABLE_DETAIL = (truncated: boolean) => truncated
+  ? `Your previous reply was cut off at the ${AI_TASK_LIMITS.scene_detail.maxCompletionTokens}-token output limit. Return the object again more compactly: at most 90 parts, repeat ops for repeated features, a plan under 300 characters, and no default-valued fields.`
+  : "Your previous reply was not valid JSON. Return only the JSON object with one assemble op.";
 
 export interface SceneAgentDependencies {
   /** The static, cacheable system prompt; per-call context is built into the user message. */
@@ -110,7 +121,7 @@ const unusableReply = (error: unknown): boolean | null =>
 const TOO_LARGE = "The request or scene instructions are too large. Split the request into smaller edits or select a smaller assembly.";
 
 /** Accepts plan as optional (dropped when applying) so a reply missing it never costs a retry. */
-function replyFrom(value: unknown): { plan: string; summary: string; ops: unknown[] } | null {
+function replyFrom(value: unknown): { plan: string; summary: string; ops: unknown[]; detail?: unknown } | null {
   let decoded = value;
   if (typeof value === "string") {
     try { decoded = JSON.parse(value) as unknown; }
@@ -119,7 +130,8 @@ function replyFrom(value: unknown): { plan: string; summary: string; ops: unknow
   if (!decoded || typeof decoded !== "object") return null;
   const candidate = decoded as Record<string, unknown>;
   if (typeof candidate.summary !== "string" || !candidate.summary.trim() || candidate.summary.length > 2000 || !Array.isArray(candidate.ops)) return null;
-  return { plan: typeof candidate.plan === "string" ? candidate.plan.trim().slice(0, 1500) : "", summary: candidate.summary.trim(), ops: candidate.ops };
+  return { plan: typeof candidate.plan === "string" ? candidate.plan.trim().slice(0, 1500) : "", summary: candidate.summary.trim(), ops: candidate.ops,
+    ...(candidate.detail !== undefined ? { detail: candidate.detail } : {}) };
 }
 
 function prepareReply(scene: Scene, value: unknown): { reply?: PreparedReply; errors: string[] } {
@@ -127,9 +139,17 @@ function prepareReply(scene: Scene, value: unknown): { reply?: PreparedReply; er
   if (!parsed) return { errors: ["Response must be a JSON object with a plan string, a nonempty summary (at most 2000 characters) and an ops array."] };
   const expanded = expandBuildOperations(scene, parsed.ops);
   if (expanded.errors.length) return { errors: expanded.errors };
+  const detail = parseDetailItems(parsed.detail);
+  // Detail objects are created later, so their ids and parents must fit the scene the layout ops produce.
+  const layoutIds = new Set([...scene.entities.map((entity) => entity.id), ...expanded.ops.flatMap((op) => op.op === "create" ? [op.id] : [])]);
+  for (const item of detail.items) {
+    if (layoutIds.has(item.id)) detail.errors.push(`detail object '${item.id}' reuses an id that already exists; choose a new id.`);
+    if (item.parent !== null && !layoutIds.has(item.parent)) detail.errors.push(`detail object '${item.id}' has parent '${item.parent}', which does not exist.`);
+  }
+  if (detail.errors.length) return { errors: detail.errors };
   try {
     const tidy = tidyCreates(scene, expanded.ops, { preserveExplicitPositions: true });
-    return { reply: { summary: `${parsed.summary}${tidy.notes.length ? ` (Adjusted: ${tidy.notes.join("; ")}.)` : ""}`, ops: tidy.ops, buildPlan: parsed.ops, plan: parsed.plan }, errors: [] };
+    return { reply: { summary: `${parsed.summary}${tidy.notes.length ? ` (Adjusted: ${tidy.notes.join("; ")}.)` : ""}`, ops: tidy.ops, buildPlan: parsed.ops, plan: parsed.plan, detail: detail.items }, errors: [] };
   } catch (error) {
     return { errors: [`Malformed build operation: ${error instanceof Error ? error.message : String(error)}`] };
   }
@@ -310,20 +330,23 @@ export async function runSceneAgent(scene: Scene, userPrompt: string, dependenci
 
   let attempts = 0;
   /** One model call; errors and the echoed reply are cut so system + user + correction stay within the input cap. */
-  const ask = (prompt: string, task: SceneAgentTask, errors: readonly string[], rejected: string, liveAttempt?: number) => {
+  const ask = (prompt: string, task: SceneAgentTask, errors: readonly string[], rejected: string, onText?: (text: string) => void) => {
     attempts += 1;
     const correctionErrors = correctionPayload(errors);
     const room = MAX_SCENE_INPUT_CHARS - systemPrompt.length - prompt.length - CORRECTION_WRAPPER_CHARS - JSON.stringify(correctionErrors).length;
-    const live = liveAttempt !== undefined ? dependencies.onLiveBuild : undefined;
+    return dependencies.complete({ systemPrompt, userPrompt: prompt, correctionErrors, responseSchema: dependencies.responseSchema,
+      previousReply: correctionErrors.length ? echoReply(rejected, room) : rejected, task, ...(onText ? { onText } : {}) });
+  };
+  /** A streaming callback that hands the parsed partial reply to show, at most every LIVE_INTERVAL_MS; none without a live listener. */
+  const throttledLive = (show: (partial: PartialReply) => void) => {
+    if (!dependencies.onLiveBuild) return undefined;
     let parsedAt = 0;
-    const onText = live ? (text: string) => {
+    return (text: string) => {
       const now = Date.now();
       if (now - parsedAt < LIVE_INTERVAL_MS) return;
       parsedAt = now;
-      live({ ...parsePartialReply(text), attempt: liveAttempt! });
-    } : undefined;
-    return dependencies.complete({ systemPrompt, userPrompt: prompt, correctionErrors, responseSchema: dependencies.responseSchema,
-      previousReply: correctionErrors.length ? echoReply(rejected, room) : rejected, task, ...(onText ? { onText } : {}) });
+      show(parsePartialReply(text));
+    };
   };
   const replyText = (raw: unknown) => typeof raw === "string" ? raw : JSON.stringify(raw) ?? "";
 
@@ -340,7 +363,7 @@ export async function runSceneAgent(scene: Scene, userPrompt: string, dependenci
     draftCalls = attempt;
     let raw: unknown;
     try {
-      raw = await ask(draftPrompt, "scene_draft", correctionErrors, previousReply, attempt);
+      raw = await ask(draftPrompt, "scene_draft", correctionErrors, previousReply, throttledLive((partial) => dependencies.onLiveBuild?.({ ...partial, attempt })));
     } catch (error) {
       const truncated = unusableReply(error);
       if (truncated !== null && attempt <= maxRetries) { correctionErrors = [UNUSABLE_REPLY(truncated)]; previousReply = ""; continue; }
@@ -385,7 +408,7 @@ export async function runSceneAgent(scene: Scene, userPrompt: string, dependenci
     if (!best) return { ok: false, ops: [], errors, attempts };
     skipped = { kept: best.ops.length, total: best.total, errors: errors.slice(0, 8) };
     const note = best.ops.length < best.total ? ` (Partial: kept ${best.ops.length} of ${best.total} operations; the rest failed validation.)` : " (Some parts were repaired to pass validation.)";
-    draft = { summary: `${best.summary || "Built part of the request."}${note}`, ops: best.ops, buildPlan: best.ops, plan: "" };
+    draft = { summary: `${best.summary || "Built part of the request."}${note}`, ops: best.ops, buildPlan: best.ops, plan: "", detail: [] };
   }
   /** A result built from the salvaged draft carries what was skipped; a reviewed replacement does not. */
   const withSkipped = (result: SceneAgentResult): SceneAgentResult => skipped && result.ops === draft?.ops ? { ...result, skipped } : result;
@@ -416,6 +439,110 @@ export async function runSceneAgent(scene: Scene, userPrompt: string, dependenci
       preflight: draftPreflight
     });
   };
+
+  // A laid-out scene: build each listed object in its own detail pass instead of reviewing the layout.
+  if (draft.detail.length) {
+    const layout = draft;
+    const items = layout.detail;
+    dependencies.onProgress?.(`Laid out the scene; detailing ${items.length} object${items.length === 1 ? "" : "s"}…`);
+    /** Fitted ops of finished objects in finish order, so the live view's finished prefix only ever grows. */
+    const finished: SceneOp[] = [];
+    const growing = new Map<string, unknown[]>();
+    const notes: string[] = [];
+    const failed: string[] = [];
+    let current = firstResult.scene;
+    let done = 0;
+    const showLive = () => {
+      const inProgress = items.filter((item) => growing.has(item.id)).map((item) => item.name);
+      dependencies.onLiveBuild?.({ plan: layout.plan, ops: [...layout.ops, ...finished, ...[...growing.values()].flat()], complete: layout.ops.length + finished.length,
+        attempt: draftCalls, label: `Detailing ${Math.min(done + 1, items.length)} of ${items.length}${inProgress.length ? `: ${inProgress.join(", ")}` : ""}…` });
+    };
+    const buildItem = async (item: DetailItem) => {
+      const prompt = detailPrompt(userPrompt, layout.plan, items, item);
+      let errors: string[] = [];
+      let rejectedReply = "";
+      /** A first attempt whose only problems were detached parts; used if the correction fails outright. */
+      let soft: { ops: SceneOp[]; notes: string[] } | null = null;
+      let failure = "";
+      for (let call = 1; call <= DETAIL_CALLS; call += 1) {
+        let raw: unknown;
+        try {
+          raw = await ask(prompt, "scene_detail", errors, rejectedReply, throttledLive((partial) => { growing.set(item.id, placeLiveDetail(item, partial.ops)); showLive(); }));
+        } catch (error) {
+          const truncated = unusableReply(error);
+          failure = error instanceof Error ? error.message : String(error);
+          if (truncated !== null && call < DETAIL_CALLS) { errors = [UNUSABLE_DETAIL(truncated)]; rejectedReply = ""; continue; }
+          break;
+        }
+        rejectedReply = replyText(raw);
+        const parsed = replyFrom(raw);
+        if (!parsed) { errors = ["Response must be a JSON object with plan, summary and an ops array holding one assemble op."]; failure = errors[0]!; continue; }
+        const lastCall = call === DETAIL_CALLS;
+        // Only building ops count; a stray settings or delete op is ignored rather than retried.
+        const building = parsed.ops.filter((op) => ["assemble", "create", "repeat"].includes(String((op as { op?: unknown })?.op)));
+        const expanded = expandBuildOperations(createEmptyScene(), building);
+        const repairs: string[] = [];
+        let objectOps = expanded.ops;
+        const invalid = expanded.errors.length ? expanded.errors : applyOps(createEmptyScene(), expanded.ops).errors;
+        if (invalid.length) {
+          if (!lastCall) { errors = invalid; failure = errors[0]!; continue; }
+          // Last call: keep every part that applies, dropping only a broken component (such as an unknown texture name).
+          const salvaged = salvageOps(createEmptyScene(), building, () => []);
+          if (!salvaged.ops.length || salvaged.ops.length < salvaged.total * 0.8) { failure = invalid[0]!; break; }
+          objectOps = salvaged.ops;
+          repairs.push(invalid[0]!);
+        }
+        const fitted = fitDetailObject(item, objectOps);
+        if (!fitted.ops.length) { errors = fitted.notes; failure = errors[0]!; continue; }
+        let applied = applyOps(current, fitted.ops);
+        if (applied.errors.length && !lastCall) { errors = applied.errors; failure = errors[0]!; continue; }
+        if (applied.errors.length) {
+          const kept = salvageOps(current, fitted.ops, () => []).ops;
+          if (kept.length < fitted.ops.length * 0.8) { failure = applied.errors[0]!; break; }
+          repairs.push(applied.errors[0]!);
+          fitted.ops = kept;
+          applied = applyOps(current, kept);
+          if (applied.errors.length) { failure = applied.errors[0]!; break; }
+        }
+        if (repairs.length) fitted.notes.push(`${item.name}: some parts repaired or left out (${repairs[0]!.slice(0, 120)})`);
+        // Only detached parts are corrected here: ground contact and clearance depend on objects still being built.
+        const detached = geometryFlags(applied.scene, fitted.ops, userPrompt).filter((line) => line.includes("touches nothing"));
+        if (detached.length && !lastCall) { soft = fitted; errors = detached; continue; }
+        current = applied.scene;
+        finished.push(...fitted.ops);
+        notes.push(...fitted.notes);
+        growing.delete(item.id);
+        done += 1;
+        showLive();
+        return;
+      }
+      growing.delete(item.id);
+      const fallback = soft && applyOps(current, soft.ops);
+      if (soft && fallback && !fallback.errors.length) {
+        current = fallback.scene;
+        finished.push(...soft.ops);
+        notes.push(...soft.notes);
+        done += 1;
+      } else failed.push(`${item.name}${failure ? ` (${failure.slice(0, 160)})` : ""}`);
+      showLive();
+    };
+    let next = 0;
+    const worker = async () => { while (next < items.length) await buildItem(items[next++]!); };
+    await Promise.all(Array.from({ length: Math.min(DETAIL_CONCURRENCY, items.length) }, worker));
+
+    const ops = [...layout.ops, ...finished];
+    const combined = applyOps(scene, ops);
+    if (combined.errors.length) return useDraftAfterReviewFailure(`The detailed objects could not be combined: ${combined.errors.slice(0, 2).join("; ")}`);
+    const checked = inspectCandidate(combined.scene, baselinePreflight.issues);
+    checked.quality = inspectBuildQuality(combined.scene, ops);
+    const geometry = geometryFlags(combined.scene, ops, userPrompt);
+    if (geometry.length) checked.geometry = geometry;
+    const parts = finished.filter((op) => op.op === "create" && op.components.Mesh).length;
+    const summary = `${layout.summary} Built ${items.length - failed.length} of ${items.length} objects in detail (${parts} parts).` +
+      `${notes.length ? ` (Adjusted: ${notes.join("; ")}.)` : ""}${failed.length ? ` Could not detail: ${failed.join("; ")}.` : ""}`;
+    if (!failed.length && !skipped) dependencies.cache?.set(cacheKey, { summary, ops });
+    return withSkipped({ ok: true, summary, ops, scene: combined.scene, inverseOps: combined.inverseOps, errors: [], attempts, preflight: checked });
+  }
 
   const creates = draft.ops.filter((op) => op.op === "create").length;
   const escalate = solReviewEnabled && (creates >= 3 || draftCalls > 1);

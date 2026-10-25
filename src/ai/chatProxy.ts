@@ -92,7 +92,7 @@ export async function forwardChat(raw: Uint8Array, env: ChatProxyEnv, credits?: 
   } catch {
     return fail(400, "AI request body must be valid JSON.");
   }
-  if (!isRecord(body) || !isAiTask(body.task)) return fail(400, "AI request requires a task: parse, scene_draft, or scene_review.");
+  if (!isRecord(body) || !isAiTask(body.task)) return fail(400, "AI request requires a task: parse, scene_draft, scene_detail, or scene_review.");
   if (!isChatRequest(body)) return fail(400, "AI request requires system/user messages and a JSON response format.");
   const task = body.task;
   const limits = AI_TASK_LIMITS[task];

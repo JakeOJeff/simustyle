@@ -3,9 +3,10 @@
  * (see chatProxy.ts), so a page can never pick a more expensive model than the task allows.
  */
 
-export type AiTask = "parse" | "scene_draft" | "scene_review";
+/** scene_detail builds one object of a laid-out scene in high detail (see detailPass.ts); it always runs on Luna. */
+export type AiTask = "parse" | "scene_draft" | "scene_detail" | "scene_review";
 
-export const AI_TASKS: readonly AiTask[] = ["parse", "scene_draft", "scene_review"];
+export const AI_TASKS: readonly AiTask[] = ["parse", "scene_draft", "scene_detail", "scene_review"];
 
 export interface AiTaskLimits {
   /** Total characters across every message's content; larger requests are rejected before any provider call. */
@@ -18,7 +19,9 @@ export interface AiTaskLimits {
 
 export const AI_TASK_LIMITS: Record<AiTask, AiTaskLimits> = {
   parse: { maxInputChars: 8_000, maxCompletionTokens: 800, worstCaseCredits: 2 },
-  scene_draft: { maxInputChars: 48_000, maxCompletionTokens: 4_000, worstCaseCredits: 5 },
+  // Luna worst cases: 48,000 characters in (~12k tokens) plus the full output budget.
+  scene_draft: { maxInputChars: 48_000, maxCompletionTokens: 8_000, worstCaseCredits: 5 },
+  scene_detail: { maxInputChars: 48_000, maxCompletionTokens: 16_000, worstCaseCredits: 6 },
   scene_review: { maxInputChars: 48_000, maxCompletionTokens: 4_000, worstCaseCredits: 30 }
 };
 

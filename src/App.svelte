@@ -501,7 +501,8 @@
     if (aiLive && build.attempt !== aiLive.attempt && objects < liveObjectCount(aiLive.ops)) return;
     aiLive = build;
     const verb = build.attempt > 1 ? "Rebuilding" : "Building";
-    if (objects) aiProgress = `${verb} live: ${objects} object${objects === 1 ? "" : "s"} so far…`;
+    if (build.label) aiProgress = `${build.label} ${objects} parts so far`;
+    else if (objects) aiProgress = `${verb} live: ${objects} object${objects === 1 ? "" : "s"} so far…`;
     else if (build.plan) aiProgress = `Planning: …${build.plan.slice(-90)}`;
   }
 

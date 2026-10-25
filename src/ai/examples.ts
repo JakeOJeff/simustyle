@@ -1,7 +1,7 @@
 /** Compact modeling guidance; every character is sent on every call. Rules state principles; examples are illustrations. */
 export const MODELING_RULES = `## Modeling well
 - Real-world sizes in meters (door 2 m tall, chair seat 0.45 m high, car 4.2×1.8×1.4 m, adult 1.7 m). Default box is 1 m, so box scale = its size.
-- Build the 3–6 most recognizable features first, then details; 6–20 parts per object (repeated small items like balloons, books, leaves, bricks: up to 60).
+- Build the 3–6 most recognizable features first, then details: 6–20 parts per object modeled directly in ops (repeated small items like balloons, books, leaves, bricks: up to 60), 40–150 in a detail pass.
 - Every part is recognizable on its own: give it its defining feature (door: knob; fridge: handle + split line; table: legs; bed: pillow + headboard).
 - Every part touches or overlaps a neighbor by ~0.02 m; no floating parts. Position is the center: put the group's lowest point at y=0.
 - Shape with rotation/scale. Cylinders stand along Y: wheels of a car whose length runs along X use rotation [90,0,0] (axle along Z); along Z use [0,0,90]. Cones for roofs, capsules for limbs, squashed spheres (scale [1,0.6,1]) for domes/hair. Lampshades are truncated cones (radiusTop < radius), wide end down.
@@ -19,7 +19,7 @@ export const MODELING_RULES = `## Modeling well
 
 export interface FewShotExample {
   request: string;
-  reply: { plan: string; summary: string; ops: unknown[] };
+  reply: { plan: string; summary: string; ops: unknown[]; detail?: unknown[] };
 }
 
 type Vec = [number, number, number];
@@ -91,6 +91,27 @@ export const FEW_SHOT_EXAMPLES: readonly FewShotExample[] = [
         part("char_eye1", "Eye L", eye, [-0.045, 1.53, 0.12], dark),
         part("char_eye2", "Eye R", eye, [0.045, 1.53, 0.12], dark)
       ] }]
+    }
+  },
+  {
+    request: "a cozy bedroom",
+    reply: {
+      plan: "Room 4x4, floor top y0, walls meet at back-left. Rug and walls in ops; bed against the back wall is the focal piece, nightstand with lamp to its left, dresser to its right, wardrobe on the left wall, plant by the dresser, each in detail. Warm: dark background, ambient 0.3.",
+      summary: "Laid out a cozy bedroom; the bed, nightstand, dresser, wardrobe and plant are built in detail.",
+      ops: [{ op: "settings", settings: { background: "#1a1512", ambientLightIntensity: 0.3 } },
+      { op: "assemble", id: "bedroom", name: "Bedroom", parent: null, parts: [
+        part("br_floor", "Floor", box, [0, -0.02, 0], { color: "#7a5a3c" }, [4, 0.04, 4]),
+        part("br_wall_back", "Back Wall", box, [0, 1.3, -1.95], { color: "#d9c7b0" }, [4, 2.6, 0.1]),
+        part("br_wall_left", "Left Wall", box, [-1.95, 1.3, 0], { color: "#d9c7b0" }, [0.1, 2.6, 4]),
+        part("br_rug", "Rug", box, [0.2, 0.005, 0.5], { color: "#9c4a3a" }, [1.8, 0.01, 1.2])
+      ] }],
+      detail: [
+        { id: "bed", name: "Bed", description: "double bed: wooden frame with a tall padded headboard, mattress, duvet with a folded top edge, two pillows, a knitted throw across the foot, short tapered legs", position: [0.2, 0, -0.85], size: [1.6, 1.1, 2.1] },
+        { id: "nightstand", name: "Nightstand", description: "nightstand with a drawer and round knob; on top a small lamp (fabric shade, warm emissive bulb with its Light), a paperback and a water glass", position: [-0.95, 0, -1.6], size: [0.5, 0.95, 0.4] },
+        { id: "dresser", name: "Dresser", description: "three-drawer oak dresser with brass pulls and a plinth; a mirror leaning on top, perfume bottles and a jewelry box", position: [1.5, 0, -1.65], size: [0.9, 1.5, 0.45] },
+        { id: "wardrobe", name: "Wardrobe", description: "two-door wardrobe with panel doors, long handles, a cornice and a hatbox on top", position: [-1.65, 0, 0.6], rotation: [0, 90, 0], size: [1, 2.1, 0.55] },
+        { id: "plant", name: "Plant", description: "fiddle-leaf fig in a ribbed ceramic pot: trunk, a dozen broad leaves at varied angles", position: [1.6, 0, 0.4], size: [0.5, 1.3, 0.5] }
+      ]
     }
   }
 ];
