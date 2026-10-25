@@ -31,6 +31,8 @@ export interface EvalRow {
   costUsd: number;
   seconds: number;
   error?: string;
+  /** A multi-step case's pass-check failures; empty when it passed, absent when it has no check. */
+  checks?: string[];
 }
 
 /** Token and cost totals over a prompt's calls; calls without reported usage count as zero tokens. */
@@ -54,13 +56,13 @@ function modelCounts(calls: readonly string[]): string {
   return [...counts].map(([model, count]) => `${model}×${count}`).join(", ") || "-";
 }
 
-/** Plain-text table with one row per prompt and a totals row. */
+/** Plain-text table with one row per prompt and a totals row; OK is FAIL when the build worked but its pass check did not. */
 export function summaryTable(rows: readonly EvalRow[]): string {
   const header = ["Prompt", "OK", "Ops", "Parts", "Models", "In tok", "Cached", "Out tok", "Cost $", "Secs"];
-  const line = (row: EvalRow) => [row.prompt.length > 44 ? `${row.prompt.slice(0, 43)}…` : row.prompt, row.ok ? "yes" : "NO", String(row.ops), String(row.parts),
+  const line = (row: EvalRow) => [row.prompt.length > 44 ? `${row.prompt.slice(0, 43)}…` : row.prompt, !row.ok ? "NO" : row.checks?.length ? "FAIL" : "yes", String(row.ops), String(row.parts),
     modelCounts(row.calls), String(row.promptTokens), String(row.cachedTokens), String(row.completionTokens), row.costUsd.toFixed(4), row.seconds.toFixed(0)];
   const sum = (key: "ops" | "parts" | "promptTokens" | "cachedTokens" | "completionTokens" | "costUsd" | "seconds") => rows.reduce((total, row) => total + row[key], 0);
-  const total = ["Total", `${rows.filter((row) => row.ok).length}/${rows.length}`, String(sum("ops")), String(sum("parts")), modelCounts(rows.flatMap((row) => row.calls)),
+  const total = ["Total", `${rows.filter((row) => row.ok && !row.checks?.length).length}/${rows.length}`, String(sum("ops")), String(sum("parts")), modelCounts(rows.flatMap((row) => row.calls)),
     String(sum("promptTokens")), String(sum("cachedTokens")), String(sum("completionTokens")), sum("costUsd").toFixed(4), sum("seconds").toFixed(0)];
   const table = [header, ...rows.map(line), total];
   const widths = header.map((_, column) => Math.max(...table.map((cells) => cells[column]!.length)));

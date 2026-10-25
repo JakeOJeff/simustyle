@@ -4,6 +4,7 @@ import { tidyCreates } from "../../src/ai/placement";
 import { buildSceneUserMessage, buildSystemPrompt } from "../../src/ai/prompt";
 import { freeSpots, sceneText } from "../../src/ai/sceneContext";
 import { applyOps } from "../../src/scene/applyOps";
+import { worldMatrix } from "../../src/scene/hierarchy";
 import { createEmptyScene, type Scene, type SceneOp } from "../../src/scene/types";
 
 function sceneWith(ops: SceneOp[]): Scene {
@@ -97,6 +98,34 @@ describe("tidyCreates", () => {
     ]);
     const positions = ops.map((operation) => (operation as Extract<SceneOp, { op: "create" }>).components.Transform!.position);
     expect(positions).toEqual([[0, 1.51, 0], [0, 0.5, 0], [0, -2, 0]]);
+  });
+
+  it("centers a new container on the existing objects moved into it and keeps their world positions", () => {
+    const scene = sceneWith([{ ...crate, components: { ...crate.components, Transform: { position: [3, 0.5, 2] } } }]);
+    const { ops, notes } = tidyCreates(scene, [
+      { op: "create", id: "house", name: "House", parent: null, components: { Transform: {} } },
+      { op: "create", id: "wall", name: "Wall", parent: "house", components: { Transform: { position: [0, 1, -1.5] }, Mesh: {}, Material: {} } },
+      { op: "create", id: "case", name: "Case", parent: null, components: { Mesh: {}, Material: {}, Transform: { scale: [2, 2, 2] } } },
+      { op: "update", id: "crate", parent: "house", components: {} }
+    ], { preserveExplicitPositions: true });
+    const [house, , glass, moved] = ops as Extract<SceneOp, { op: "create" | "update" }>[];
+    expect(house!.components!.Transform!.position).toEqual([3, 0, 2]);
+    expect(glass!.components!.Transform!.position).not.toEqual([3, 1, 2]); // nothing moves into the case
+    expect(moved!.components!.Transform!.position).toEqual([0, 0.5, 0]);
+    expect(notes).toEqual(["centered House on the objects moved inside it"]);
+    const applied = applyOps(scene, ops);
+    expect(applied.errors).toEqual([]);
+    expect(worldMatrix(applied.scene, "crate").elements.slice(12, 15)).toEqual([3, 0.5, 2]);
+  });
+
+  it("centers a mesh container on the floor and leaves an update's own position alone", () => {
+    const scene = sceneWith([{ ...crate, components: { ...crate.components, Transform: { position: [-2, 0.5, 1] } } }]);
+    const { ops } = tidyCreates(scene, [
+      { op: "create", id: "case", name: "Case", parent: null, components: { Mesh: {}, Material: { opacity: 0.4 }, Transform: { scale: [2, 2, 2] } } },
+      { op: "update", id: "crate", parent: "case", components: { Transform: { position: [0, -0.25, 0] } } }
+    ], { preserveExplicitPositions: true });
+    expect((ops[0] as Extract<SceneOp, { op: "create" }>).components.Transform!.position).toEqual([-2, 1, 1]);
+    expect((ops[1] as Extract<SceneOp, { op: "update" }>).components.Transform).toEqual({ position: [0, -0.25, 0] });
   });
 
   it("reports naming adjustments but preserves explicit placement for intent-aware review", async () => {

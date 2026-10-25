@@ -120,7 +120,8 @@ describe("examples", () => {
     expect(fewShotText().startsWith("## Examples")).toBe(true);
     expect(fewShotText().length).toBeLessThanOrEqual(5_000);
     expect(MODELING_RULES.startsWith("## Modeling well")).toBe(true);
-    expect(MODELING_RULES.length).toBeLessThanOrEqual(2_600);
+    // Sent on every call; raised from 2,600 for the tether and containment rules.
+    expect(MODELING_RULES.length).toBeLessThanOrEqual(2_900);
     for (const principle of ["never empty", "gives off light", "Light child", "mood of the request sets the lighting", "at least two walls that meet", "ground surface", "focal piece"]) expect(MODELING_RULES).toContain(principle);
     // A few library examples together must still leave room for the scene in one request.
     for (const example of EXAMPLE_LIBRARY) expect(examplesText([example]).length, example.request).toBeLessThanOrEqual(6_500);

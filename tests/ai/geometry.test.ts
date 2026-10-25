@@ -100,6 +100,54 @@ describe("geometry checker", () => {
     expect(checkGeometry(base, table, "a table")).toEqual([]);
   });
 
+  /** An open room 4×3×4 m: floor, four walls, flat roof. */
+  const room = (id = "house"): SceneOp[] => [
+    group(id, "House"),
+    box(`${id}_floor`, "Floor", id, [0, -0.05, 0], [4, 0.1, 4]),
+    box(`${id}_back`, "Back Wall", id, [0, 1.5, -1.95], [4, 3, 0.1]),
+    box(`${id}_front`, "Front Wall", id, [0, 1.5, 1.95], [4, 3, 0.1]),
+    box(`${id}_left`, "Left Wall", id, [-1.95, 1.5, 0], [0.1, 3, 3.8]),
+    box(`${id}_right`, "Right Wall", id, [1.95, 1.5, 0], [0.1, 3, 3.8]),
+    box(`${id}_roof`, "Roof", id, [0, 3.05, 0], [4, 0.1, 4])
+  ];
+  /** A thick rug that sinks into the house floor (so it does not merely rest on it) and a chair. */
+  const corner = (x: number, width = 1.5): SceneOp[] => [group("corner", "Corner", null, [x, 0, 0]), box("rug", "Rug", "corner", [0, -0.04, 0], [width, 0.12, width]), box("chair", "Chair", "corner", [0, 0.5, 0], [0.8, 1, 0.8])];
+
+  it("treats an object inside another's interior as contained, not overlapping", () => {
+    const inside = [...corner(0), ...room()];
+    expect(checkGeometry(build(inside), inside, "build a house around the corner")).toEqual([]);
+    const through = [...corner(1.6), ...room()];
+    expect(checkGeometry(build(through), through, "build a house around the corner")).toEqual(["Corner overlaps House by 0.1 m; move it apart."]);
+    // Buried inside one solid part is still an overlap.
+    const buried = [box("big", "Big Block", null, [0, 1, 0], [2, 2, 2]), box("small", "Small Block", null, [0, 1, 0], [0.5, 0.5, 0.5])];
+    expect(checkGeometry(build(buried), buried, "two blocks")).toEqual(["Big Block overlaps Small Block by 0.5 m; move it apart."]);
+  });
+
+  it("flags objects moved inside a container they stick out of", () => {
+    const fits = [...corner(0), ...room()];
+    const move: SceneOp = { op: "update", id: "corner", parent: "house", components: {} };
+    expect(checkGeometry(build([move], build(fits)), [...fits, move], "put the corner inside the house")).toEqual([]);
+    const small = [...corner(0, 4.3), ...room()];
+    expect(checkGeometry(build([move], build(small)), [...small, move], "put the corner inside the house")).toEqual([
+      "Corner was moved inside House but sticks out of it by 0.15 m; make House bigger (0.5 m clearance on every side and above) or center it on Corner."
+    ]);
+  });
+
+  it("flags held floating objects with no string reaching an anchor", () => {
+    const balloon = (id: string, name = "Balloon"): SceneOp => ({ op: "create", id, name, parent: null, components: { Transform: { position: [0, 3, 0] }, Mesh: { shape: "sphere", radius: 0.3 }, Material: {} } });
+    const string = (bottom: number): SceneOp => ({ op: "create", id: "string", name: "String", parent: null,
+      components: { Transform: { position: [0, (bottom + 2.7) / 2, 0] }, Mesh: { shape: "cylinder", radius: 0.01, height: 2.7 - bottom }, Material: {} } });
+    const post = box("post", "Post", null, [0, 0.5, 0], [0.2, 1, 0.2]);
+    const tied = [post, balloon("b"), string(1)];
+    expect(checkGeometry(build(tied), tied, "a balloon tied to a post")).toEqual([]);
+    const loose = [post, balloon("b")];
+    expect(checkGeometry(build(loose), loose, "a balloon")).toEqual(["Balloon floats with nothing holding it; add a thin cylinder (radius 0.01) from it to its anchor point."]);
+    const dangling = [post, balloon("b"), string(1.7)];
+    expect(checkGeometry(build(dangling), dangling, "a balloon")).toEqual(["Balloon: its string does not reach anything; extend the thin cylinder until it touches its anchor point."]);
+    const free = [balloon("hot", "Hot Air Balloon")];
+    expect(checkGeometry(build(free), free, "a hot air balloon")).toEqual([]);
+  });
+
   it("caps the output", () => {
     const ops: SceneOp[] = Array.from({ length: 20 }, (_, i) => [group(`g${i}`, `G${i}`, null, [i * 3, 2, 0]), box(`m${i}`, `M${i}`, `g${i}`, [0, 0, 0], [1, 1, 1])]).flat();
     const lines = checkGeometry(build(ops), ops, "boxes");

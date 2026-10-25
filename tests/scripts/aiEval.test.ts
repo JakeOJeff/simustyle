@@ -1,6 +1,9 @@
 import { describe, expect, it } from "vitest";
 import { frameThreeQuarter, summaryTable, usageTotals, type EvalRow } from "../../scripts/ai-eval/report";
+import { containedAndTethered } from "../../scripts/ai-eval/checks";
 import type { CallCharge } from "../../src/ai/credits";
+import { applyOps } from "../../src/scene/applyOps";
+import { createEmptyScene, type Scene, type SceneOp, type Vec3 } from "../../src/scene/types";
 
 const charge = (task: CallCharge["task"], model: string, promptTokens: number, cachedTokens: number, completionTokens: number, costUsd: number): CallCharge =>
   ({ task, model, usage: { promptTokens, cachedTokens, completionTokens }, costUsd, credits: 0 });
@@ -36,5 +39,44 @@ describe("ai:eval report", () => {
     expect(lines[2]).toContain("0.0358");
     expect(lines[3]).toContain("NO");
     expect(lines[4]).toMatch(/^Total\s+1\/2\s+3\s+14\s+gpt-6-luna×2, gpt-6-sol×1\s+29000\s+14000\s+9500\s+0\.0388\s+71$/);
+  });
+
+  it("marks a build whose pass check failed", () => {
+    const row: EvalRow = { prompt: "corner → house", ok: true, ops: 9, parts: 30, ...usageTotals([]), seconds: 50, checks: ["Corner is not inside House."] };
+    const lines = summaryTable([row, { ...row, checks: [] }]).split("\n");
+    expect(lines[2]).toMatch(/^corner → house\s+FAIL/);
+    expect(lines[3]).toMatch(/^corner → house\s+yes/);
+    expect(lines[4]).toMatch(/^Total\s+1\/2/);
+  });
+});
+
+describe("ai:eval containment check", () => {
+  const box = (id: string, name: string, parent: string | null, position: Vec3, scale: Vec3, mesh: Record<string, unknown> = {}): SceneOp =>
+    ({ op: "create", id, name, parent, components: { Transform: { position, scale }, Mesh: mesh, Material: {} } });
+  const build = (ops: SceneOp[], base = createEmptyScene()): Scene => {
+    const result = applyOps(base, ops);
+    expect(result.errors).toEqual([]);
+    return result.scene;
+  };
+  const before = build([{ op: "create", id: "corner", name: "Corner", parent: null, components: { Transform: {} } },
+    box("rug", "Rug", "corner", [0, 0.02, 0], [1.5, 0.04, 1.5]), box("chair", "Chair", "corner", [0, 0.5, 0], [0.8, 1, 0.8])]);
+  /** A 4×3×4 m house with a flat roof at y 3..3.1 and one balloon whose string ends at stringBottom. */
+  const house = (balloonX: number, stringBottom: number): SceneOp[] => [
+    { op: "create", id: "house", name: "House", parent: null, components: { Transform: {} } },
+    box("floor", "Floor", "house", [0, -0.05, 0], [4, 0.1, 4]),
+    box("wall", "Back Wall", "house", [0, 1.5, -1.95], [4, 3, 0.1]),
+    box("roof", "Roof", "house", [0, 3.05, 0], [4, 0.1, 4]),
+    box("balloon", "Balloon", "house", [balloonX, 5, 0], [1, 1, 1], { shape: "sphere", radius: 0.3 }),
+    box("string", "String", "house", [balloonX, (stringBottom + 4.7) / 2, 0], [1, 1, 1], { shape: "cylinder", radius: 0.01, height: 4.7 - stringBottom })
+  ];
+
+  it("passes when the earlier scene is inside the new building and its balloons are tied to the roof", () => {
+    expect(containedAndTethered(before, build(house(0, 3.1), before))).toEqual([]);
+  });
+
+  it("reports contents left outside and balloons tied elsewhere", () => {
+    const after = build([...house(3, 0), { op: "update", id: "corner", components: { Transform: { position: [10, 0, 0] } } }], before);
+    expect(containedAndTethered(before, after)).toEqual(["Corner is not inside House.", "Balloon is not tethered to the roof of House."]);
+    expect(containedAndTethered(before, before)).toEqual(["No new building was created."]);
   });
 });

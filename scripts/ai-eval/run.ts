@@ -1,6 +1,7 @@
-// `npm run ai:eval`: runs the real scene agent on an empty scene for each eval prompt, with the same
+// `npm run ai:eval`: runs the real scene agent from an empty scene for each eval case, with the same
 // prompts, proxy and model routing as the editor (keys from .env / .env.local), and saves a fixed 3/4
 // screenshot plus op/part counts, models, tokens and cost per prompt to eval-output/<timestamp>/.
+// A case may take several steps on the same scene and end with a pass check (see checks.ts).
 // Pass prompts as arguments to run those instead: npm run ai:eval -- "a blue bicycle"
 import { spawn } from "node:child_process";
 import { mkdir, writeFile } from "node:fs/promises";
@@ -16,14 +17,24 @@ import { AI_RESPONSE_JSON_SCHEMA, buildSystemPrompt } from "../../src/ai/prompt"
 import { EXAMPLE_LIBRARY, FEW_SHOT_EXAMPLES, selectExamples } from "../../src/ai/examples";
 import { serializeScene } from "../../src/scene/serialize";
 import { createEmptyScene, type Scene } from "../../src/scene/types";
+import { containedAndTethered } from "./checks";
 import { summaryTable, usageTotals, type EvalRow } from "./report";
 
+interface EvalCase {
+  /** Requests run one after another on the same scene, each seeing the earlier ones as history. */
+  steps: string[];
+  /** Failures in the final scene, given the scene before the last step; empty means pass. */
+  check?: (before: Scene, after: Scene) => string[];
+}
+
 /** Kept different from the few-shot and library examples, so a run measures how well the rules generalize. */
-const PROMPTS = [
-  "Build a cozy kitchen nook in warm wood and sage green",
-  "Create the house from Up and decorate its insides with furniture",
-  "A red sports car",
-  "A snowman in a snowy garden"
+const CASES: EvalCase[] = [
+  { steps: ["Build a cozy kitchen nook in warm wood and sage green"] },
+  { steps: ["Create the house from Up and decorate its insides with furniture"] },
+  { steps: ["A red sports car"] },
+  { steps: ["A snowman in a snowy garden"] },
+  // Containment: the corner must end up inside the house, and the balloons must be tethered to its roof.
+  { steps: ["Build a cozy reading corner", "Create the house from Up and put this inside"], check: containedAndTethered }
 ];
 const WIDTH = 1280;
 const HEIGHT = 800;
@@ -36,8 +47,8 @@ if (!isAiConfigured(env)) {
 }
 // npm on Windows can hand arguments through cmd.exe with ^ escapes left in.
 const args = process.argv.slice(2).map((arg) => arg.replaceAll("^", "")).filter(Boolean);
-const prompts = args.length ? args : PROMPTS;
-for (const prompt of prompts) {
+const cases: EvalCase[] = args.length ? args.map((prompt) => ({ steps: [prompt] })) : CASES;
+for (const prompt of cases.flatMap((item) => item.steps)) {
   const copied = [...FEW_SHOT_EXAMPLES, ...EXAMPLE_LIBRARY].find((example) => example.request.toLowerCase() === prompt.toLowerCase());
   if (copied) console.warn(`Note: "${prompt}" is one of the examples, so it measures copying rather than generalizing.`);
 }
@@ -51,8 +62,9 @@ const renderBundle = (await build({
   platform: "browser", target: "es2022", minify: true, logLevel: "warning", define: { "import.meta.env.BASE_URL": JSON.stringify("/") }
 })).outputFiles[0]!.text;
 
-/** One agent run with metered calls recorded instead of charged to a visitor. */
-async function runPrompt(prompt: string): Promise<{ scene?: Scene; row: EvalRow; detail: unknown }> {
+/** One case's agent runs with metered calls recorded instead of charged to a visitor. */
+async function runCase({ steps, check }: EvalCase): Promise<{ scene?: Scene; row: EvalRow; detail: unknown }> {
+  const prompt = steps.join(" → ");
   const charges: CallCharge[] = [];
   /** What each call was asked to fix, so result.json shows why a build needed corrections. */
   const requests: { task: string; correctionErrors: string[] }[] = [];
@@ -66,25 +78,39 @@ async function runPrompt(prompt: string): Promise<{ scene?: Scene; row: EvalRow;
   // forwardChat logs one JSON line per call for the server logs; the summary reports the same numbers.
   console.log = (...values: unknown[]) => { if (!(typeof values[0] === "string" && values[0].startsWith('{"event":"ai_call"'))) log(...values); };
   try {
-    const result = await runSceneAgent(createEmptyScene(), prompt, {
-      buildSystemPrompt,
-      responseSchema: AI_RESPONSE_JSON_SCHEMA.schema,
-      solReviewEnabled: solReviewEnabled(env),
-      onProgress: (message) => log(`  ${message}`),
-      complete: async ({ systemPrompt, userPrompt, correctionErrors, responseSchema, previousReply, task }) => {
-        requests.push({ task, correctionErrors });
-        const body = JSON.stringify({ task, messages: sceneEditMessages(systemPrompt, userPrompt, correctionErrors, previousReply),
-          responseFormat: { type: "json_schema", json_schema: { ...AI_RESPONSE_JSON_SCHEMA, schema: responseSchema } } });
-        const reply = await forwardChat(new TextEncoder().encode(body), env, credits);
-        if (reply.status !== 200 || !reply.body) throw new Error(String((reply.body as { error?: unknown } | undefined)?.error ?? `AI proxy returned HTTP ${reply.status}`));
-        return parseChatPayload(reply.body);
-      }
-    });
-    const row: EvalRow = { prompt, ok: result.ok, ops: result.ops.length, parts: result.scene?.entities.filter((entity) => entity.components.Mesh).length ?? 0,
-      ...usageTotals(charges), seconds: (Date.now() - started) / 1000, ...(result.ok ? {} : { error: result.errors.join(" | ") }) };
-    const detail = { prompt, ok: result.ok, examples: selectExamples(prompt, true).map((example) => example.request), summary: result.summary, errors: result.errors, attempts: result.attempts, requests, skipped: result.skipped,
-      geometry: result.preflight?.geometry, quality: result.preflight?.quality?.warnings, charges, ops: result.ops };
-    return { scene: result.scene, row, detail };
+    let scene = createEmptyScene();
+    let before = scene;
+    const results: Awaited<ReturnType<typeof runSceneAgent>>[] = [];
+    for (const [index, step] of steps.entries()) {
+      if (steps.length > 1) log(`  step ${index + 1}/${steps.length}: ${step}`);
+      const result = await runSceneAgent(scene, step, {
+        buildSystemPrompt,
+        previousRequests: steps.slice(0, index),
+        responseSchema: AI_RESPONSE_JSON_SCHEMA.schema,
+        solReviewEnabled: solReviewEnabled(env),
+        onProgress: (message) => log(`  ${message}`),
+        complete: async ({ systemPrompt, userPrompt, correctionErrors, responseSchema, previousReply, task }) => {
+          requests.push({ task, correctionErrors });
+          const body = JSON.stringify({ task, messages: sceneEditMessages(systemPrompt, userPrompt, correctionErrors, previousReply),
+            responseFormat: { type: "json_schema", json_schema: { ...AI_RESPONSE_JSON_SCHEMA, schema: responseSchema } } });
+          const reply = await forwardChat(new TextEncoder().encode(body), env, credits);
+          if (reply.status !== 200 || !reply.body) throw new Error(String((reply.body as { error?: unknown } | undefined)?.error ?? `AI proxy returned HTTP ${reply.status}`));
+          return parseChatPayload(reply.body);
+        }
+      });
+      results.push(result);
+      if (!result.ok || !result.scene) break;
+      before = scene;
+      scene = result.scene;
+    }
+    const ok = results.length === steps.length && results.every((result) => result.ok);
+    const checks = ok && check ? check(before, scene) : undefined;
+    const row: EvalRow = { prompt, ok, ops: results.reduce((sum, result) => sum + result.ops.length, 0), parts: scene.entities.filter((entity) => entity.components.Mesh).length,
+      ...usageTotals(charges), seconds: (Date.now() - started) / 1000, ...(ok ? {} : { error: results.flatMap((result) => result.errors).join(" | ") }), ...(checks ? { checks } : {}) };
+    const detail = { prompt, ok, checks, requests, charges, steps: results.map((result, index) => ({ request: steps[index], ok: result.ok,
+      examples: selectExamples(steps[index]!, index === 0).map((example) => example.request), summary: result.summary, errors: result.errors, attempts: result.attempts, skipped: result.skipped,
+      geometry: result.preflight?.geometry, quality: result.preflight?.quality?.warnings, ops: result.ops })) };
+    return { scene: results.length ? scene : undefined, row, detail };
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
     return { row: { prompt, ok: false, ops: 0, parts: 0, ...usageTotals(charges), seconds: (Date.now() - started) / 1000, error: message }, detail: { prompt, error: message, requests, charges } };
@@ -152,11 +178,12 @@ async function openBrowser() {
 const browser = await openBrowser();
 const rows: EvalRow[] = [];
 try {
-  for (const [index, prompt] of prompts.entries()) {
-    console.log(`\n[${index + 1}/${prompts.length}] ${prompt}`);
-    const dir = path.join(outDir, `${String(index + 1).padStart(2, "0")}-${prompt.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "").slice(0, 40)}`);
+  for (const [index, item] of cases.entries()) {
+    console.log(`\n[${index + 1}/${cases.length}] ${item.steps.join(" → ")}`);
+    // Named after the last step: the one a multi-step case measures.
+    const dir = path.join(outDir, `${String(index + 1).padStart(2, "0")}-${item.steps.at(-1)!.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "").slice(0, 40)}`);
     await mkdir(dir, { recursive: true });
-    const { scene, row, detail } = await runPrompt(prompt);
+    const { scene, row, detail } = await runCase(item);
     rows.push(row);
     await writeFile(path.join(dir, "result.json"), JSON.stringify(detail, null, 2));
     if (scene) {
@@ -165,6 +192,7 @@ try {
       catch (error) { row.error = [row.error, `screenshot: ${error instanceof Error ? error.message : String(error)}`].filter(Boolean).join(" | "); }
     }
     console.log(`  ${row.ok ? "ok" : "FAILED"}: ${row.ops} ops, ${row.parts} parts, $${row.costUsd.toFixed(4)}${row.error ? ` (${row.error})` : ""}`);
+    if (row.checks) console.log(`  check ${row.checks.length ? `FAILED: ${row.checks.join(" ")}` : "passed"}`);
   }
 } finally {
   browser.close();

@@ -4,6 +4,19 @@ Record meaningful project changes during the event, newest first.
 
 ## Event build log
 
+### 2026-10-25 — Containment requests: build around existing objects, and tethers for held objects
+
+- Changed: "Put X inside Y", "build Y around X" and "move X into Y" now work as containment instead of being placed beside or reported as overlap.
+  - Placement (`tidyCreates`): a new top-level object that the same batch moves existing objects into (an update with `parent`) is a container. If it has no position, it is centered on their combined bounds instead of sent to a free floor spot; a mesh container still rests on the floor. Those objects keep their world positions: an update that changes the parent but gives no position gets its local Transform computed from the container (`relativeTransform`). An update that positions the object itself is left alone. Containers are never raised off their own contents.
+  - Geometry checker: two top-level objects are no longer flagged as overlapping when one fits inside the other's bounds without being buried in one solid part of it (transparent parts count as hollow). Partial intersections are still flagged. For containment requests, an object moved inside a container but sticking out of it is flagged with the excess and a fix.
+  - New held-object check: every floating mesh of a balloon, kite or piñata (by its own or an ancestor's name; hot-air balloons excluded) must connect, through touching balloons, knots and strings, to a thin part (two sides ≤ 5 cm) that touches an anchor or the ground. Loose objects are flagged as either "nothing holding it" or "its string does not reach anything". `tethers(scene)` is exported for the eval.
+  - Modeling rules: the tether rule is now a MUST that names the checker. A new rule sizes a container from the contents' combined bounds plus ≥0.5 m clearance on every side and above the tallest, centers it on them, and moves them in with `{"op":"update","parent":Y,"components":{}}`. The rules budget test went from 2,600 to 2,900 characters for these two rules.
+  - `npm run ai:eval` cases can now take several steps on one scene and end with a pass check. New case: "Build a cozy reading corner" → "Create the house from Up and put this inside". It passes when every earlier object is inside the new building's shell and every new balloon is tied to the building's upper 40% (the roof). Check failures appear as FAIL in the summary's OK column. Files: `scripts/ai-eval/checks.ts`, `run.ts`, `report.ts`.
+  - Files: `src/ai/placement.ts`, `src/ai/geometry.ts`, `src/ai/examples.ts`, `scripts/ai-eval/*`, `tests/ai/placement.test.ts`, `tests/ai/geometry.test.ts`, `tests/ai/examples.test.ts`, `tests/scripts/aiEval.test.ts`.
+- Why: Asking the AI to build the Up house around an existing reading corner put the house beside it, the checker reported the contents as overlaps, and the balloons floated with no strings.
+- Validation: `npm run check` passes (402 tests, svelte-check, build), and the eval runner bundles. New tests cover container centering and world-pose preservation, containment versus partial overlap, a container that is too small, tethered, loose and dangling balloons, and the eval pass check.
+- Limitations: The new eval case has not been run against the real model yet (it costs credits). Held objects are recognized by name only.
+
 ### 2026-10-25 — General modeling principles and a library of worked examples
 
 - Changed: The round-3 rules and the reading corner were illustrations of the kind of guidance wanted, not fixed content. They are now general principles, with an example library chosen per request.

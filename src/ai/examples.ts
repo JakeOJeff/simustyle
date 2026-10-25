@@ -5,8 +5,9 @@ export const MODELING_RULES = `## Modeling well
 - Every part is recognizable on its own: give it its defining feature (door: knob; fridge: handle + split line; table: legs; bed: pillow + headboard).
 - Every part touches or overlaps a neighbor by ~0.02 m; no floating parts. Position is the center: put the group's lowest point at y=0.
 - Shape with rotation/scale. Cylinders stand along Y: wheels of a car whose length runs along X use rotation [90,0,0] (axle along Z); along Z use [0,0,90]. Cones for roofs, capsules for limbs, squashed spheres (scale [1,0.6,1]) for domes/hair. Lampshades are truncated cones (radiusTop < radius), wide end down.
-- Anything that hangs or floats on purpose (balloons, kites, lamps) is attached with a thin cylinder (radius 0.01) to what holds it.
+- Every held floating object (balloons, kites) MUST have a thin cylinder (radius 0.01) running to its anchor point; the checker flags any without one. Hanging lamps/signs hang from a cord.
 - Buildings: fill gables with a wedge; multi-floor buildings need stairs or a ladder.
+- Y must hold existing objects ("put X inside Y", "build Y around X"): size Y to their combined bounds + ≥0.5 m clearance on every side and above the tallest, centered on them; move each in with {"op":"update","id":…,"parent":Y,"components":{}} (no Transform keeps world position).
 - Surfaces and containers meant to hold things are never empty: fill them with items varied in size, color and angle, some leaning or stacked (e.g. a shelf row of 5–8 books or jars, 2–4 props on a table, produce on a counter, tools on a bench).
 - Anything that gives off light (lamp, candle, fire, screen, window, sign) gets a Light child at its glowing point, and the glowing part gets emissive with emissiveIntensity 1–3.
 - The mood of the request sets the lighting: warm/cozy/night = warm light (#ffb070–#ffd6a0), low ambient (~0.3), dark background; bright/clean/day = white light, ambient 0.6–1, light background; eerie = cold dim light.
