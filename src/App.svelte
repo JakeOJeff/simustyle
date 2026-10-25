@@ -4,7 +4,10 @@
   import Hierarchy from "./editor/Hierarchy.svelte";
   import Viewport from "./editor/Viewport.svelte";
   import AIPanel, { type AIPanelMessage } from "./editor/AIPanel.svelte";
-  import { fetchAiStatus, onCreditsChange, requestSceneEdit, type CreditStatus } from "./ai/client";
+  import { fetchAiStatus, onCreditsChange, requestCritique, requestSceneEdit, type CreditStatus } from "./ai/client";
+  import { sceneText } from "./ai/sceneContext";
+  import { AI_TASK_LIMITS } from "./ai/tasks";
+  import type { SceneCritique } from "./ai/critique";
   import SupportDialog from "./editor/SupportDialog.svelte";
   import { AI_RESPONSE_JSON_SCHEMA, buildSystemPrompt } from "./ai/prompt";
   import { runSceneAgent, type LiveBuild, type SceneAgentReply } from "./ai/agent";
@@ -107,6 +110,8 @@
   let aiCredits: CreditStatus | null = $state(null);
   /** Server lets scene reviews escalate to the stronger model (task "scene_review"). */
   let solReviewEnabled = false;
+  /** The server accepts scene_critique (AI_CRITIQUE_ENABLED). */
+  let critiqueEnabled = false;
   let supportOpen = $state(false);
   let supportOutOfCredits = $state(false);
   let outOfCreditsNoticeShown = false;
@@ -389,7 +394,7 @@
       outOfCreditsNoticeShown = true;
       openSupport(true);
     });
-    void fetchAiStatus().then(({ credits, solReview }) => { if (credits) aiCredits = credits; solReviewEnabled = solReview; });
+    void fetchAiStatus().then(({ credits, solReview, critique }) => { if (credits) aiCredits = credits; solReviewEnabled = solReview; critiqueEnabled = critique; });
     restorePanelWorkspace();
     recentScenes = loadRecentScenes();
     if (isDesktopRuntime()) {
@@ -506,6 +511,16 @@
     else if (build.plan) aiProgress = `Planning: …${build.plan.slice(-90)}`;
   }
 
+  /**
+   * Renders a finished build offscreen (the live viewport is untouched) and asks the vision model to score it.
+   * Skipped (null) unless the visitor holds the worst case of the critique plus its fix pass.
+   */
+  async function critiqueBuild({ userPrompt, scene: built }: { userPrompt: string; scene: Scene }): Promise<SceneCritique | null> {
+    if (aiCredits && aiCredits.remaining < AI_TASK_LIMITS.scene_critique.worstCaseCredits + AI_TASK_LIMITS.scene_draft.worstCaseCredits) return null;
+    const { renderCritiqueImages } = await import("./ai/snapshot");
+    return requestCritique(userPrompt, sceneText(built), await renderCritiqueImages(built));
+  }
+
   async function submitAI(prompt: string) {
     if (aiLoading || !prompt.trim()) return;
     if (playState !== "stopped") { message = "Stop the simulation before asking the scene agent to edit."; return; }
@@ -529,6 +544,7 @@
         onProgress: (progress) => aiProgress = progress,
         onLiveBuild: showLiveBuild,
         solReviewEnabled,
+        ...(critiqueEnabled ? { critique: critiqueBuild } : {}),
         complete: ({ systemPrompt, userPrompt, correctionErrors, responseSchema, previousReply, task, onText }) =>
           requestSceneEdit(systemPrompt, userPrompt, correctionErrors, responseSchema, previousReply, task, onText)
       });

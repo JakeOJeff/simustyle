@@ -75,8 +75,14 @@
           <p class="summary" title={message.summary ?? message.content}>{message.summary ?? message.content}</p>
           {#if message.preflight}
             <details class="preflight-details">
-              <summary>Checked before apply · {message.preflight.frames} script ticks</summary>
+              <summary>Checked before apply · {message.preflight.frames} script ticks{#if message.preflight.critique?.score !== undefined} · visual critique {message.preflight.critique.score}/10{/if}</summary>
               <div class="preflight-output">
+                {#if message.preflight.critique}
+                  {@const critique = message.preflight.critique}
+                  <strong>Visual critique{critique.score !== undefined ? ` · ${critique.score}/10` : ""}</strong>
+                  <span>{critique.outcome === "passed" ? "Passed; no fix pass needed." : critique.outcome === "fixed" ? "One fix pass applied for these issues." : critique.outcome === "kept" ? `The fix pass was not applied, so this is the critiqued build. ${critique.note ?? ""}` : `The critique could not run: ${critique.note ?? "unknown error"}`}</span>
+                  {#each critique.issues as issue}<code>{issue.entityId ? `[${issue.entityId}] ` : ""}{issue.problem} Fix: {issue.fix}</code>{/each}
+                {/if}
                 {#if message.preflight.quality}
                   <strong>Design and organization checks</strong>
                   {#each message.preflight.quality.checks as check}<span>{check}</span>{/each}
@@ -98,7 +104,7 @@
                   <strong>Issues already present before this request</strong>
                   {#each message.preflight.baselineIssues as line}<code>{line}</code>{/each}
                 {/if}
-                <span>Scripts were previewed in isolation without Rapier physics or visual review.</span>
+                <span>Scripts were previewed in isolation without Rapier physics{message.preflight.critique?.score === undefined ? " or visual review" : ""}.</span>
               </div>
             </details>
           {/if}

@@ -583,3 +583,69 @@ describe("detail passes", () => {
     expect(requests[1]?.correctionErrors[0]).toContain("detail object 'floor' reuses an id");
   });
 });
+
+describe("visual critique", () => {
+  const issue = { entityId: "b", problem: "Cube b floats.", fix: "Set its y to 0.5." };
+  /** Three cubes, then (when asked) a fix reply; the critique is mocked, so no vision call is made. */
+  const run = async (critique: (request: { userPrompt: string }) => Promise<unknown>, fix: unknown = { summary: "Recolored cube b.", ops: [{ op: "update", id: "b", components: { Material: { color: "#aa3333" } } }] }) => {
+    const { requests, complete } = recorder([threeCubes, fix]);
+    const asked: string[] = [];
+    const result = await runSceneAgent(createEmptyScene(), "three cubes", {
+      ...dependencies([]), complete, critique: async (request) => { asked.push(request.userPrompt); return critique(request) as never; }
+    });
+    return { result, requests, asked };
+  };
+
+  it("passes a build that scores 8 or more without a fix pass", async () => {
+    const { result, requests, asked } = await run(async () => ({ score: 8, issues: [issue] }));
+    expect(asked).toEqual(["three cubes"]);
+    expect(requests).toHaveLength(1);
+    expect(result.preflight?.critique).toEqual({ score: 8, issues: [issue], outcome: "passed" });
+  });
+
+  it("runs one fix pass with the issues as correction errors and applies it on top of the build", async () => {
+    const { result, requests } = await run(async () => ({ score: 5, issues: [issue] }));
+    expect(requests.map((request) => request.task)).toEqual(["scene_draft", "scene_draft"]);
+    expect(requests[1]?.correctionErrors).toEqual(["[b] Cube b floats. Fix: Set its y to 0.5."]);
+    expect(requests[1]?.userPrompt).toContain("three cubes");
+    expect(result.ok).toBe(true);
+    expect(result.ops).toHaveLength(4);
+    expect(result.scene?.entities.find((entity) => entity.id === "b")?.components.Material?.color).toBe("#aa3333");
+    expect(result.summary).toContain("Visual critique: 5/10; fixed: Recolored cube b.");
+    expect(result.preflight?.critique).toMatchObject({ score: 5, outcome: "fixed" });
+    // The undo batch reverts the build and the fix together.
+    expect(result.inverseOps?.length).toBeGreaterThan(0);
+  });
+
+  it("keeps the critiqued build when the fix pass does not validate", async () => {
+    const { result, requests } = await run(async () => ({ score: 4, issues: [issue] }), { summary: "Broke it.", ops: [{ op: "update", id: "missing", components: {} }] });
+    expect(requests).toHaveLength(2);
+    expect(result.ok).toBe(true);
+    expect(result.ops).toHaveLength(3);
+    expect(result.preflight?.critique).toMatchObject({ score: 4, outcome: "kept" });
+    expect(result.preflight?.critique?.note).toContain("did not validate");
+  });
+
+  it("keeps the build when the fix adds geometry problems", async () => {
+    geometry.mockImplementation((_scene, ops) => ops.length > 3 ? ["Cube b floats."] : []);
+    const { result } = await run(async () => ({ score: 6, issues: [issue] }));
+    expect(result.ops).toHaveLength(3);
+    expect(result.preflight?.critique?.note).toContain("added geometry problems");
+  });
+
+  it("skips the critique for builds of fewer than three entities and when it can't run", async () => {
+    let calls = 0;
+    const small = await runSceneAgent(createEmptyScene(), "a cube", { ...dependencies([clean]), critique: async () => { calls += 1; return { score: 2, issues: [issue] }; } });
+    expect(calls).toBe(0);
+    expect(small.preflight?.critique).toBeUndefined();
+    const { result, requests } = await run(async () => null);
+    expect(requests).toHaveLength(1);
+    expect(result.preflight?.critique).toBeUndefined();
+  });
+
+  it("reports a failed critique call and applies the build", async () => {
+    const { result } = await run(async () => { throw new Error("Visual critique is turned off on this server."); });
+    expect(result.ok).toBe(true);
+    expect(result.preflight?.critique).toEqual({ issues: [], outcome: "failed", note: "Visual critique is turned off on this server." });
+  });
+});

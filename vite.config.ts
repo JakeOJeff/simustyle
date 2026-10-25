@@ -3,7 +3,7 @@ import { defineConfig } from "vitest/config";
 import { loadEnv } from "vite";
 import { build as esbuild } from "esbuild";
 import { resolve } from "node:path";
-import { forwardChat, isAiConfigured, MAX_CHAT_REQUEST_BYTES, solReviewEnabled } from "./src/ai/chatProxy";
+import { critiqueEnabled, forwardChat, isAiConfigured, MAX_CHAT_REQUEST_BYTES, solReviewEnabled } from "./src/ai/chatProxy";
 import { adminSpendResult, creditClientIds, creditCookie, creditLimits, CreditLedger, memoryCreditStorage } from "./src/ai/credits";
 
 export default defineConfig(({ mode }) => {
@@ -47,11 +47,11 @@ function aiProxy(env: Record<string, string>) {
         response.setHeader("Cache-Control", "no-store");
         response.setHeader("Content-Type", "application/json; charset=utf-8");
         if (!isAiConfigured(env)) {
-          response.end(JSON.stringify({ enabled: false, solReview: false }));
+          response.end(JSON.stringify({ enabled: false, solReview: false, critique: false }));
           return;
         }
         const credits = await ledger.status(await clientIds(request, response));
-        response.end(JSON.stringify({ enabled: true, credits, solReview: solReviewEnabled(env) }));
+        response.end(JSON.stringify({ enabled: true, credits, solReview: solReviewEnabled(env), critique: critiqueEnabled(env) }));
       });
       server.middlewares.use("/api/ai/spend", async (request, response) => {
         response.setHeader("Cache-Control", "no-store");

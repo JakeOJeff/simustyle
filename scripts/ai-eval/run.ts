@@ -2,6 +2,8 @@
 // prompts, proxy and model routing as the editor (keys from .env / .env.local), and saves a fixed 3/4
 // screenshot plus op/part counts, models, tokens and cost per prompt to eval-output/<timestamp>/.
 // A case may take several steps on the same scene and end with a pass check (see checks.ts).
+// With AI_CRITIQUE_ENABLED=true, builds are also critiqued from the editor's own offscreen renders, and the summary
+// shows each prompt's critique score.
 // Pass prompts as arguments to run those instead: npm run ai:eval -- "a blue bicycle"
 import { spawn } from "node:child_process";
 import { mkdir, writeFile } from "node:fs/promises";
@@ -10,7 +12,9 @@ import { pathToFileURL } from "node:url";
 import { build } from "esbuild";
 import { loadEnv } from "vite";
 import { runSceneAgent } from "../../src/ai/agent";
-import { forwardChat, isAiConfigured, lunaModel, solReviewEnabled, type ChatCredits } from "../../src/ai/chatProxy";
+import { critiqueEnabled, forwardChat, isAiConfigured, lunaModel, solReviewEnabled, visionModel, type ChatCredits } from "../../src/ai/chatProxy";
+import { CRITIQUE_JSON_SCHEMA, critiqueMessages, parseCritique, type CritiqueImages, type SceneCritique } from "../../src/ai/critique";
+import { sceneText } from "../../src/ai/sceneContext";
 import { parseChatPayload, sceneEditMessages } from "../../src/ai/client";
 import type { CallCharge, CreditStatus } from "../../src/ai/credits";
 import { AI_RESPONSE_JSON_SCHEMA, buildSystemPrompt } from "../../src/ai/prompt";
@@ -57,16 +61,18 @@ for (const prompt of cases.flatMap((item) => item.steps)) {
 }
 const outDir = path.resolve("eval-output", new Date().toISOString().replace(/[:.]/g, "-"));
 await mkdir(outDir, { recursive: true });
-console.log(`Draft model ${lunaModel(env)}; Sol reviews ${solReviewEnabled(env) ? `on (${env.AI_MODEL_SOL})` : "off"}. Writing to ${outDir}`);
+console.log(`Draft model ${lunaModel(env)}; Sol reviews ${solReviewEnabled(env) ? `on (${env.AI_MODEL_SOL})` : "off"}; visual critique ${critiqueEnabled(env) ? `on (${visionModel(env)})` : "off"}. Writing to ${outDir}`);
 
-/** The browser bundle that draws a scene for screenshots. */
-const renderBundle = (await build({
-  entryPoints: [path.resolve("scripts/ai-eval/render.ts")], bundle: true, write: false, format: "iife",
+/** Browser bundles: one draws a scene for screenshots, the other makes the critique's two offscreen renders. */
+const bundle = async (entry: string) => (await build({
+  entryPoints: [path.resolve(entry)], bundle: true, write: false, format: "iife",
   platform: "browser", target: "es2022", minify: true, logLevel: "warning", define: { "import.meta.env.BASE_URL": JSON.stringify("/") }
 })).outputFiles[0]!.text;
+const renderBundle = await bundle("scripts/ai-eval/render.ts");
+const critiqueBundle = critiqueEnabled(env) ? await bundle("scripts/ai-eval/critiqueRender.ts") : "";
 
 /** One case's agent runs with metered calls recorded instead of charged to a visitor. */
-async function runCase({ steps, check }: EvalCase): Promise<{ scene?: Scene; row: EvalRow; detail: unknown }> {
+async function runCase({ steps, check }: EvalCase, render?: (scene: Scene) => Promise<CritiqueImages>): Promise<{ scene?: Scene; row: EvalRow; detail: unknown }> {
   const prompt = steps.join(" → ");
   const charges: CallCharge[] = [];
   /** What each call was asked to fix, so result.json shows why a build needed corrections. */
@@ -92,6 +98,14 @@ async function runCase({ steps, check }: EvalCase): Promise<{ scene?: Scene; row
         responseSchema: AI_RESPONSE_JSON_SCHEMA.schema,
         solReviewEnabled: solReviewEnabled(env),
         onProgress: (message) => log(`  ${message}`),
+        ...(render ? { critique: async ({ userPrompt, scene: built }: { userPrompt: string; scene: Scene }): Promise<SceneCritique | null> => {
+          requests.push({ task: "scene_critique", correctionErrors: [] });
+          const body = JSON.stringify({ task: "scene_critique", messages: critiqueMessages(userPrompt, sceneText(built), await render(built)),
+            responseFormat: { type: "json_schema", json_schema: CRITIQUE_JSON_SCHEMA } });
+          const reply = await forwardChat(new TextEncoder().encode(body), env, credits);
+          if (reply.status !== 200 || !reply.body) throw new Error(String((reply.body as { error?: unknown } | undefined)?.error ?? `AI proxy returned HTTP ${reply.status}`));
+          return parseCritique(parseChatPayload(reply.body));
+        } } : {}),
         complete: async ({ systemPrompt, userPrompt, correctionErrors, responseSchema, previousReply, task }) => {
           requests.push({ task, correctionErrors });
           const body = JSON.stringify({ task, messages: sceneEditMessages(systemPrompt, userPrompt, correctionErrors, previousReply),
@@ -108,11 +122,13 @@ async function runCase({ steps, check }: EvalCase): Promise<{ scene?: Scene; row
     }
     const ok = results.length === steps.length && results.every((result) => result.ok);
     const checks = ok && check ? check(before, scene) : undefined;
+    const critique = results.at(-1)?.preflight?.critique;
     const row: EvalRow = { prompt, ok, ops: results.reduce((sum, result) => sum + result.ops.length, 0), parts: scene.entities.filter((entity) => entity.components.Mesh).length,
-      ...usageTotals(charges), seconds: (Date.now() - started) / 1000, ...(ok ? {} : { error: results.flatMap((result) => result.errors).join(" | ") }), ...(checks ? { checks } : {}) };
+      ...usageTotals(charges), seconds: (Date.now() - started) / 1000, ...(ok ? {} : { error: results.flatMap((result) => result.errors).join(" | ") }), ...(checks ? { checks } : {}),
+      ...(critique ? { critique: { ...(critique.score !== undefined ? { score: critique.score } : {}), outcome: critique.outcome } } : {}) };
     const detail = { prompt, ok, checks, requests, charges, steps: results.map((result, index) => ({ request: steps[index], ok: result.ok,
       examples: selectExamples(steps[index]!, index === 0).map((example) => example.request), summary: result.summary, errors: result.errors, attempts: result.attempts, skipped: result.skipped,
-      geometry: result.preflight?.geometry, quality: result.preflight?.quality?.warnings, ops: result.ops })) };
+      geometry: result.preflight?.geometry, quality: result.preflight?.quality?.warnings, critique: result.preflight?.critique, ops: result.ops })) };
     return { scene: results.length ? scene : undefined, row, detail };
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
@@ -149,31 +165,34 @@ async function openBrowser() {
     pending.set(id, { resolve: resolve as (value: unknown) => void, reject });
     socket.send(JSON.stringify({ id, method, params, ...(sessionId ? { sessionId } : {}) }));
   });
+  /** Opens the scene with a bundle in a fresh tab, waits until the page expression `ready` is truthy, then hands its value and the tab to `use`. */
+  const withPage = async <T>(scene: Scene, script: string, file: string, ready: string, use: (value: unknown, sessionId: string) => Promise<T>): Promise<T> => {
+    const html = `<!doctype html><html><head><meta charset="utf-8"><style>html,body{margin:0;overflow:hidden;background:#000}</style></head><body>` +
+      `<script>window.__scene=${JSON.stringify(scene).replaceAll("<", "\\u003c")}</script><script>${script.replaceAll("</script", "<\\/script")}</script></body></html>`;
+    await writeFile(file, html);
+    const { targetId } = await send<{ targetId: string }>("Target.createTarget", { url: "about:blank" });
+    const { sessionId } = await send<{ sessionId: string }>("Target.attachToTarget", { targetId, flatten: true });
+    try {
+      await send("Emulation.setDeviceMetricsOverride", { width: WIDTH, height: HEIGHT, deviceScaleFactor: 1, mobile: false }, sessionId);
+      await send("Page.navigate", { url: pathToFileURL(file).href }, sessionId);
+      for (let attempt = 0; ; attempt++) {
+        const { result } = await send<{ result: { value?: { value?: unknown; error?: string } } }>("Runtime.evaluate",
+          { expression: `({ value: ${ready}, error: window.__renderError })`, returnByValue: true }, sessionId);
+        if (result.value?.error) throw new Error(`Render failed: ${result.value.error}`);
+        if (result.value?.value) return await use(result.value.value, sessionId);
+        if (attempt > 300) throw new Error("Render timed out.");
+        await new Promise((resolve) => setTimeout(resolve, 100));
+      }
+    } finally {
+      await send("Target.closeTarget", { targetId }).catch(() => undefined);
+    }
+  };
   return {
     /** Draws the scene in a fresh tab and returns a PNG of the fixed 3/4 view. */
-    async screenshot(scene: Scene, file: string): Promise<Buffer> {
-      const html = `<!doctype html><html><head><meta charset="utf-8"><style>html,body{margin:0;overflow:hidden;background:#000}</style></head><body>` +
-        `<script>window.__scene=${JSON.stringify(scene).replaceAll("<", "\\u003c")}</script><script>${renderBundle.replaceAll("</script", "<\\/script")}</script></body></html>`;
-      await writeFile(file, html);
-      const { targetId } = await send<{ targetId: string }>("Target.createTarget", { url: "about:blank" });
-      const { sessionId } = await send<{ sessionId: string }>("Target.attachToTarget", { targetId, flatten: true });
-      try {
-        await send("Emulation.setDeviceMetricsOverride", { width: WIDTH, height: HEIGHT, deviceScaleFactor: 1, mobile: false }, sessionId);
-        await send("Page.navigate", { url: pathToFileURL(file).href }, sessionId);
-        for (let attempt = 0; ; attempt++) {
-          const { result } = await send<{ result: { value?: { done?: boolean; error?: string } } }>("Runtime.evaluate",
-            { expression: "({ done: window.__rendered === true, error: window.__renderError })", returnByValue: true }, sessionId);
-          if (result.value?.error) throw new Error(`Render failed: ${result.value.error}`);
-          if (result.value?.done) break;
-          if (attempt > 300) throw new Error("Render timed out.");
-          await new Promise((resolve) => setTimeout(resolve, 100));
-        }
-        const { data } = await send<{ data: string }>("Page.captureScreenshot", { format: "png" }, sessionId);
-        return Buffer.from(data, "base64");
-      } finally {
-        await send("Target.closeTarget", { targetId }).catch(() => undefined);
-      }
-    },
+    screenshot: (scene: Scene, file: string): Promise<Buffer> => withPage(scene, renderBundle, file, "window.__rendered === true", async (_done, sessionId) =>
+      Buffer.from((await send<{ data: string }>("Page.captureScreenshot", { format: "png" }, sessionId)).data, "base64")),
+    /** The critique's two 512 px JPEG renders, made by the editor's own offscreen renderer (src/ai/snapshot.ts). */
+    critiqueImages: (scene: Scene, file: string): Promise<CritiqueImages> => withPage(scene, critiqueBundle, file, "window.__critiqueImages", async (images) => images as CritiqueImages),
     close() { socket.close(); chrome.kill(); }
   };
 }
@@ -186,7 +205,7 @@ try {
     // Named after the last step: the one a multi-step case measures.
     const dir = path.join(outDir, `${String(index + 1).padStart(2, "0")}-${item.steps.at(-1)!.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "").slice(0, 40)}`);
     await mkdir(dir, { recursive: true });
-    const { scene, row, detail } = await runCase(item);
+    const { scene, row, detail } = await runCase(item, critiqueEnabled(env) ? (built) => browser.critiqueImages(built, path.join(dir, "critique.html")) : undefined);
     rows.push(row);
     await writeFile(path.join(dir, "result.json"), JSON.stringify(detail, null, 2));
     if (scene) {

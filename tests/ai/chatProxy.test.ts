@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { forwardChat, promptCacheKeyEnabled, resolveModel, solReviewEnabled, type ChatCredits, type ChatProxyEnv } from "../../src/ai/chatProxy";
+import { critiqueEnabled, forwardChat, promptCacheKeyEnabled, resolveModel, solReviewEnabled, type ChatCredits, type ChatProxyEnv } from "../../src/ai/chatProxy";
 import { CreditLedger, memoryCreditStorage } from "../../src/ai/credits";
 import type { AiTask } from "../../src/ai/tasks";
 
@@ -224,5 +224,50 @@ describe("streamed replies", () => {
     expect(fallback.body).toEqual({ content: "{}" });
     stubProvider(() => reply());
     expect((await forwardChat(request("scene_draft", { stream: true }), env)).body).toEqual({ content: "{}" });
+  });
+});
+
+describe("visual critique requests", () => {
+  const critiqueEnv: ChatProxyEnv = { ...env, AI_CRITIQUE_ENABLED: "true" };
+  const jpeg = (bytes: number) => `data:image/jpeg;base64,${"A".repeat(Math.ceil(bytes / 3) * 4)}`;
+  const critique = (images: string[], task = "scene_critique", text = "request and scene") => encode({ task, responseFormat: { type: "json_object" }, messages: [
+    { role: "system", content: "rubric" },
+    { role: "user", content: [{ type: "text", text }, ...images.map((url) => ({ type: "image_url", image_url: { url } }))] }
+  ] });
+
+  it("runs on AI_MODEL_VISION, defaulting to Sol, only when AI_CRITIQUE_ENABLED is true", async () => {
+    expect(resolveModel("scene_critique", critiqueEnv)).toBe("gpt-6-sol");
+    expect(resolveModel("scene_critique", { ...critiqueEnv, AI_MODEL_VISION: "gpt-6-vision" })).toBe("gpt-6-vision");
+    expect(resolveModel("scene_critique", env)).toBeUndefined();
+    expect(critiqueEnabled(env)).toBe(false);
+    expect(critiqueEnabled({ ...critiqueEnv, AI_MODEL_SOL: "" })).toBe(false);
+    const { sent, fetchMock } = stubProvider();
+    expect((await forwardChat(critique([jpeg(1000), jpeg(1000)]), env)).status).toBe(403);
+    expect(fetchMock).not.toHaveBeenCalled();
+    expect((await forwardChat(critique([jpeg(1000), jpeg(1000)]), critiqueEnv)).status).toBe(200);
+    expect(sent(0).model).toBe("gpt-6-sol");
+    expect(sent(0).max_completion_tokens).toBe(2_000);
+    expect((sent(0).messages as { content: unknown }[])[1]!.content).toEqual([{ type: "text", text: "request and scene" },
+      { type: "image_url", image_url: { url: jpeg(1000) } }, { type: "image_url", image_url: { url: jpeg(1000) } }]);
+  });
+
+  it("allows at most two inline images of at most 300 KB, and images on no other task", async () => {
+    const { fetchMock } = stubProvider();
+    expect((await forwardChat(critique([jpeg(1000), jpeg(1000), jpeg(1000)]), critiqueEnv)).status).toBe(413);
+    expect((await forwardChat(critique([jpeg(300 * 1024 + 3)]), critiqueEnv)).status).toBe(413);
+    expect((await forwardChat(critique([jpeg(300 * 1024)]), critiqueEnv)).status).toBe(200);
+    expect((await forwardChat(critique([jpeg(1000)], "scene_draft"), critiqueEnv)).status).toBe(400);
+    expect((await forwardChat(critique(["https://example.com/a.jpg"]), critiqueEnv)).status).toBe(400);
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+
+  it("counts only text toward the input cap, and charges the critique from usage", async () => {
+    stubProvider(() => reply({ prompt_tokens: 4_000, completion_tokens: 500 }));
+    expect((await forwardChat(critique([jpeg(200_000)], "scene_critique", "x".repeat(24_001)), critiqueEnv)).status).toBe(413);
+    const ledger = new CreditLedger(memoryCreditStorage(), { perUser: 30, monthlyBudgetUsd: 150, dailyMaxUsd: 15 });
+    const result = await forwardChat(critique([jpeg(200_000), jpeg(200_000)]), critiqueEnv, meter(ledger));
+    expect(result.status).toBe(200);
+    // Sol: 4,000 × $2/M + 500 × $10/M = $0.013 → 8 credits.
+    expect(result.body?.credits?.remaining).toBe(22);
   });
 });

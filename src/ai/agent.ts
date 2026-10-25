@@ -13,6 +13,7 @@ import { missingRequested } from "./requested";
 import { AI_TASK_LIMITS } from "./tasks";
 import { parsePartialReply, type PartialReply } from "./partialJson";
 import { detailPrompt, fitDetailObject, parseDetailItems, placeLiveDetail, type DetailItem } from "./detailPass";
+import { CRITIQUE_PASS_SCORE, critiqueCorrections, type CritiqueIssue, type SceneCritique } from "./critique";
 
 export interface SceneAgentReply {
   summary: string;
@@ -78,6 +79,11 @@ export interface SceneAgentDependencies {
   solReviewEnabled?: boolean;
   /** Shows each draft attempt while it is written, then once more with the finished draft. Reviews are not streamed. */
   onLiveBuild?(build: LiveBuild): void;
+  /**
+   * Scores a finished build from renders of it (task scene_critique). Absent when visual critique is off; resolves
+   * to null when it can't run now (e.g. too few credits for the critique and its fix pass).
+   */
+  critique?(request: { userPrompt: string; scene: Scene }): Promise<SceneCritique | null>;
 }
 
 export interface SceneAgentPreflight {
@@ -89,6 +95,18 @@ export interface SceneAgentPreflight {
   quality?: BuildQualityReport;
   /** Geometry checker lines still open on the returned build (soft; never block a build on their own). */
   geometry?: string[];
+  /** The visual critique of the build and what came of it (see runSceneAgent). */
+  critique?: CritiqueReport;
+}
+
+export interface CritiqueReport {
+  /** Score of the build before any fix pass; absent when the critique call failed. */
+  score?: number;
+  issues: CritiqueIssue[];
+  /** passed: scored at least CRITIQUE_PASS_SCORE. fixed: one fix pass applied. kept: the fix pass failed, so the critiqued build stands. failed: the critique call failed. */
+  outcome: "passed" | "fixed" | "kept" | "failed";
+  /** Why the fix pass or the critique failed. */
+  note?: string;
 }
 
 export interface SceneAgentResult {
@@ -297,26 +315,49 @@ function reviewPrompt(userPrompt: string, draft: PreparedReply, candidate: Scene
   return `${head}${opsText}${middle}${context}${tail}`;
 }
 
+/** Script compile errors a candidate has that the source scene did not. */
+function compileIssueCheck(scene: Scene): (candidate: Scene) => string[] {
+  const baseline = new Set(validateScripts(scene).map((issue) => scriptErrorText(scene, issue)));
+  return (candidate) => validateScripts(candidate).map((issue) => scriptErrorText(candidate, issue)).filter((issue) => !baseline.has(issue));
+}
+
+/** Builds that create fewer entities than this skip the visual critique. */
+const MIN_CRITIQUE_CREATES = 3;
+
 /**
  * Draft (cheap model, ≤ 2 corrections), validate, measure design and geometry, inspect isolated scripts, then
  * review only when it can matter: the strong model when enabled and the build is large or needed fixing, the
- * cheap model when checks found problems, nothing when the draft is clean. Commits one validated batch.
+ * cheap model when checks found problems, nothing when the draft is clean. When visual critique is on, a build
+ * that created 3+ entities is then rendered and scored, and one below CRITIQUE_PASS_SCORE gets one fix pass
+ * (see critiqueAndFix). Commits one validated batch.
  */
 export async function runSceneAgent(scene: Scene, userPrompt: string, dependencies: SceneAgentDependencies): Promise<SceneAgentResult> {
-  const sourceErrors = validateScene(scene);
-  if (sourceErrors.length) return { ok: false, ops: [], errors: sourceErrors.map((error) => `current ${error}`), attempts: 0 };
-  const tooLarge = (attempts = 0): SceneAgentResult => ({ ok: false, ops: [], errors: [TOO_LARGE], attempts });
-  if (userPrompt.length > 12_000) return tooLarge();
+  const built = await buildScene(scene, userPrompt, dependencies);
+  const created = built.ops.filter((op) => op.op === "create").length;
+  if (!dependencies.critique || !built.ok || !built.scene || built.cacheHit || created < MIN_CRITIQUE_CREATES) return built;
+  return critiqueAndFix(scene, userPrompt, built, dependencies);
+}
+
+/** The per-request prompts and cache key; shared by the build and the critique step that may replace its cache entry. */
+function requestContext(scene: Scene, userPrompt: string, dependencies: SceneAgentDependencies) {
   const history = requestHistory(dependencies.previousRequests);
   const focusIds = (dependencies.focusIds ?? []).filter((id) => scene.entities.some((entity) => entity.id === id));
   const systemPrompt = dependencies.buildSystemPrompt();
   const draftBudget = MAX_SCENE_INPUT_CHARS - systemPrompt.length - CORRECTION_RESERVE - DRAFT_ECHO_RESERVE;
   const draftPrompt = buildSceneUserMessage(scene, userPrompt, { focusIds, previousRequests: history, maxChars: draftBudget });
+  const cacheKey = JSON.stringify(["scene-build-v3", scene, systemPrompt, draftPrompt, userPrompt, history, focusIds, dependencies.responseSchema, dependencies.solReviewEnabled === true]);
+  return { history, focusIds, systemPrompt, draftBudget, draftPrompt, cacheKey };
+}
+
+async function buildScene(scene: Scene, userPrompt: string, dependencies: SceneAgentDependencies): Promise<SceneAgentResult> {
+  const sourceErrors = validateScene(scene);
+  if (sourceErrors.length) return { ok: false, ops: [], errors: sourceErrors.map((error) => `current ${error}`), attempts: 0 };
+  const tooLarge = (attempts = 0): SceneAgentResult => ({ ok: false, ops: [], errors: [TOO_LARGE], attempts });
+  if (userPrompt.length > 12_000) return tooLarge();
+  const { history, focusIds, systemPrompt, draftBudget, draftPrompt, cacheKey } = requestContext(scene, userPrompt, dependencies);
   if (draftPrompt.length > draftBudget) return tooLarge();
-  const baselineCompileIssues = new Set(validateScripts(scene).map((issue) => scriptErrorText(scene, issue)));
-  const newCompileIssues = (candidate: Scene) => validateScripts(candidate).map((issue) => scriptErrorText(candidate, issue)).filter((issue) => !baselineCompileIssues.has(issue));
+  const newCompileIssues = compileIssueCheck(scene);
   const solReviewEnabled = dependencies.solReviewEnabled === true;
-  const cacheKey = JSON.stringify(["scene-build-v3", scene, systemPrompt, draftPrompt, userPrompt, history, focusIds, dependencies.responseSchema, solReviewEnabled]);
   const cached = dependencies.cache?.get(cacheKey);
   if (cached) {
     const applied = applyOps(scene, cached.ops);
@@ -610,4 +651,60 @@ export async function runSceneAgent(scene: Scene, userPrompt: string, dependenci
   if (!reviewed || !reviewedResult || correctionErrors.length) return { ok: false, ops: [], errors: correctionErrors, attempts, preflight };
   dependencies.cache?.set(cacheKey, { summary: reviewed.summary, ops: reviewed.ops });
   return { ok: true, summary: reviewed.summary, ops: reviewed.ops, scene: candidate, inverseOps: reviewedResult.inverseOps, errors: [], attempts, preflight };
+}
+
+
+/**
+ * Visual critique of a finished build: score it from renders, and below CRITIQUE_PASS_SCORE run one fix pass whose
+ * ops apply on top of the build, with the critique's issues as its correction errors. The fix must apply, add no
+ * script compile or runtime errors and no more geometry flags than the build had; otherwise the build stands as it
+ * was. Never a second critique.
+ */
+async function critiqueAndFix(scene: Scene, userPrompt: string, built: SceneAgentResult, dependencies: SceneAgentDependencies): Promise<SceneAgentResult> {
+  const before = built.preflight ?? inspectCandidate(built.scene!);
+  const report = (critique: CritiqueReport, result: SceneAgentResult = built, preflight = before): SceneAgentResult =>
+    ({ ...result, preflight: { ...preflight, critique } });
+  dependencies.onProgress?.("Rendering the build for a visual critique…");
+  let critique: SceneCritique | null;
+  try {
+    critique = await dependencies.critique!({ userPrompt, scene: built.scene! });
+  } catch (error) {
+    return report({ issues: [], outcome: "failed", note: (error instanceof Error ? error.message : String(error)).slice(0, 300) });
+  }
+  if (!critique) return built;
+  if (critique.score >= CRITIQUE_PASS_SCORE || !critique.issues.length) return report({ score: critique.score, issues: critique.issues, outcome: "passed" });
+  const kept = (note: string) => report({ score: critique.score, issues: critique.issues, outcome: "kept", note });
+
+  dependencies.onProgress?.(`The visual critique scored the build ${critique.score}/10; fixing ${critique.issues.length} issue${critique.issues.length === 1 ? "" : "s"}…`);
+  const { history, systemPrompt, cacheKey } = requestContext(scene, userPrompt, dependencies);
+  const focusIds = critique.issues.flatMap((issue) => issue.entityId && built.scene!.entities.some((entity) => entity.id === issue.entityId) ? [issue.entityId] : []);
+  const fixRequest = `A reviewer looked at renders of the build you made for this request and found the problems listed after this message: "${userPrompt.slice(0, 2_000)}". Fix each one in the current scene. Return only the ops that change it (update, delete, or create for anything missing); do not rebuild what is already right.`;
+  const budget = MAX_SCENE_INPUT_CHARS - systemPrompt.length - CORRECTION_RESERVE;
+  const prompt = buildSceneUserMessage(built.scene!, fixRequest, { focusIds, previousRequests: history, maxChars: budget });
+  if (prompt.length > budget) return kept("The scene is too large for a fix request.");
+  let raw: unknown;
+  try {
+    raw = await dependencies.complete({ systemPrompt, userPrompt: prompt, correctionErrors: correctionPayload(critiqueCorrections(critique)),
+      responseSchema: dependencies.responseSchema, previousReply: "", task: "scene_draft" });
+  } catch (error) {
+    return kept(`The fix pass failed: ${(error instanceof Error ? error.message : String(error)).slice(0, 200)}`);
+  }
+  const prepared = prepareReply(built.scene!, raw);
+  if (!prepared.reply) return kept(`The fix pass reply was invalid: ${prepared.errors[0]?.slice(0, 200) ?? "no ops"}`);
+  const ops = [...built.ops, ...prepared.reply.ops];
+  const combined = applyOps(scene, ops);
+  const compile = combined.errors.length ? [] : compileIssueCheck(scene)(combined.scene);
+  if (combined.errors.length || compile.length) return kept(`The fix pass did not validate: ${[...combined.errors, ...compile][0]!.slice(0, 200)}`);
+  const baseline = inspectCandidate(scene);
+  const checked = inspectCandidate(combined.scene, baseline.issues);
+  const newRuntime = checked.issues.filter((line) => !before.issues.includes(line));
+  if (newRuntime.length) return kept(`The fix pass added a script error: ${newRuntime[0]!.slice(0, 200)}`);
+  const geometry = geometryFlags(combined.scene, ops, userPrompt);
+  if (geometry.length > (before.geometry?.length ?? 0)) return kept(`The fix pass added geometry problems: ${geometry[0]!.slice(0, 200)}`);
+  checked.quality = inspectBuildQuality(combined.scene, ops);
+  if (geometry.length) checked.geometry = geometry;
+  const summary = `${built.summary ?? ""} Visual critique: ${critique.score}/10; fixed: ${prepared.reply.summary}`.trim();
+  if (!built.skipped) dependencies.cache?.set(cacheKey, { summary, ops });
+  return report({ score: critique.score, issues: critique.issues, outcome: "fixed" },
+    { ...built, summary, ops, scene: combined.scene, inverseOps: combined.inverseOps, attempts: built.attempts + 1 }, checked);
 }

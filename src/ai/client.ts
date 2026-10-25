@@ -1,5 +1,6 @@
 /** Browser-side client for the Vite development server's secret-holding proxy. */
 import { AI_RESPONSE_JSON_SCHEMA } from "./prompt";
+import { CRITIQUE_JSON_SCHEMA, critiqueMessages, parseCritique, type CritiqueImages, type SceneCritique } from "./critique";
 import { desktopChat, isDesktopRuntime } from "../platform/desktop";
 import type { CreditStatus } from "./credits";
 import type { AiTask } from "./tasks";
@@ -22,24 +23,36 @@ export interface AiStatus {
   credits: CreditStatus | null;
   /** True when the server will run scene_review on the strong model, so asking for a review is worth it. */
   solReview: boolean;
+  /** True when the server accepts scene_critique (visual critique of finished builds). */
+  critique: boolean;
 }
 
 /** Reads the visitor's credits and whether the strong review model is on. The desktop app meters nothing. */
 export async function fetchAiStatus(): Promise<AiStatus> {
-  if (isDesktopRuntime()) return { credits: null, solReview: false };
+  const off: AiStatus = { credits: null, solReview: false, critique: false };
+  if (isDesktopRuntime()) return off;
   try {
     const response = await fetch("/api/ai/credits", { cache: "no-store" });
     const payload = await response.json() as unknown;
-    if (!isRecord(payload)) return { credits: null, solReview: false };
-    return { credits: isCreditStatus(payload.credits) ? payload.credits : null, solReview: payload.solReview === true };
+    if (!isRecord(payload)) return off;
+    return { credits: isCreditStatus(payload.credits) ? payload.credits : null, solReview: payload.solReview === true, critique: payload.critique === true };
   } catch {
-    return { credits: null, solReview: false };
+    return off;
   }
 }
+
+/** Text, or an inline base64 image (scene_critique only). */
+export type ChatContentPart = { type: "text"; text: string } | { type: "image_url"; image_url: { url: string; detail?: "low" | "high" | "auto" } };
 
 export interface ChatMessage {
   role: "system" | "user" | "assistant";
   content: string;
+}
+
+/** A message that may carry images (scene_critique only; the desktop app has no vision call). */
+export interface VisionChatMessage {
+  role: "system" | "user";
+  content: string | ChatContentPart[];
 }
 
 /** Sends one scene-edit request and returns the model's JSON object for agent validation. */
@@ -53,6 +66,11 @@ export async function requestSceneEdit(
   onText?: (text: string) => void
 ): Promise<unknown> {
   return requestJson(sceneEditMessages(systemPrompt, userPrompt, correctionErrors, previousReply), { ...AI_RESPONSE_JSON_SCHEMA, schema: responseSchema }, task, onText);
+}
+
+/** Asks the vision model to score a finished build from its two renders (task scene_critique); null for an unusable reply. */
+export async function requestCritique(request: string, sceneText: string, images: CritiqueImages): Promise<SceneCritique | null> {
+  return parseCritique(await requestJson(critiqueMessages(request, sceneText, images), CRITIQUE_JSON_SCHEMA, "scene_critique"));
 }
 
 /** The chat messages for one scene-edit call; a correction replays the rejected reply, then the errors to fix. */
@@ -90,7 +108,7 @@ export class UnusableReplyError extends Error {
  * (the desktop app does not stream, so there it is never called).
  */
 export async function requestJson(
-  messages: ChatMessage[],
+  messages: ChatMessage[] | VisionChatMessage[],
   jsonSchema: { name: string; strict: boolean; schema: Record<string, unknown> },
   task: AiTask,
   onText?: (text: string) => void
@@ -98,7 +116,8 @@ export async function requestJson(
   const request = { messages, responseFormat: { type: "json_schema", json_schema: jsonSchema } };
   let payload: unknown;
   if (isDesktopRuntime()) {
-    payload = await desktopChat(request);
+    if (!messages.every((message): message is ChatMessage => typeof message.content === "string")) throw new Error("Visual critique is not available in the desktop app.");
+    payload = await desktopChat({ ...request, messages });
   } else {
     let response: Response;
     try {

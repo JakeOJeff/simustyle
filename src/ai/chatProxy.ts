@@ -4,7 +4,7 @@
  * OpenAI-compatible provider, so neither the key nor the model choice is ever in the page's hands.
  */
 
-import { AI_TASK_LIMITS, isAiTask, type AiTask } from "./tasks";
+import { AI_TASK_LIMITS, MAX_CRITIQUE_IMAGE_BYTES, MAX_CRITIQUE_IMAGES, isAiTask, type AiTask } from "./tasks";
 import { callCostUsd, creditsForCost, readUsage, worstCaseUsd, type TokenUsage } from "./pricing";
 import type { CallCharge, CreditStatus, Reservation, ReserveResult } from "./credits";
 
@@ -17,6 +17,10 @@ export interface ChatProxyEnv {
   /** Strong model, used only for scene_review and only when AI_SOL_ENABLED is "true". */
   AI_MODEL_SOL?: string;
   AI_SOL_ENABLED?: string;
+  /** Model that reads images for scene_critique; defaults to AI_MODEL_SOL. */
+  AI_MODEL_VISION?: string;
+  /** "true" turns on the visual critique pass (task scene_critique). */
+  AI_CRITIQUE_ENABLED?: string;
   /** Former single-model setting, still honoured when AI_MODEL_LUNA is unset. */
   AI_MODEL?: string;
   AI_BASE_URL?: string;
@@ -50,7 +54,9 @@ export interface ChatCredits {
   settle(reservation: Reservation, charge: CallCharge | null): Promise<CreditStatus>;
 }
 
-type ChatMessage = { role: "system" | "user" | "assistant"; content: string };
+/** Text, or (scene_critique user messages only) text and inline images. */
+export type ChatContentPart = { type: "text"; text: string } | { type: "image_url"; image_url: { url: string; detail?: "low" | "high" | "auto" } };
+type ChatMessage = { role: "system" | "user" | "assistant"; content: string | ChatContentPart[] };
 
 const DEFAULT_BASE_URL = "https://api.openai.com/v1";
 
@@ -67,8 +73,21 @@ export function isAiConfigured(env: ChatProxyEnv): boolean {
   return Boolean(env.AI_API_KEY && lunaModel(env));
 }
 
-/** The model a task runs on. Only scene_review can reach Sol; everything else, and Sol when off, is Luna. */
+export function visionModel(env: ChatProxyEnv): string | undefined {
+  return env.AI_MODEL_VISION?.trim() || env.AI_MODEL_SOL?.trim() || undefined;
+}
+
+/** True when the browser may ask for a visual critique of a finished build. */
+export function critiqueEnabled(env: ChatProxyEnv): boolean {
+  return env.AI_CRITIQUE_ENABLED === "true" && Boolean(visionModel(env)) && isAiConfigured(env);
+}
+
+/**
+ * The model a task runs on. Only scene_review can reach Sol, and only scene_critique the vision model (undefined
+ * when critique is off); everything else, and Sol when off, is Luna.
+ */
 export function resolveModel(task: AiTask, env: ChatProxyEnv): string | undefined {
+  if (task === "scene_critique") return critiqueEnabled(env) ? visionModel(env) : undefined;
   if (task === "scene_review" && solReviewEnabled(env)) return env.AI_MODEL_SOL!.trim();
   return lunaModel(env);
 }
@@ -92,11 +111,18 @@ export async function forwardChat(raw: Uint8Array, env: ChatProxyEnv, credits?: 
   } catch {
     return fail(400, "AI request body must be valid JSON.");
   }
-  if (!isRecord(body) || !isAiTask(body.task)) return fail(400, "AI request requires a task: parse, scene_draft, scene_detail, or scene_review.");
+  if (!isRecord(body) || !isAiTask(body.task)) return fail(400, "AI request requires a task: parse, scene_draft, scene_detail, scene_review, or scene_critique.");
   if (!isChatRequest(body)) return fail(400, "AI request requires system/user messages and a JSON response format.");
   const task = body.task;
+  const images = body.messages.flatMap((message) => typeof message.content === "string" ? [] : message.content.filter((part) => part.type === "image_url"));
+  if (images.length && task !== "scene_critique") return fail(400, "Only scene_critique requests may include images.");
+  if (images.length > MAX_CRITIQUE_IMAGES) return fail(413, `A critique takes at most ${MAX_CRITIQUE_IMAGES} images.`);
+  if (images.some((image) => image.type === "image_url" && dataUrlBytes(image.image_url.url) > MAX_CRITIQUE_IMAGE_BYTES)) {
+    return fail(413, `Each critique image must be at most ${MAX_CRITIQUE_IMAGE_BYTES / 1024} KB.`);
+  }
+  if (task === "scene_critique" && !critiqueEnabled(env)) return fail(403, "Visual critique is turned off on this server.");
   const limits = AI_TASK_LIMITS[task];
-  const inputChars = body.messages.reduce((sum, message) => sum + message.content.length, 0);
+  const inputChars = body.messages.reduce((sum, message) => sum + textLength(message.content), 0);
   if (inputChars > limits.maxInputChars) {
     return fail(413, `This ${task} request is too long (${inputChars} characters; the limit is ${limits.maxInputChars}). Try a shorter prompt or a smaller scene.`);
   }
@@ -270,6 +296,26 @@ function fail(status: number, error: string): ChatProxyResult {
   return { status, body: { error } };
 }
 
+/** Characters of text in a message; images are capped separately. */
+function textLength(content: string | ChatContentPart[]): number {
+  return typeof content === "string" ? content.length : content.reduce((sum, part) => sum + (part.type === "text" ? part.text.length : 0), 0);
+}
+
+/** Decoded size of a base64 data URL. */
+function dataUrlBytes(url: string): number {
+  const data = url.slice(url.indexOf(",") + 1).replace(/=+$/, "");
+  return Math.floor((data.length * 3) / 4);
+}
+
+/** A text part, or an inline base64 JPEG/PNG/WebP image (never a remote URL the provider would fetch). */
+function isContentPart(value: unknown): value is ChatContentPart {
+  if (!isRecord(value)) return false;
+  if (value.type === "text") return typeof value.text === "string";
+  return value.type === "image_url" && isRecord(value.image_url) && typeof value.image_url.url === "string" &&
+    /^data:image\/(jpeg|png|webp);base64,[A-Za-z0-9+/]+=*$/.test(value.image_url.url) &&
+    (value.image_url.detail === undefined || ["low", "high", "auto"].includes(value.image_url.detail as string));
+}
+
 function isChatRequest(value: Record<string, unknown>): value is {
   task: AiTask;
   messages: ChatMessage[];
@@ -280,7 +326,9 @@ function isChatRequest(value: Record<string, unknown>): value is {
   if (!Array.isArray(value.messages) || !isRecord(value.responseFormat)) return false;
   return value.messages.length >= 2 && value.messages.length <= 8 && value.messages.every((message) =>
     isRecord(message) && (message.role === "system" || message.role === "user" || message.role === "assistant") &&
-    typeof message.content === "string" && message.content.length <= 50_000
+    (typeof message.content === "string" ? message.content.length <= 50_000
+      : message.role === "user" && Array.isArray(message.content) && message.content.length >= 1 && message.content.length <= 4 &&
+        message.content.every(isContentPart) && textLength(message.content as ChatContentPart[]) <= 50_000)
   );
 }
 

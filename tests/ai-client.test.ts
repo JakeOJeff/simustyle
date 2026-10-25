@@ -73,14 +73,14 @@ describe("scene AI transport client", () => {
     expect(tasks).toEqual(["scene_review", "parse"]);
   });
 
-  it("reads credits and whether the strong review model is on", async () => {
+  it("reads credits and whether the strong review model and visual critique are on", async () => {
     const credits = { remaining: 12, limit: 30, resetsAt: "2026-10-13T00:00:00.000Z" };
-    vi.stubGlobal("fetch", vi.fn().mockImplementation(async () => Response.json({ enabled: true, credits, solReview: true })));
-    await expect(fetchAiStatus()).resolves.toEqual({ credits, solReview: true });
+    vi.stubGlobal("fetch", vi.fn().mockImplementation(async () => Response.json({ enabled: true, credits, solReview: true, critique: true })));
+    await expect(fetchAiStatus()).resolves.toEqual({ credits, solReview: true, critique: true });
     await expect(fetchCredits()).resolves.toEqual(credits);
 
     vi.stubGlobal("fetch", vi.fn().mockImplementation(async () => Response.json({ enabled: false })));
-    await expect(fetchAiStatus()).resolves.toEqual({ credits: null, solReview: false });
+    await expect(fetchAiStatus()).resolves.toEqual({ credits: null, solReview: false, critique: false });
     vi.stubGlobal("fetch", vi.fn().mockRejectedValue(new TypeError("offline")));
     await expect(fetchCredits()).resolves.toBeNull();
   });

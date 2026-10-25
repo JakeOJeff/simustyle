@@ -29,16 +29,18 @@ describe("ai:eval report", () => {
     const totals = usageTotals([charge("scene_draft", "gpt-6-luna", 9000, 7000, 3000, 0.0018), charge("scene_review", "gpt-6-sol", 11000, 7000, 2500, 0.034)]);
     expect({ ...totals, costUsd: Number(totals.costUsd.toFixed(6)) }).toEqual({ calls: ["scene_draft gpt-6-luna", "scene_review gpt-6-sol"], promptTokens: 20000, cachedTokens: 14000, completionTokens: 5500, costUsd: 0.0358 });
     const rows: EvalRow[] = [
-      { prompt: "A red sports car", ok: true, ops: 3, parts: 14, ...totals, seconds: 41 },
+      { prompt: "A red sports car", ok: true, ops: 3, parts: 14, ...totals, seconds: 41, critique: { score: 6, outcome: "fixed" } },
       { prompt: "A snowman in a snowy garden", ok: false, ops: 0, parts: 0, ...usageTotals([charge("scene_draft", "gpt-6-luna", 9000, 0, 4000, 0.003)]), seconds: 30, error: "cut off" }
     ];
     const lines = summaryTable(rows).split("\n");
     expect(lines).toHaveLength(5);
-    expect(lines[0]).toMatch(/^Prompt\s+OK\s+Ops\s+Parts\s+Models\s+In tok\s+Cached\s+Out tok\s+Cost \$\s+Secs$/);
+    expect(lines[0]).toMatch(/^Prompt\s+OK\s+Critique\s+Ops\s+Parts\s+Models\s+In tok\s+Cached\s+Out tok\s+Cost \$\s+Secs$/);
+    expect(lines[2]).toMatch(/^A red sports car\s+yes\s+6 fixed\s+3\s+14/);
+    expect(lines[3]).toMatch(/^A snowman in a snowy garden\s+NO\s+-\s+0/);
     expect(lines[2]).toContain("gpt-6-luna×1, gpt-6-sol×1");
     expect(lines[2]).toContain("0.0358");
     expect(lines[3]).toContain("NO");
-    expect(lines[4]).toMatch(/^Total\s+1\/2\s+3\s+14\s+gpt-6-luna×2, gpt-6-sol×1\s+29000\s+14000\s+9500\s+0\.0388\s+71$/);
+    expect(lines[4]).toMatch(/^Total\s+1\/2\s+avg 6\.0\s+3\s+14\s+gpt-6-luna×2, gpt-6-sol×1\s+29000\s+14000\s+9500\s+0\.0388\s+71$/);
   });
 
   it("marks a build whose pass check failed", () => {
