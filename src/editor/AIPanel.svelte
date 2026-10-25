@@ -77,6 +77,13 @@
             <details class="preflight-details">
               <summary>Checked before apply · {message.preflight.frames} script ticks{#if message.preflight.critique?.score !== undefined} · visual critique {message.preflight.critique.score}/10{/if}</summary>
               <div class="preflight-output">
+                {#if message.preflight.context}
+                  {@const context = message.preflight.context}
+                  <strong>Scene context</strong>
+                  <span>{context.source === "model" ? "References resolved against the scene" : `Expanded the groups the request names${context.note ? ` (${context.note})` : ""}`}; {context.expanded.length ? `listed part by part: ${context.expanded.join(", ")}` : "every group collapsed to its bounding box"}.</span>
+                  {#if context.resolvedRequest}<code>Read as: {context.resolvedRequest}</code>{/if}
+                  {#each context.facts as fact}<code>{fact}</code>{/each}
+                {/if}
                 {#if message.preflight.critique}
                   {@const critique = message.preflight.critique}
                   <strong>Visual critique{critique.score !== undefined ? ` · ${critique.score}/10` : ""}</strong>

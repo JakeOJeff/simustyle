@@ -4,7 +4,7 @@
   import Hierarchy from "./editor/Hierarchy.svelte";
   import Viewport from "./editor/Viewport.svelte";
   import AIPanel, { type AIPanelMessage } from "./editor/AIPanel.svelte";
-  import { fetchAiStatus, onCreditsChange, requestCritique, requestSceneEdit, type CreditStatus } from "./ai/client";
+  import { fetchAiStatus, onCreditsChange, requestCritique, requestReferences, requestSceneEdit, type CreditStatus } from "./ai/client";
   import { sceneText } from "./ai/sceneContext";
   import { AI_TASK_LIMITS } from "./ai/tasks";
   import type { SceneCritique } from "./ai/critique";
@@ -521,6 +521,12 @@
     return requestCritique(userPrompt, sceneText(built), await renderCritiqueImages(built));
   }
 
+  /** The reference step for a follow-up (see references.ts). Skipped (null) when it would leave too few credits for the draft. */
+  async function resolveReferences({ systemPrompt, userPrompt }: { systemPrompt: string; userPrompt: string }): Promise<unknown> {
+    if (aiCredits && aiCredits.remaining < AI_TASK_LIMITS.scene_context.worstCaseCredits + AI_TASK_LIMITS.scene_draft.worstCaseCredits) return null;
+    return requestReferences(systemPrompt, userPrompt);
+  }
+
   async function submitAI(prompt: string) {
     if (aiLoading || !prompt.trim()) return;
     if (playState !== "stopped") { message = "Stop the simulation before asking the scene agent to edit."; return; }
@@ -544,6 +550,7 @@
         onProgress: (progress) => aiProgress = progress,
         onLiveBuild: showLiveBuild,
         solReviewEnabled,
+        resolveReferences,
         ...(critiqueEnabled ? { critique: critiqueBuild } : {}),
         complete: ({ systemPrompt, userPrompt, correctionErrors, responseSchema, previousReply, task, onText }) =>
           requestSceneEdit(systemPrompt, userPrompt, correctionErrors, responseSchema, previousReply, task, onText)

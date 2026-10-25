@@ -6,10 +6,12 @@
 /**
  * scene_detail builds one object of a laid-out scene in high detail (see detailPass.ts); it always runs on Luna.
  * scene_critique scores rendered images of a finished build (see critique.ts) on the vision model.
+ * scene_context resolves what a follow-up request refers to before it is built (see references.ts); it runs on
+ * the strong model when that is on.
  */
-export type AiTask = "parse" | "scene_draft" | "scene_detail" | "scene_review" | "scene_critique";
+export type AiTask = "parse" | "scene_draft" | "scene_detail" | "scene_review" | "scene_critique" | "scene_context";
 
-export const AI_TASKS: readonly AiTask[] = ["parse", "scene_draft", "scene_detail", "scene_review", "scene_critique"];
+export const AI_TASKS: readonly AiTask[] = ["parse", "scene_draft", "scene_detail", "scene_review", "scene_critique", "scene_context"];
 
 export interface AiTaskLimits {
   /** Total characters across every message's content; larger requests are rejected before any provider call. */
@@ -27,7 +29,9 @@ export const AI_TASK_LIMITS: Record<AiTask, AiTaskLimits> = {
   scene_detail: { maxInputChars: 48_000, maxCompletionTokens: 16_000, worstCaseCredits: 6 },
   scene_review: { maxInputChars: 48_000, maxCompletionTokens: 4_000, worstCaseCredits: 30 },
   // At Sol prices: 24,000 text characters (~6k tokens) + two 512 px images (~1.5k tokens) in, 2,000 out ≈ $0.035.
-  scene_critique: { maxInputChars: 24_000, maxCompletionTokens: 2_000, worstCaseCredits: 23 }
+  scene_critique: { maxInputChars: 24_000, maxCompletionTokens: 2_000, worstCaseCredits: 23 },
+  // At Sol prices: 32,000 characters (~8k tokens) in, 2,000 out ≈ $0.036.
+  scene_context: { maxInputChars: 32_000, maxCompletionTokens: 2_000, worstCaseCredits: 22 }
 };
 
 /** scene_critique accepts at most this many images, each at most this many bytes once decoded. */

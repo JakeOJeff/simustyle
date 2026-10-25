@@ -1,6 +1,8 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { MAX_SCENE_INPUT_CHARS, runSceneAgent } from "../../src/ai/agent";
-import { createEmptyScene } from "../../src/scene/types";
+import { createEmptyScene, type SceneOp } from "../../src/scene/types";
+import { applyOps } from "../../src/scene/applyOps";
+import { REFERENCE_SYSTEM_PROMPT } from "../../src/ai/references";
 import type { SceneAgentReply, SceneAgentRequest } from "../../src/ai/agent";
 import { buildSystemPrompt, EXAMPLES_HEADING } from "../../src/ai/prompt";
 import { BuildCache } from "../../src/ai/cache";
@@ -647,5 +649,61 @@ describe("visual critique", () => {
     const { result } = await run(async () => { throw new Error("Visual critique is turned off on this server."); });
     expect(result.ok).toBe(true);
     expect(result.preflight?.critique).toEqual({ issues: [], outcome: "failed", note: "Visual critique is turned off on this server." });
+  });
+});
+
+describe("follow-up scene context", () => {
+  /** A chair group (seat and a leg) beside a loose crate: the scene a follow-up request edits. */
+  const furnished = () => {
+    const result = applyOps(createEmptyScene(), [
+      cube("crate", [-2, 0.5, 0]) as SceneOp,
+      { op: "create", id: "chair", name: "Chair", parent: null, components: { Transform: { position: [2, 0, -1] } } },
+      { op: "create", id: "seat", name: "Seat", parent: "chair", components: { Transform: { position: [0, 0.45, 0], scale: [0.5, 0.1, 0.5] }, Mesh: {}, Material: {} } },
+      { op: "create", id: "leg", name: "Leg", parent: "chair", components: { Transform: { position: [0.2, 0.2, 0.2], scale: [0.05, 0.4, 0.05] }, Mesh: {}, Material: {} } }
+    ]);
+    expect(result.errors).toEqual([]);
+    return result.scene;
+  };
+  const moved = { summary: "Moved the chair.", ops: [{ op: "update", id: "chair", components: { Transform: { position: [3, 0, -1] } } }] };
+  const resolution = { references: [{ phrase: "it", ids: ["chair"] }], expand: [], resolvedRequest: "Move the chair [chair] 1 m along +x", facts: ["Chair [chair] spans x 1.75..2.25"] };
+  const run = async (resolve: ((request: { systemPrompt: string; userPrompt: string }) => Promise<unknown>) | undefined, prompt = "move it right", focusIds: string[] = []) => {
+    const { requests, complete } = recorder([moved]);
+    const asked: { systemPrompt: string; userPrompt: string }[] = [];
+    const result = await runSceneAgent(furnished(), prompt, { ...dependencies([]), complete, previousRequests: ["a chair and a crate"], focusIds,
+      ...(resolve ? { resolveReferences: async (request: { systemPrompt: string; userPrompt: string }) => { asked.push(request); return resolve(request); } } : {}) });
+    return { result, draft: requests[0]!.userPrompt, asked };
+  };
+
+  it("resolves references first, then drafts against the outline with groups collapsed", async () => {
+    const { result, draft, asked } = await run(async () => resolution);
+    expect(asked).toHaveLength(1);
+    expect(asked[0]!.systemPrompt).toBe(REFERENCE_SYSTEM_PROMPT);
+    expect(asked[0]!.userPrompt).toContain("parts: Seat, Leg");
+    expect(asked[0]!.userPrompt).toContain("- a chair and a crate");
+    expect(draft).toMatch(/- chair "Chair" group collapsed, 2 parts, box 0\.5×0\.5×0\.5 m/);
+    expect(draft).not.toContain('- seat "Seat"');
+    expect(draft).toContain("Restated: Move the chair [chair] 1 m along +x");
+    expect(draft).toContain("- Chair [chair] spans x 1.75..2.25");
+    expect(draft.indexOf("Restated:")).toBeLessThan(draft.indexOf("## Request\nmove it right"));
+    expect(result.ok).toBe(true);
+    expect(result.preflight?.context).toEqual({ source: "model", expanded: [], resolvedRequest: "Move the chair [chair] 1 m along +x", facts: ["Chair [chair] spans x 1.75..2.25"] });
+  });
+
+  it("lists the groups the step expands and a selected part part by part", async () => {
+    expect((await run(async () => ({ ...resolution, expand: ["chair"] }))).draft).toContain('  - seat "Seat"');
+    const selected = await run(async () => resolution, "make this thicker", ["leg"]);
+    expect(selected.draft).toContain('  - leg "Leg"');
+    expect(selected.result.preflight?.context?.expanded).toEqual(["leg"]);
+  });
+
+  it("expands what the request names when the step fails or is off, and skips it on an empty scene", async () => {
+    const failed = await run(async () => { throw new Error("out of credits"); }, "make the seat red");
+    expect(failed.draft).toContain('  - seat "Seat"');
+    expect(failed.result.preflight?.context).toMatchObject({ source: "names", expanded: ["seat"], note: "The reference step failed: out of credits" });
+    expect((await run(async () => null)).result.preflight?.context?.note).toBe("The reference step was skipped.");
+    expect((await run(undefined, "move the chair")).draft).toContain('  - seat "Seat"');
+    const asked: unknown[] = [];
+    await runSceneAgent(createEmptyScene(), "a cube", { ...dependencies([clean]), resolveReferences: async (request) => { asked.push(request); return resolution; } });
+    expect(asked).toEqual([]);
   });
 });

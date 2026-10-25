@@ -52,11 +52,13 @@ export function buildSystemPrompt(): string {
   return prompt;
 }
 
-export interface SceneUserMessageOptions extends Pick<SceneContextOptions, "focusIds"> {
+export interface SceneUserMessageOptions extends Pick<SceneContextOptions, "focusIds" | "expand"> {
   /** Successful earlier requests in this document; trimmed to a small style-context budget. */
   previousRequests?: readonly string[];
   /** Budget for the whole message; the scene snapshot gets whatever the other parts leave. */
   maxChars?: number;
+  /** What the request refers to, from the reference step (resolutionText in references.ts); goes just before the request. */
+  resolution?: string;
 }
 
 /** Earlier requests kept as style context: the latest six, at most 2,500 JSON characters. */
@@ -101,7 +103,7 @@ function selectionText(focusIds: readonly string[]): string {
 export function buildSceneUserMessage(scene: Scene, request: string, options: SceneUserMessageOptions = {}): string {
   const history = requestHistory(options.previousRequests);
   const focusIds = options.focusIds ?? [];
-  const tail = `${history.length ? `\n\nEarlier successful requests (context only; current request overrides these):\n${JSON.stringify(history)}` : ""}${focusIds.length ? `\n\nSelected object ids (resolve this/these using this selection): ${selectionText(focusIds)}` : ""}${scene.entities.length ? "" : `\n\n${EMPTY_SCENE_NOTE}`}\n\n## Request\n${request}`;
+  const tail = `${history.length ? `\n\nEarlier successful requests (context only; current request overrides these):\n${JSON.stringify(history)}` : ""}${focusIds.length ? `\n\nSelected object ids (resolve this/these using this selection): ${selectionText(focusIds)}` : ""}${scene.entities.length ? "" : `\n\n${EMPTY_SCENE_NOTE}`}${options.resolution ? `\n\n${options.resolution}` : ""}\n\n## Request\n${request}`;
   // Relevant worked examples go first: a repeated example extends the provider's cached prefix. Each is dropped
   // (least relevant first) when keeping it would leave the scene snapshot less than MIN_SCENE_CHARS.
   const examples = selectExamples(request, scene.entities.length === 0);
@@ -109,14 +111,15 @@ export function buildSceneUserMessage(scene: Scene, request: string, options: Sc
   while (examples.length && room - examplesText(examples, EXAMPLES_HEADING).length < MIN_SCENE_CHARS) examples.pop();
   const head = `${examples.length ? `${examplesText(examples, EXAMPLES_HEADING)}\n\n` : ""}## Current scene\n`;
   const sceneBudget = Math.max(0, Math.min(23_000, (options.maxChars ?? Infinity) - head.length - tail.length - 50));
-  return `${head}${sceneText(scene, { maxChars: sceneBudget, query: request, focusIds })}${tail}`;
+  return `${head}${sceneText(scene, { maxChars: sceneBudget, query: request, focusIds, ...(options.expand ? { expand: options.expand } : {}) })}${tail}`;
 }
 
 /** Static rules, then schemas/specs, then modeling guidance and examples, then the output format. Nothing per-call. */
 function buildStaticPrompt(): string {
   return `You are the scene agent inside a 3D simulation and animation editor.
 Build or edit scenes by returning operations that follow the component schemas below. You never write UI code, HTML, or three.js code.
-Each build message starts with "## Current scene" (the scene your operations apply to), may list earlier requests and selected ids, and ends with "## Request". Review messages describe a first build to check instead.
+Each build message starts with "## Current scene" (the scene your operations apply to), may list earlier requests, selected ids and what the request refers to, and ends with "## Request". Review messages describe a first build to check instead.
+The scene may be an outline: groups the request doesn't involve are collapsed to one line with their world bounding box, and their parts are hidden. Treat a collapsed group as one solid object that fills its box: move, rotate, scale, delete or place things against it by its id, and never reference or guess the ids of its hidden parts. "What the request refers to" resolves pronouns and vague references against the scene; follow it unless the request plainly says otherwise.
 
 World: Y-up, right-handed; meters, seconds, kilograms, degrees. Ground y=0; gravity [0,-9.81,0]. "collisions" disables object collisions/touch events, keeping the floor solid. Objects need RigidBody or Collider to collide. Default Camera [7,6,9] aims near origin; preserve unless asked. Cameras face local -Z; Play/exports use world transforms.
 

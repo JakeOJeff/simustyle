@@ -2,7 +2,8 @@ import { applyOps } from "../scene/applyOps";
 import { createEmptyScene, type Scene, type SceneOp } from "../scene/types";
 import { ScriptRuntime, validateScripts } from "../runtime/scripts";
 import { tidyCreates } from "./placement";
-import { sceneText } from "./sceneContext";
+import { matchedExpansion, sceneText } from "./sceneContext";
+import { REFERENCE_SYSTEM_PROMPT, parseResolution, referenceUserMessage, resolutionText, type ContextResolution } from "./references";
 import { expandBuildOperations } from "./buildTools";
 import { BuildCache } from "./cache";
 import { inspectBuildQuality, type BuildQualityReport } from "./quality";
@@ -84,6 +85,12 @@ export interface SceneAgentDependencies {
    * to null when it can't run now (e.g. too few credits for the critique and its fix pass).
    */
   critique?(request: { userPrompt: string; scene: Scene }): Promise<SceneCritique | null>;
+  /**
+   * The reference step before a follow-up build (task scene_context, see references.ts): sent its system and user
+   * messages, returns the raw JSON reply, or null when it cannot run now. Absent: the outline expands the selection
+   * and the objects the request names instead.
+   */
+  resolveReferences?(request: { systemPrompt: string; userPrompt: string }): Promise<unknown>;
 }
 
 export interface SceneAgentPreflight {
@@ -97,6 +104,8 @@ export interface SceneAgentPreflight {
   geometry?: string[];
   /** The visual critique of the build and what came of it (see runSceneAgent). */
   critique?: CritiqueReport;
+  /** How a follow-up's scene context was chosen; absent for a build on an empty scene and for cache hits. */
+  context?: ContextReport;
 }
 
 export interface CritiqueReport {
@@ -121,6 +130,18 @@ export interface SceneAgentResult {
   /** Set when every draft attempt was rejected and only the ops that still applied were kept. */
   skipped?: { kept: number; total: number; errors: string[] };
   cacheHit?: boolean;
+}
+
+export interface ContextReport {
+  /** model: the reference step resolved the request. names: it was off or failed, so name matches chose what to expand. */
+  source: "model" | "names";
+  /** Ids listed part by part in the outline the builder saw; every other group was collapsed to its box. */
+  expanded: string[];
+  /** The request restated with its references resolved, when that differs from what the player wrote. */
+  resolvedRequest?: string;
+  facts: string[];
+  /** Why the reference step did not run or failed. */
+  note?: string;
 }
 
 /** Server-side cap on all message contents of one scene request. */
@@ -292,7 +313,7 @@ const REVIEW_INSTRUCTIONS = "You are now doing a separate second-pass review. In
  * (truncated only if they cannot fit), then as much of the resulting scene as remains. Null when even the
  * fixed parts do not fit.
  */
-function reviewPrompt(userPrompt: string, draft: PreparedReply, candidate: Scene, preflight: SceneAgentPreflight, focusIds: readonly string[], geometry: readonly string[], maxChars: number): string | null {
+function reviewPrompt(userPrompt: string, draft: PreparedReply, candidate: Scene, preflight: SceneAgentPreflight, focusIds: readonly string[], geometry: readonly string[], maxChars: number, expand?: readonly string[]): string | null {
   const sampled = (lines: readonly string[], count: number, width: number, empty: string) => lines.length ? `${lines.slice(0, count).map((line) => `- ${line.slice(0, width)}`).join("\n")}${lines.length > count ? `\n- ${lines.length - count} further lines omitted from review context; all are checked locally.` : ""}` : empty;
   const baselineSet = new Set(preflight.baselineIssues);
   const reviewIssues = [...preflight.issues.filter((issue) => !baselineSet.has(issue)), ...preflight.issues.filter((issue) => baselineSet.has(issue))];
@@ -311,7 +332,8 @@ function reviewPrompt(userPrompt: string, draft: PreparedReply, candidate: Scene
   const opsRoom = Math.max(400, room - 1_500);
   const opsText = fullOps.length <= opsRoom ? fullOps : `${fullOps.slice(0, opsRoom - 120)}\n[First build operations truncated for context budget; rebuild the rest from the plan and the resulting scene.]`;
   const sceneBudget = Math.max(0, Math.min(23_000, room - opsText.length - 50));
-  const context = sceneText(candidate, { maxChars: sceneBudget, query: userPrompt, focusIds });
+  // A follow-up review sees the same outline as the draft, plus everything the draft created or changed.
+  const context = sceneText(candidate, { maxChars: sceneBudget, query: userPrompt, focusIds, ...(expand ? { expand: [...expand, ...touchedIds(draft.ops)] } : {}) });
   return `${head}${opsText}${middle}${context}${tail}`;
 }
 
@@ -332,11 +354,23 @@ const MIN_CRITIQUE_CREATES = 3;
  * (see critiqueAndFix). Commits one validated batch.
  */
 export async function runSceneAgent(scene: Scene, userPrompt: string, dependencies: SceneAgentDependencies): Promise<SceneAgentResult> {
-  const built = await buildScene(scene, userPrompt, dependencies);
+  const context: BuildContext = {};
+  const withContext = (result: SceneAgentResult): SceneAgentResult => context.report && result.preflight ? { ...result, preflight: { ...result.preflight, context: context.report } } : result;
+  const built = await buildScene(scene, userPrompt, dependencies, context);
   const created = built.ops.filter((op) => op.op === "create").length;
-  if (!dependencies.critique || !built.ok || !built.scene || built.cacheHit || created < MIN_CRITIQUE_CREATES) return built;
-  return critiqueAndFix(scene, userPrompt, built, dependencies);
+  if (!dependencies.critique || !built.ok || !built.scene || built.cacheHit || created < MIN_CRITIQUE_CREATES) return withContext(built);
+  return withContext(await critiqueAndFix(scene, userPrompt, built, dependencies, context));
 }
+
+/** What buildScene settled on for the scene context, kept for the critique's fix pass and the result. */
+interface BuildContext {
+  /** Outline mode's expanded ids; unset when the scene was empty and was sent in full. */
+  expand?: string[];
+  report?: ContextReport;
+}
+
+/** Ids a batch creates or updates; a follow-up's outline expands them so the builder sees what it just made. */
+const touchedIds = (ops: readonly SceneOp[]) => ops.flatMap((op) => op.op === "create" || op.op === "update" ? [op.id] : []);
 
 /** The per-request prompts and cache key; shared by the build and the critique step that may replace its cache entry. */
 function requestContext(scene: Scene, userPrompt: string, dependencies: SceneAgentDependencies) {
@@ -344,18 +378,50 @@ function requestContext(scene: Scene, userPrompt: string, dependencies: SceneAge
   const focusIds = (dependencies.focusIds ?? []).filter((id) => scene.entities.some((entity) => entity.id === id));
   const systemPrompt = dependencies.buildSystemPrompt();
   const draftBudget = MAX_SCENE_INPUT_CHARS - systemPrompt.length - CORRECTION_RESERVE - DRAFT_ECHO_RESERVE;
-  const draftPrompt = buildSceneUserMessage(scene, userPrompt, { focusIds, previousRequests: history, maxChars: draftBudget });
-  const cacheKey = JSON.stringify(["scene-build-v3", scene, systemPrompt, draftPrompt, userPrompt, history, focusIds, dependencies.responseSchema, dependencies.solReviewEnabled === true]);
-  return { history, focusIds, systemPrompt, draftBudget, draftPrompt, cacheKey };
+  // The draft message depends on the reference step's answer, so the key holds what that step is asked instead.
+  const cacheKey = JSON.stringify(["scene-build-v4", scene, systemPrompt, userPrompt, history, focusIds, dependencies.responseSchema,
+    dependencies.solReviewEnabled === true, Boolean(dependencies.resolveReferences)]);
+  return { history, focusIds, systemPrompt, draftBudget, cacheKey };
 }
 
-async function buildScene(scene: Scene, userPrompt: string, dependencies: SceneAgentDependencies): Promise<SceneAgentResult> {
+/**
+ * The reference step for a follow-up: what the request refers to and which groups to expand in the outline the
+ * builder sees. Without the step (or when it fails) the selection and groups the request names are expanded.
+ * Selected parts inside a group are always expanded, so the builder can edit them by id.
+ */
+async function resolveContext(scene: Scene, userPrompt: string, history: readonly string[], focusIds: readonly string[], dependencies: SceneAgentDependencies): Promise<{ expand: string[]; resolution: string; report: ContextReport }> {
+  const byNames = (note?: string) => {
+    const expand = matchedExpansion(scene, userPrompt, focusIds);
+    return { expand, resolution: "", report: { source: "names" as const, expanded: expand, facts: [], ...(note ? { note } : {}) } };
+  };
+  if (!dependencies.resolveReferences) return byNames();
+  dependencies.onProgress?.("Working out what the request refers to in the scene…");
+  let resolution: ContextResolution | null;
+  try {
+    const raw = await dependencies.resolveReferences({ systemPrompt: REFERENCE_SYSTEM_PROMPT, userPrompt: referenceUserMessage(scene, userPrompt, { previousRequests: history, focusIds }) });
+    if (raw === null) return byNames("The reference step was skipped.");
+    resolution = parseResolution(raw, scene, userPrompt);
+  } catch (error) {
+    return byNames(`The reference step failed: ${(error instanceof Error ? error.message : String(error)).slice(0, 200)}`);
+  }
+  if (!resolution) return byNames("The reference step returned an unusable reply.");
+  const nestedSelection = focusIds.filter((id) => scene.entities.find((entity) => entity.id === id)?.parent);
+  const expand = [...new Set([...resolution.expand, ...nestedSelection])];
+  const restated = resolution.resolvedRequest.trim() !== userPrompt.trim();
+  return { expand, resolution: resolutionText(resolution, userPrompt),
+    report: { source: "model", expanded: expand, facts: resolution.facts, ...(restated ? { resolvedRequest: resolution.resolvedRequest } : {}) } };
+}
+
+async function buildScene(scene: Scene, userPrompt: string, dependencies: SceneAgentDependencies, context: BuildContext): Promise<SceneAgentResult> {
   const sourceErrors = validateScene(scene);
   if (sourceErrors.length) return { ok: false, ops: [], errors: sourceErrors.map((error) => `current ${error}`), attempts: 0 };
   const tooLarge = (attempts = 0): SceneAgentResult => ({ ok: false, ops: [], errors: [TOO_LARGE], attempts });
   if (userPrompt.length > 12_000) return tooLarge();
-  const { history, focusIds, systemPrompt, draftBudget, draftPrompt, cacheKey } = requestContext(scene, userPrompt, dependencies);
-  if (draftPrompt.length > draftBudget) return tooLarge();
+  const { history, focusIds, systemPrompt, draftBudget, cacheKey } = requestContext(scene, userPrompt, dependencies);
+  const draftMessage = (options: { expand?: string[]; resolution?: string } = {}) =>
+    buildSceneUserMessage(scene, userPrompt, { focusIds, previousRequests: history, maxChars: draftBudget, ...options });
+  // Checked before any call: the request and history alone must leave room for the scene.
+  if (draftMessage({ expand: [] }).length > draftBudget) return tooLarge();
   const newCompileIssues = compileIssueCheck(scene);
   const solReviewEnabled = dependencies.solReviewEnabled === true;
   const cached = dependencies.cache?.get(cacheKey);
@@ -371,6 +437,17 @@ async function buildScene(scene: Scene, userPrompt: string, dependencies: SceneA
           errors: [], attempts: 0, preflight: checked, cacheHit: true };
       }
     }
+  }
+
+  // A follow-up sees the scene as an outline: top-level objects, with groups collapsed to their world boxes except
+  // those the request involves. A first build has nothing to outline.
+  let draftPrompt = draftMessage();
+  if (scene.entities.length) {
+    const resolved = await resolveContext(scene, userPrompt, history, focusIds, dependencies);
+    context.expand = resolved.expand;
+    context.report = resolved.report;
+    draftPrompt = draftMessage({ expand: resolved.expand, resolution: resolved.resolution });
+    if (draftPrompt.length > draftBudget) draftPrompt = draftMessage({ expand: resolved.expand });
   }
 
   let attempts = 0;
@@ -603,7 +680,7 @@ async function buildScene(scene: Scene, userPrompt: string, dependencies: SceneA
   dependencies.onProgress?.(escalate ? "Reviewing the first build with the stronger model…" : "Reviewing the first build and its check results…");
 
   const reviewBudget = MAX_SCENE_INPUT_CHARS - systemPrompt.length - CORRECTION_RESERVE - REVIEW_ECHO_RESERVE;
-  const reviewUserPrompt = reviewPrompt(userPrompt, draft, candidate, preflight, focusIds, draftGeometry, reviewBudget);
+  const reviewUserPrompt = reviewPrompt(userPrompt, draft, candidate, preflight, focusIds, draftGeometry, reviewBudget, context.expand);
   if (reviewUserPrompt === null) return useDraftAfterReviewFailure("The review context is too large for one request.");
   correctionErrors = [];
   previousReply = "";
@@ -660,7 +737,7 @@ async function buildScene(scene: Scene, userPrompt: string, dependencies: SceneA
  * script compile or runtime errors and no more geometry flags than the build had; otherwise the build stands as it
  * was. Never a second critique.
  */
-async function critiqueAndFix(scene: Scene, userPrompt: string, built: SceneAgentResult, dependencies: SceneAgentDependencies): Promise<SceneAgentResult> {
+async function critiqueAndFix(scene: Scene, userPrompt: string, built: SceneAgentResult, dependencies: SceneAgentDependencies, context: BuildContext): Promise<SceneAgentResult> {
   const before = built.preflight ?? inspectCandidate(built.scene!);
   const report = (critique: CritiqueReport, result: SceneAgentResult = built, preflight = before): SceneAgentResult =>
     ({ ...result, preflight: { ...preflight, critique } });
@@ -680,7 +757,9 @@ async function critiqueAndFix(scene: Scene, userPrompt: string, built: SceneAgen
   const focusIds = critique.issues.flatMap((issue) => issue.entityId && built.scene!.entities.some((entity) => entity.id === issue.entityId) ? [issue.entityId] : []);
   const fixRequest = `A reviewer looked at renders of the build you made for this request and found the problems listed after this message: "${userPrompt.slice(0, 2_000)}". Fix each one in the current scene. Return only the ops that change it (update, delete, or create for anything missing); do not rebuild what is already right.`;
   const budget = MAX_SCENE_INPUT_CHARS - systemPrompt.length - CORRECTION_RESERVE;
-  const prompt = buildSceneUserMessage(built.scene!, fixRequest, { focusIds, previousRequests: history, maxChars: budget });
+  // A follow-up fix sees the outline with the critiqued and newly built entities expanded.
+  const expand = context.expand ? [...context.expand, ...focusIds, ...touchedIds(built.ops)] : undefined;
+  const prompt = buildSceneUserMessage(built.scene!, fixRequest, { focusIds, previousRequests: history, maxChars: budget, ...(expand ? { expand } : {}) });
   if (prompt.length > budget) return kept("The scene is too large for a fix request.");
   let raw: unknown;
   try {

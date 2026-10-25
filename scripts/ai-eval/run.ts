@@ -15,6 +15,7 @@ import { runSceneAgent } from "../../src/ai/agent";
 import { critiqueEnabled, forwardChat, isAiConfigured, lunaModel, solReviewEnabled, visionModel, type ChatCredits } from "../../src/ai/chatProxy";
 import { CRITIQUE_JSON_SCHEMA, critiqueMessages, parseCritique, type CritiqueImages, type SceneCritique } from "../../src/ai/critique";
 import { sceneText } from "../../src/ai/sceneContext";
+import { REFERENCE_JSON_SCHEMA } from "../../src/ai/references";
 import { parseChatPayload, sceneEditMessages } from "../../src/ai/client";
 import type { CallCharge, CreditStatus } from "../../src/ai/credits";
 import { AI_RESPONSE_JSON_SCHEMA, buildSystemPrompt } from "../../src/ai/prompt";
@@ -61,7 +62,7 @@ for (const prompt of cases.flatMap((item) => item.steps)) {
 }
 const outDir = path.resolve("eval-output", new Date().toISOString().replace(/[:.]/g, "-"));
 await mkdir(outDir, { recursive: true });
-console.log(`Draft model ${lunaModel(env)}; Sol reviews ${solReviewEnabled(env) ? `on (${env.AI_MODEL_SOL})` : "off"}; visual critique ${critiqueEnabled(env) ? `on (${visionModel(env)})` : "off"}. Writing to ${outDir}`);
+console.log(`Draft model ${lunaModel(env)}; Sol reviews and reference step ${solReviewEnabled(env) ? `on (${env.AI_MODEL_SOL})` : "off"}; visual critique ${critiqueEnabled(env) ? `on (${visionModel(env)})` : "off"}. Writing to ${outDir}`);
 
 /** Browser bundles: one draws a scene for screenshots, the other makes the critique's two offscreen renders. */
 const bundle = async (entry: string) => (await build({
@@ -98,6 +99,14 @@ async function runCase({ steps, check }: EvalCase, render?: (scene: Scene) => Pr
         responseSchema: AI_RESPONSE_JSON_SCHEMA.schema,
         solReviewEnabled: solReviewEnabled(env),
         onProgress: (message) => log(`  ${message}`),
+        resolveReferences: async ({ systemPrompt, userPrompt }) => {
+          requests.push({ task: "scene_context", correctionErrors: [] });
+          const body = JSON.stringify({ task: "scene_context", messages: [{ role: "system", content: systemPrompt }, { role: "user", content: userPrompt }],
+            responseFormat: { type: "json_schema", json_schema: REFERENCE_JSON_SCHEMA } });
+          const reply = await forwardChat(new TextEncoder().encode(body), env, credits);
+          if (reply.status !== 200 || !reply.body) throw new Error(String((reply.body as { error?: unknown } | undefined)?.error ?? `AI proxy returned HTTP ${reply.status}`));
+          return parseChatPayload(reply.body);
+        },
         ...(render ? { critique: async ({ userPrompt, scene: built }: { userPrompt: string; scene: Scene }): Promise<SceneCritique | null> => {
           requests.push({ task: "scene_critique", correctionErrors: [] });
           const body = JSON.stringify({ task: "scene_critique", messages: critiqueMessages(userPrompt, sceneText(built), await render(built)),
@@ -128,7 +137,7 @@ async function runCase({ steps, check }: EvalCase, render?: (scene: Scene) => Pr
       ...(critique ? { critique: { ...(critique.score !== undefined ? { score: critique.score } : {}), outcome: critique.outcome } } : {}) };
     const detail = { prompt, ok, checks, requests, charges, steps: results.map((result, index) => ({ request: steps[index], ok: result.ok,
       examples: selectExamples(steps[index]!, index === 0).map((example) => example.request), summary: result.summary, errors: result.errors, attempts: result.attempts, skipped: result.skipped,
-      geometry: result.preflight?.geometry, quality: result.preflight?.quality?.warnings, critique: result.preflight?.critique, ops: result.ops })) };
+      geometry: result.preflight?.geometry, quality: result.preflight?.quality?.warnings, critique: result.preflight?.critique, context: result.preflight?.context, ops: result.ops })) };
     return { scene: results.length ? scene : undefined, row, detail };
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);

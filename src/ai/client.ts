@@ -1,6 +1,7 @@
 /** Browser-side client for the Vite development server's secret-holding proxy. */
 import { AI_RESPONSE_JSON_SCHEMA } from "./prompt";
 import { CRITIQUE_JSON_SCHEMA, critiqueMessages, parseCritique, type CritiqueImages, type SceneCritique } from "./critique";
+import { REFERENCE_JSON_SCHEMA } from "./references";
 import { desktopChat, isDesktopRuntime } from "../platform/desktop";
 import type { CreditStatus } from "./credits";
 import type { AiTask } from "./tasks";
@@ -71,6 +72,11 @@ export async function requestSceneEdit(
 /** Asks the vision model to score a finished build from its two renders (task scene_critique); null for an unusable reply. */
 export async function requestCritique(request: string, sceneText: string, images: CritiqueImages): Promise<SceneCritique | null> {
   return parseCritique(await requestJson(critiqueMessages(request, sceneText, images), CRITIQUE_JSON_SCHEMA, "scene_critique"));
+}
+
+/** Asks what a follow-up request refers to (task scene_context, see references.ts); returns the raw JSON reply. */
+export async function requestReferences(systemPrompt: string, userPrompt: string): Promise<unknown> {
+  return requestJson([{ role: "system", content: systemPrompt }, { role: "user", content: userPrompt }], REFERENCE_JSON_SCHEMA, "scene_context");
 }
 
 /** The chat messages for one scene-edit call; a correction replays the rejected reply, then the errors to fix. */

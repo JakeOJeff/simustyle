@@ -17,7 +17,7 @@
     // What the whole site may spend on AI per UTC month, spread over the days left; no day may exceed the max.
     "AI_MONTHLY_BUDGET_USD": "150",
     "AI_DAILY_MAX_USD": "15",
-    // Cheap model for every task; the strong one reviews scenes only when AI_SOL_ENABLED is "true".
+    // Cheap model for every task; the strong one reviews scenes and resolves follow-up references only when AI_SOL_ENABLED is "true".
     "AI_MODEL_LUNA": "gpt-6-luna",
     "AI_MODEL_SOL": "gpt-6-sol",
     "AI_SOL_ENABLED": "true",

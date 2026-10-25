@@ -4,6 +4,29 @@ Record meaningful project changes during the event, newest first.
 
 ## Event build log
 
+### 2026-10-25 — Follow-up builds see a scene outline and a resolved request
+
+- Changed: A request on a non-empty scene no longer sends every entity in full. The build message holds an outline (`sceneText` with `expand`, `src/ai/sceneContext.ts`):
+  - Loose top-level objects are listed in full.
+  - Every group is collapsed to one line: its world bounding box (w×h×d), center x/z, y range, part count and its own Transform. Its parts and their ids are hidden.
+  - Groups the request involves are listed part by part. Expanding a nested group (a desk's drawer) opens its ancestors one level, so its sibling groups stay collapsed.
+  - The system prompt says to treat a collapsed group as one solid object of its box: edit it whole by id, place things against its box, never guess the ids of hidden parts.
+- Added: A reference step before each follow-up build (`src/ai/references.ts`, new task `scene_context`). It runs on `AI_MODEL_SOL` when `AI_SOL_ENABLED` is `"true"`, otherwise on Luna. Input is capped at 32,000 characters and output at 2,000 tokens; the worst case is 22 credits.
+  - Input: the outline with each collapsed group's part names ("Seat, Back, Leg ×4"), the earlier requests, the selection and the request.
+  - It returns `references` (each phrase such as "it" or "the table" and the ids it means), `expand` (at most 6 groups the builder must see part by part; a group that is only moved, deleted, copied or used as a landmark is not expanded), `resolvedRequest` (the request restated with ids, e.g. "Make the chair [chair] 20% taller") and up to 6 `facts` read from the outline (a surface's top height, sizes to match, the palette).
+  - The build message carries this as "## What the request refers to" just before "## Request". The player's own words stay the request.
+  - A selected part inside a group is always expanded, so the builder can edit it by id.
+  - If the step is off, skipped or fails, the selection and the entities the request names (plurals matched) are expanded instead, with the reason in the check details.
+  - The editor skips the step when the visitor holds fewer than its worst case plus a draft's (22 + 5 credits). A first build on an empty scene never runs it.
+- Changed: The review and the critique's fix pass see the same outline plus every entity the build created or changed.
+- Fixed: Free floor spots avoided only loose top-level meshes, so they could land inside a grouped desk or chair. Every solid part now counts, at any depth, measured in world space. Planes and ground slabs (floors, rugs) still don't block.
+- Changed: "Checked before apply" shows a Scene context section: whether references were resolved, which groups were listed part by part, how the request was read, and the facts. `npm run ai:eval` sends the step through the proxy and writes it to `result.json`.
+- Changed: The build cache key no longer includes the draft message (that now depends on the step's answer). It holds the step's inputs instead (`scene-build-v4`).
+- Size, measured on the saved scenes of eval run 2026-10-25T01-49: the kitchen nook (174 entities) is 41,232 characters in full and 2,132 as an outline; the Up house (495 entities) is 112,383 and 3,474; the snowman garden (232) is 52,517 and 774. Full scenes over 23,000 characters were previously cut to a bounded snapshot, so most of those scenes never reached the model.
+- Files: `src/ai/references.ts`, `src/ai/sceneContext.ts`, `src/ai/prompt.ts`, `src/ai/agent.ts`, `src/ai/tasks.ts`, `src/ai/chatProxy.ts`, `src/ai/client.ts`, `src/App.svelte`, `src/editor/AIPanel.svelte`, `scripts/ai-eval/run.ts`, `.env.example`, `wrangler.jsonc`, `README.md`, `DECISIONS.md`, tests.
+- Why: The user asked for follow-up prompts to carry the scene as top-level objects and groups (bounding boxes and positions, parts only when needed), and to understand references that aren't stated outright, using Sol where it helps.
+- Validation: `npm run check` passes (typecheck, svelte-check with 0 errors, 465 tests, build). New tests cover the outline (collapsed boxes, expanding a group or a nested group, part names, size against the full text), free spots clear of a grouped desk, name-match expansion, the reference prompt, message order and input cap, parsing (unknown ids dropped, expansion capped at 6, empty restatement falls back to the request), the resolution block's place in the build message, `scene_context` routing (Sol only behind the flag), and the agent paths: resolved first then drafted on the outline, expanded and selected parts listed, step failed / skipped / absent, and no step on an empty scene. The model calls are mocked in tests.
+
 ### 2026-10-25 — Visual critique loop (off by default)
 
 - Changed: With `AI_CRITIQUE_ENABLED="true"`, a finished build is rendered, scored by a vision model, and fixed once if it scores below 8.

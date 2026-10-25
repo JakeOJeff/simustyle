@@ -14,7 +14,7 @@ export interface ChatProxyEnv {
   AI_API_KEY?: string;
   /** Cheap model for every task; falls back to the older AI_MODEL. */
   AI_MODEL_LUNA?: string;
-  /** Strong model, used only for scene_review and only when AI_SOL_ENABLED is "true". */
+  /** Strong model, used only for scene_review and scene_context and only when AI_SOL_ENABLED is "true". */
   AI_MODEL_SOL?: string;
   AI_SOL_ENABLED?: string;
   /** Model that reads images for scene_critique; defaults to AI_MODEL_SOL. */
@@ -83,12 +83,12 @@ export function critiqueEnabled(env: ChatProxyEnv): boolean {
 }
 
 /**
- * The model a task runs on. Only scene_review can reach Sol, and only scene_critique the vision model (undefined
+ * The model a task runs on. Only scene_review and scene_context can reach Sol, and only scene_critique the vision model (undefined
  * when critique is off); everything else, and Sol when off, is Luna.
  */
 export function resolveModel(task: AiTask, env: ChatProxyEnv): string | undefined {
   if (task === "scene_critique") return critiqueEnabled(env) ? visionModel(env) : undefined;
-  if (task === "scene_review" && solReviewEnabled(env)) return env.AI_MODEL_SOL!.trim();
+  if ((task === "scene_review" || task === "scene_context") && solReviewEnabled(env)) return env.AI_MODEL_SOL!.trim();
   return lunaModel(env);
 }
 
@@ -111,7 +111,7 @@ export async function forwardChat(raw: Uint8Array, env: ChatProxyEnv, credits?: 
   } catch {
     return fail(400, "AI request body must be valid JSON.");
   }
-  if (!isRecord(body) || !isAiTask(body.task)) return fail(400, "AI request requires a task: parse, scene_draft, scene_detail, scene_review, or scene_critique.");
+  if (!isRecord(body) || !isAiTask(body.task)) return fail(400, "AI request requires a task: parse, scene_draft, scene_detail, scene_review, scene_critique, or scene_context.");
   if (!isChatRequest(body)) return fail(400, "AI request requires system/user messages and a JSON response format.");
   const task = body.task;
   const images = body.messages.flatMap((message) => typeof message.content === "string" ? [] : message.content.filter((part) => part.type === "image_url"));

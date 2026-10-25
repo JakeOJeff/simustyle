@@ -5,10 +5,12 @@
 import { componentSchemas } from "../registry";
 import { surfaceTexture, normalTexture } from "../materials/catalog";
 import type { ComponentSchema, FieldSchema } from "../registry/types";
+import * as THREE from "three";
 import { halfExtents, positionOf } from "../runtime/commands";
 import { omitDefaultFields } from "../scene/serialize";
-import { DEFAULT_SCENE_SETTINGS, type Entity, type Scene, type SceneSettings } from "../scene/types";
+import { DEFAULT_SCENE_SETTINGS, createEmptyScene, type Entity, type Scene, type SceneSettings } from "../scene/types";
 import { BuildCache } from "./cache";
+import { meshWorldBounds } from "./quality";
 
 function round(value: number): number {
   return Math.round(value * 100) / 100;
@@ -79,12 +81,18 @@ function sizeText(entity: Entity): string {
   return ` ${size} m, y ${round(y - half[1])} to ${round(y + half[1])}`;
 }
 
-/** Floor footprints [minX, maxX, minZ, maxZ] of top-level solid objects; flat planes do not block. */
+/**
+ * Floor footprints [minX, maxX, minZ, maxZ] of every solid part, grouped or not, in world space. Planes and
+ * ground slabs (at most 0.3 m tall, top near the ground, at least 1×1 m: floors, rugs) do not block.
+ */
 export function footprints(entities: Entity[]): [number, number, number, number][] {
-  return entities.filter((entity) => !entity.parent && entity.components.Mesh && entity.components.Mesh.shape !== "plane").map((entity) => {
-    const [x, , z] = positionOf(entity);
-    const [hx, , hz] = halfExtents(entity);
-    return [x - hx, x + hx, z - hz, z + hz];
+  const scene = { ...createEmptyScene(), entities };
+  return entities.flatMap((entity): [number, number, number, number][] => {
+    if (!entity.components.Mesh || entity.components.Mesh.shape === "plane") return [];
+    const box = meshWorldBounds(scene, entity.id);
+    if (!box) return [];
+    const slab = box.max.y - box.min.y <= 0.3 && box.max.y <= 0.35 && box.max.x - box.min.x >= 1 && box.max.z - box.min.z >= 1;
+    return slab ? [] : [[box.min.x, box.max.x, box.min.z, box.max.z]];
   });
 }
 
@@ -111,6 +119,14 @@ export interface SceneContextOptions {
   maxChars?: number;
   focusIds?: readonly string[];
   query?: string;
+  /**
+   * Outline mode: every entity with children is collapsed to one line with its world bounding box, except these
+   * ids (listed with all their parts) and their ancestors (opened one level, so sibling groups stay collapsed).
+   * Unset lists every entity in full.
+   */
+  expand?: readonly string[];
+  /** In outline mode, also name the parts inside each collapsed group (for the reference step, see references.ts). */
+  partNames?: boolean;
 }
 
 /** One line per object, children indented under their parent, with non-default components as compact JSON. */
@@ -119,7 +135,7 @@ export function sceneText(scene: Scene, options: SceneContextOptions = {}): stri
   const key = JSON.stringify([componentSchemas, scene, options]);
   const cached = contextCache.get(key);
   if (cached !== undefined) return cached;
-  const full = describeScene(scene);
+  const full = options.expand ? describeOutline(scene, options.expand, options.partNames === true) : describeScene(scene);
   const result = options.maxChars !== undefined && full.length > options.maxChars ? boundedSceneText(scene, options) : full;
   contextCache.set(key, result);
   return result;
@@ -184,4 +200,88 @@ function describeScene(scene: Scene): string {
   visit(null, 0);
   lines.push(`Free floor spots (x z) for new objects: ${freeSpots(scene.entities, 4).map(([x, z]) => `(${x} ${z})`).join(", ")}`);
   return lines.join("\n");
+}
+
+/** World bounds of every mesh in an entity's subtree (itself included); empty when it holds no mesh. */
+export function subtreeWorldBounds(scene: Scene, id: string): THREE.Box3 {
+  const box = new THREE.Box3();
+  const ids = [id];
+  for (let index = 0; index < ids.length; index += 1) {
+    for (const entity of scene.entities) if (entity.parent === ids[index] && !ids.includes(entity.id)) ids.push(entity.id);
+  }
+  for (const member of ids) {
+    const bounds = meshWorldBounds(scene, member);
+    if (bounds) box.union(bounds);
+  }
+  return box;
+}
+
+/** "Leg ×4, Seat, Back": each part name once with its count, the first `limit` names. */
+function partNamesText(names: string[], limit = 24): string {
+  const counts = new Map<string, number>();
+  for (const name of names) counts.set(name, (counts.get(name) ?? 0) + 1);
+  const listed = [...counts].slice(0, limit).map(([name, count]) => count > 1 ? `${name} ×${count}` : name);
+  return `${listed.join(", ")}${counts.size > limit ? `, +${counts.size - limit} more names` : ""}`;
+}
+
+/**
+ * The scene as top-level objects: loose objects in full, groups collapsed to their world box unless expanded.
+ * Expanded ids list their whole subtree; their ancestors are opened one level so sibling groups stay collapsed.
+ */
+function describeOutline(scene: Scene, expand: readonly string[], partNames: boolean): string {
+  const changed = Object.fromEntries(Object.entries(scene.settings).filter(([key, value]) =>
+    JSON.stringify(value) !== JSON.stringify(DEFAULT_SCENE_SETTINGS[key as keyof SceneSettings])));
+  const lines = [`Settings (only non-default): ${JSON.stringify(changed)}`];
+  if (!scene.entities.length) return [...lines, "Objects: none yet.", "Free floor spots (x z): (0 0)"].join("\n");
+
+  const byId = new Map(scene.entities.map((entity) => [entity.id, entity]));
+  const children = new Map<string | null, Entity[]>();
+  for (const entity of scene.entities) children.set(entity.parent, [...(children.get(entity.parent) ?? []), entity]);
+  const full = new Set(expand.filter((id) => byId.has(id)));
+  const open = new Set<string>();
+  for (const id of full) {
+    for (let parent = byId.get(id)?.parent; parent && !open.has(parent); parent = byId.get(parent)?.parent ?? null) open.add(parent);
+  }
+  const descendants = (id: string): Entity[] => (children.get(id) ?? []).flatMap((child) => [child, ...descendants(child.id)]);
+  const roots = children.get(null)?.length ?? 0;
+  lines.push(`Objects: ${scene.entities.length} total, ${roots} top-level, oldest first. id "name" kind size [top-level: y bottom to top]: components (defaults omitted). Children are indented under their parent; their Transform is relative to it.`,
+    "A collapsed object is one line: its world box (w×h×d m, center x z, y bottom to top) and its own components; its parts are hidden. Edit it whole by its id (move, rotate, scale, delete, place things against its box) and never reference or guess ids of its hidden parts.");
+  const componentsText = (entity: Entity) => JSON.stringify(Object.fromEntries(Object.entries(entity.components).map(([name, fields]) => [name, omitDefaultFields(name, fields)])));
+  const visit = (parent: string | null, depth: number, inside: boolean) => {
+    for (const entity of children.get(parent) ?? []) {
+      const indent = "  ".repeat(depth);
+      const shown = inside || full.has(entity.id);
+      if (children.get(entity.id)?.length && !shown && !open.has(entity.id)) {
+        const parts = descendants(entity.id);
+        const meshes = parts.filter((part) => part.components.Mesh).length + (entity.components.Mesh ? 1 : 0);
+        const box = subtreeWorldBounds(scene, entity.id);
+        const size = box.getSize(new THREE.Vector3());
+        const center = box.getCenter(new THREE.Vector3());
+        const where = box.isEmpty() ? "" : `, box ${round(size.x)}×${round(size.y)}×${round(size.z)} m, center x ${round(center.x)} z ${round(center.z)}, y ${round(box.min.y)} to ${round(box.max.y)}`;
+        const names = partNames ? `; parts: ${partNamesText(parts.map((part) => part.name))}` : "";
+        lines.push(`${indent}- ${entity.id} ${JSON.stringify(entity.name)} ${shapeOf(entity)} collapsed, ${meshes} part${meshes === 1 ? "" : "s"}${where}: ${componentsText(entity)}${names}`);
+        continue;
+      }
+      lines.push(`${indent}- ${entity.id} ${JSON.stringify(entity.name)} ${shapeOf(entity)}${sizeText(entity)}: ${componentsText(entity)}`);
+      visit(entity.id, depth + 1, shown);
+    }
+  };
+  visit(null, 0, false);
+  lines.push(`Free floor spots (x z) for new objects: ${freeSpots(scene.entities, 4).map(([x, z]) => `(${x} ${z})`).join(", ")}`);
+  return lines.join("\n");
+}
+
+const STOP_WORDS = new Set(["the", "and", "add", "make", "with", "this", "that", "scene", "build", "create", "into", "onto", "from", "more", "less", "some"]);
+
+/**
+ * What to expand when no reference step ran: the selection, then entities whose name shares a word with the
+ * request (a trailing plural "s" ignored), at most `limit`.
+ */
+export function matchedExpansion(scene: Scene, request: string, focusIds: readonly string[] = [], limit = 8): string[] {
+  const words = (request.toLowerCase().match(/[a-z0-9_]{3,}/g) ?? []).filter((word) => !STOP_WORDS.has(word)).map((word) => word.replace(/(?<=..)s$/, ""));
+  const matched = scene.entities.filter((entity) => {
+    const label = entity.name.toLowerCase().split(/[^a-z0-9]+/).map((word) => word.replace(/(?<=..)s$/, ""));
+    return words.some((word) => label.includes(word));
+  }).map((entity) => entity.id);
+  return [...new Set([...focusIds, ...matched])].slice(0, Math.max(limit, focusIds.length));
 }

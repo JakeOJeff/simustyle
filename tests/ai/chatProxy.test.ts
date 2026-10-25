@@ -51,12 +51,15 @@ describe("chat proxy task routing", () => {
     expect(sent(1).model).toBe("gpt-6-luna");
   });
 
-  it("sends reviews to Sol only when the flag is on and Sol is set", async () => {
+  it("sends reviews and the reference step to Sol only when the flag is on and Sol is set", async () => {
     expect(resolveModel("scene_review", env)).toBe("gpt-6-luna");
     expect(resolveModel("scene_review", { ...env, AI_SOL_ENABLED: "1" })).toBe("gpt-6-luna");
     expect(resolveModel("scene_review", { ...env, AI_SOL_ENABLED: "true", AI_MODEL_SOL: "" })).toBe("gpt-6-luna");
     expect(resolveModel("scene_review", { ...env, AI_SOL_ENABLED: "true" })).toBe("gpt-6-sol");
     expect(resolveModel("scene_draft", { ...env, AI_SOL_ENABLED: "true" })).toBe("gpt-6-luna");
+    // The reference step before a follow-up shares the review's route.
+    expect(resolveModel("scene_context", env)).toBe("gpt-6-luna");
+    expect(resolveModel("scene_context", { ...env, AI_SOL_ENABLED: "true" })).toBe("gpt-6-sol");
     expect(solReviewEnabled({ ...env, AI_SOL_ENABLED: "true" })).toBe(true);
     expect(solReviewEnabled(env)).toBe(false);
 
